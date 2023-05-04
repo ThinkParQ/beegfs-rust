@@ -1,0 +1,41 @@
+# BeeGFS management configuration file
+#
+# This file configures the BeeGFS management node and can be used as an alternative or together with
+# command line arguments. To use it, specify it using the `--config-file <CONFIG_FILE>` option.
+# Arguments given to the CLI overwrite arguments specified here.
+#
+# This file uses the TOML format (see https://toml.io). Most arguments accepted by the CLI can
+# instead be defined here: They have the same name without the `--` and underscores `_` instead of 
+# `-` (kebab-case). For example, `--db-file` becomes `db_file`.
+#
+# There is an exception: When allowed multiple times on command line, they have to specified as an
+# array here instead and use their plural name (e.g. appending an s).
+# For example, the arguments
+#
+# `--interface eth0 --interface eth1`
+#
+# become
+#
+# interfaces = ["eth0", "eth1"]
+#
+# Some commented out examples for common options can be found below, these are not all of them.
+# Please run the binary with the --help flag to see all available options with detailed explanations
+# and defaults.
+
+# TCP/UDP port to listen for incoming connections / messages
+# port = 8008
+
+# Network interfaces to use
+# interfaces = ["eth0", "eth1"]
+
+# Location of the SQLite database file
+# db_file = ""
+
+# Enable authentication
+# auth_enable = true
+
+# Location of the file containing the authentication secret
+# auth_file = ""
+
+# Sets the logging mechanism to use.
+# log_target = "std"

@@ -1,0 +1,110 @@
+use super::*;
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GetQuotaInfo {
+    pub query_type: QuotaQueryType,
+    pub id_type: QuotaIDType,
+    pub id_range_start: QuotaID,
+    pub id_range_end: QuotaID,
+    pub id_list: Vec<QuotaID>,
+    pub transfer_method: GetQuotaInfoTransferMethod,
+    pub target_id: TargetID,
+    pub pool_id: StoragePoolID,
+}
+
+impl GetQuotaInfo {
+    pub fn with_group_ids(
+        mut group_ids: HashSet<QuotaID>,
+        target_id: TargetID,
+        pool_id: StoragePoolID,
+    ) -> Self {
+        Self {
+            query_type: QuotaQueryType::List,
+            id_type: QuotaIDType::Group,
+            id_range_start: QuotaID::ZERO,
+            id_range_end: QuotaID::ZERO,
+            id_list: group_ids.drain().collect(),
+            transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
+            target_id,
+            pool_id,
+        }
+    }
+
+    pub fn with_user_ids(
+        mut user_ids: HashSet<QuotaID>,
+        target_id: TargetID,
+        pool_id: StoragePoolID,
+    ) -> Self {
+        Self {
+            query_type: QuotaQueryType::List,
+            id_type: QuotaIDType::User,
+            id_range_start: QuotaID::ZERO,
+            id_range_end: QuotaID::ZERO,
+            id_list: user_ids.drain().collect(),
+            transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
+            target_id,
+            pool_id,
+        }
+    }
+}
+
+impl Msg for GetQuotaInfo {
+    const ID: MsgID = MsgID(2097);
+}
+
+impl BeeSerde for GetQuotaInfo {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        ser.i32(self.query_type.into())?;
+        ser.i32(self.id_type.into())?;
+
+        if self.query_type == QuotaQueryType::Range {
+            ser.u32(self.id_range_start.into())?;
+            ser.u32(self.id_range_end.into())?;
+        } else if self.query_type == QuotaQueryType::List {
+            ser.seq(self.id_list.iter(), true, |ser, e| ser.u32((*e).into()))?;
+        } else if self.query_type == QuotaQueryType::Single {
+            ser.u32(self.id_range_start.into())?;
+        }
+
+        ser.u32(self.transfer_method.into())?;
+        self.target_id.serialize(ser)?;
+        self.pool_id.serialize(ser)?;
+        Ok(())
+    }
+
+    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
+        let query_type: QuotaQueryType = des.i32()?.try_into()?;
+
+        Ok(Self {
+            query_type,
+            id_type: des.i32()?.try_into()?,
+            id_range_start: match query_type {
+                QuotaQueryType::Range | QuotaQueryType::Single => des.u32()?.into(),
+                _ => QuotaID::ZERO,
+            },
+            id_range_end: match query_type {
+                QuotaQueryType::Range => des.u32()?.into(),
+                _ => QuotaID::ZERO,
+            },
+            id_list: match query_type {
+                QuotaQueryType::List => des.seq(true, |des| Ok(des.u32()?.into()))?,
+                _ => vec![],
+            },
+            transfer_method: des.u32()?.try_into()?,
+            target_id: TargetID::deserialize(des)?,
+            pool_id: StoragePoolID::deserialize(des)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetQuotaInfoResp {
+    #[bee_serde(as = Int<u32>)]
+    pub quota_inode_support: QuotaInodeSupport,
+    #[bee_serde(as = Seq<false, _>)]
+    pub quota_entry: Vec<QuotaEntry>,
+}
+
+impl Msg for GetQuotaInfoResp {
+    const ID: MsgID = MsgID(2098);
+}

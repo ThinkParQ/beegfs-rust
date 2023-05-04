@@ -1,0 +1,16 @@
+[package]
+name = "derive_bee_serde"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+description = "Derive macro for bee_serde"
+homepage = "https://www.beegfs.io"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "~2", features = ["parsing"] }
+quote = "~1"
+proc-macro2 = "~1"

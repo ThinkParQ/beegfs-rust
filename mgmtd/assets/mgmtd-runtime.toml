@@ -1,0 +1,32 @@
+# BeeGFS management runtime configuration
+#
+# THIS IS A TEMPORARY REPLACEMENT FOR THE NEW CTL AND WILL GO AWAY
+#
+# The configuration specified here is supposed to be done at runtime via the new ctl tool
+# later on. While it is not yet fully implemented, this file can be used apply do all the
+# configuration at managment start.
+#
+# Since the actual configuration is stored in the database, the changes made from this file are
+# persistent. It doesn't need to be loaded every time.
+
+registration_enable = true
+
+node_offline_timeout = "180s"
+client_auto_remove_timeout = "30m"
+
+quota_enable = false
+quota_user_ids = []
+quota_group_ids = []
+quota_update_interval = "30s"
+
+[cap_pool_meta_limits]
+inode_low = "10M"
+inode_emergency = "1M"
+space_low = "10GiB"
+space_emergency = "3GiB"
+
+[cap_pool_storage_limits]
+inode_low = "10M"
+inode_emergency = "1M"
+space_low = "512GiB"
+space_emergency = "10GiB"

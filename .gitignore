@@ -1,0 +1,7 @@
+/target
+/about.hbs
+/license.html
+
+*.sublime-project
+*.sublime-workspace
+

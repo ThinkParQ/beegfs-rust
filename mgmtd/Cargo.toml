@@ -1,0 +1,79 @@
+[package]
+name = "mgmtd"
+version = "0.1.0"
+license = "undecided"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+description = "BeeGFS management node Rust prototype"
+readme = "README.md"
+homepage = "https://www.beegfs.io"
+documentation = "https://doc.beegfs.io"
+publish = false
+
+[dependencies]
+config = { path = "../config" }
+shared = { path = "../shared" }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+env_logger = { workspace = true }
+itertools = { workspace = true }
+log = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+sd-notify = "~0"
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [
+    "net",
+    "rt-multi-thread",
+    "fs",
+    "signal",
+    "time",
+    "io-util",
+] }
+# current newest version 0.4.0 cannot be used due to changes to error type:
+# https://github.com/programatik29/tokio-rusqlite/issues/20
+tokio-rusqlite = "0.3.0"
+toml = "~0"
+
+
+[package.metadata.generate-rpm]
+name = "beegfs-mgmtd"
+assets = [
+    { source = "target/release/mgmtd", dest = "/opt/beegfs/sbin/beegfs-mgmtd", mode = "755" },
+    { source = "assets/mgmtd.toml", dest = "/etc/beegfs/", mode = "644" },
+    { source = "assets/mgmtd-runtime.toml", dest = "/etc/beegfs/", mode = "644" },
+    { source = "assets/mgmtd.auth", dest = "/etc/beegfs/", mode = "600" },
+    { source = "assets/beegfs-mgmtd.service", dest = "/etc/systemd/system/", mode = "644" },
+]
+
+[package.metadata.deb]
+name = "beegfs-mgmtd"
+assets = [
+    [
+        "target/release/mgmtd",
+        "/opt/beegfs/sbin/beegfs-mgmtd",
+        "755",
+    ],
+    [
+        "assets/mgmtd.toml",
+        "/etc/beegfs/",
+        "644",
+    ],
+    [
+        "assets/mgmtd-runtime.toml",
+        "/etc/beegfs/",
+        "644",
+    ],
+    [
+        "assets/mgmtd.auth",
+        "/etc/beegfs/",
+        "600",
+    ],
+    [
+        "assets/beegfs-mgmtd.service",
+        "/etc/systemd/system/",
+        "644",
+    ],
+]

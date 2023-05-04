@@ -1,0 +1,25 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+description = "Contains tools to connect and talk to BeeGFS nodes, as well as useful types for other crates."
+homepage = "https://www.beegfs.io"
+publish = false
+
+[dependencies]
+config = { path = "../config" }
+derive_bee_serde = { path = "../derive_bee_serde" }
+hsieh = { path = "../hsieh" }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+log = { workspace = true }
+pnet_datalink = "~0"
+regex = "~1"
+rusqlite = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["net", "io-util", "time"] }

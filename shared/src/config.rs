@@ -1,0 +1,55 @@
+use crate::conn::{AddrResolver, ConnPool, PeerID};
+use crate::{msg, CapPoolLimits, QuotaID};
+use async_trait::async_trait;
+use config::{BoxedError, ConfigMap, Source};
+use std::collections::HashSet;
+use std::time::Duration;
+
+#[derive(Debug, Clone)]
+pub struct ManagementSource<Res: AddrResolver> {
+    management_addr: PeerID,
+    conn: ConnPool<Res>,
+}
+
+impl<Res: AddrResolver> ManagementSource<Res> {
+    pub fn new(management_addr: PeerID, conn: ConnPool<Res>) -> Self {
+        Self {
+            management_addr,
+            conn,
+        }
+    }
+}
+
+#[async_trait]
+impl<Res: AddrResolver> Source for ManagementSource<Res> {
+    async fn get(&self) -> Result<ConfigMap, BoxedError> {
+        Ok(self
+            .conn
+            .request::<_, msg::GetAllConfigResp>(self.management_addr, &msg::GetConfig {})
+            .await?
+            .entries)
+    }
+}
+
+config::define_config!(
+    struct BeeConfig,
+    RegistrationEnable: bool = true,
+    NodeOfflineTimeout: Duration = Duration::from_secs(180),
+    ClientAutoRemoveTimeout: Duration = Duration::from_secs(30 * 60),
+    QuotaEnable: bool = false,
+    QuotaUserIDs: HashSet<QuotaID> = HashSet::new(),
+    QuotaGroupIDs: HashSet<QuotaID> = HashSet::new(),
+    QuotaUpdateInterval: Duration = Duration::from_secs(30),
+    CapPoolMetaLimits: CapPoolLimits = CapPoolLimits {
+        inode_low: 10 * 1000 * 1000,
+        inode_emergency: 1000 * 1000,
+        space_low: 10 * 1024 * 1024 * 1024,
+        space_emergency: 3 * 1024 * 1024 * 1024
+    },
+    CapPoolStorageLimits: CapPoolLimits = CapPoolLimits {
+        inode_low: 10 * 1000 * 1000,
+        inode_emergency: 1000 * 1000,
+        space_low: 512 * 1024 * 1024 * 1024,
+        space_emergency: 10 * 1024 * 1024 * 1024
+    },
+);

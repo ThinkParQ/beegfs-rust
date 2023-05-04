@@ -1,0 +1,11 @@
+[Unit]
+Description=BeeGFS managment service prototype
+Documentation=https://doc.beegfs.io
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=/opt/beegfs/sbin/beegfs-mgmtd --log-target=journald
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+group_imports = "One"
+imports_granularity = "Module"
+format_strings = true
+wrap_comments = true
+comment_width = 100

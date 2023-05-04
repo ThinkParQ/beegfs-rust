@@ -1,0 +1,21 @@
+[package]
+name = "net-test"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+description = "BeeGFS net-test is a framework for writing network API tests for BeeGFS nodes."
+readme = "README.md"
+homepage = "https://www.beegfs.io"
+publish = false
+
+[dependencies]
+shared = { path = "../shared" }
+macros = { path = "./macros" }
+mgmtd = { path = "../mgmtd" }
+
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+bytes = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true, features = ["time"] }

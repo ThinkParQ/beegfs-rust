@@ -1,0 +1,14 @@
+[package]
+name = "macros"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+description = "Contains proc macros used by beegfs-shared."
+homepage = "https://www.beegfs.io"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = {version = "^1", features = ["full"]}
+quote = "^1"
