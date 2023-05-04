@@ -18,7 +18,6 @@ pub(super) async fn handle(
             .execute_db(move |tx| {
                 db::nodes::set(
                     tx,
-                    true,
                     msg.node_num_id,
                     msg.node_type,
                     msg.node_alias,

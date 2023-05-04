@@ -17,11 +17,10 @@ async fn open_db() -> Handle {
 async fn set_get_node() {
     let db = open_db().await;
 
-    let sn = move |db: Handle, allow_new, id, alias: &'static str| async move {
+    let sn = move |db: Handle, id: NodeID, alias: &'static str| async move {
         db.execute(move |tx| {
             db::nodes::set(
                 tx,
-                allow_new,
                 id,
                 NodeType::Meta,
                 alias.into(),
@@ -32,20 +31,19 @@ async fn set_get_node() {
         .await
     };
 
-    sn(db.clone(), false, NodeID::ZERO, "1").await.unwrap_err();
-    sn(db.clone(), false, NodeID::from(2), "2")
-        .await
-        .unwrap_err();
-    sn(db.clone(), true, NodeID::from(2), "3").await.unwrap();
-    sn(db.clone(), true, NodeID::ZERO, "4").await.unwrap();
-    sn(db.clone(), false, NodeID::from(2), "5").await.unwrap();
+    sn(db.clone(), NodeID::ZERO, "1").await.unwrap();
+    sn(db.clone(), NodeID::from(2), "2").await.unwrap();
+    sn(db.clone(), NodeID::from(2), "3").await.unwrap();
+    sn(db.clone(), NodeID::ZERO, "4").await.unwrap();
+    sn(db.clone(), NodeID::from(2), "5").await.unwrap();
+    sn(db.clone(), NodeID::ZERO, "4").await.unwrap_err();
 
     let nodes = db
         .execute(|tx| db::nodes::with_type(tx, NodeType::Meta))
         .await
         .unwrap();
 
-    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes.len(), 3);
     assert!(nodes.iter().any(|e| e.id == NodeID::from(2)));
     assert!(nodes.iter().any(|e| e.id == NodeID::from(3)));
 }
@@ -56,7 +54,6 @@ async fn bench_setup() -> Handle {
     db.execute(|tx| {
         db::nodes::set(
             tx,
-            true,
             NodeID::from(2),
             NodeType::Storage,
             "alias".into(),
@@ -104,7 +101,6 @@ fn bench_set_node(b: &mut Bencher) {
             db.execute(move |tx| {
                 db::nodes::set(
                     tx,
-                    false,
                     NodeID::from(2),
                     NodeType::Storage,
                     "alias".into(),

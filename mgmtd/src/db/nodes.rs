@@ -49,7 +49,6 @@ fn get_uid(tx: &mut Transaction, id: NodeID, node_type: NodeType) -> Result<Node
 
 pub(crate) fn set(
     tx: &mut Transaction,
-    allow_new: bool,
     node_id: NodeID,
     node_type: NodeType,
     new_alias: EntityAlias,
@@ -57,10 +56,6 @@ pub(crate) fn set(
     new_nic_list: Vec<Nic>,
 ) -> Result<NodeID> {
     let node_id = if node_id == NodeID::ZERO {
-        if !allow_new {
-            bail!("Missing node ID");
-        }
-
         misc::find_new_id(
             tx,
             &format!("{}_nodes", node_type.as_sql_str()),
@@ -88,10 +83,6 @@ pub(crate) fn set(
     // Doesn't exist (yet)
     if 0 == updated {
         {
-            if !allow_new {
-                bail!(format!("Node {node_id} not found"));
-            }
-
             // try to insert
             let mut stmt = tx.prepare_cached(
                 r#"
