@@ -3,10 +3,10 @@ use rusqlite::OptionalExtension;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DefaultLimits {
-    pub user_space_limit: Option<QuotaSpace>,
-    pub user_inode_limit: Option<QuotaInodes>,
-    pub group_space_limit: Option<QuotaSpace>,
-    pub group_inode_limit: Option<QuotaInodes>,
+    pub user_space_limit: Option<Space>,
+    pub user_inode_limit: Option<Inodes>,
+    pub group_space_limit: Option<Space>,
+    pub group_inode_limit: Option<Inodes>,
 }
 
 pub(crate) fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
@@ -36,8 +36,8 @@ pub(crate) fn update(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-    space: Option<QuotaSpace>,
-    inodes: Option<QuotaInodes>,
+    space: Option<Space>,
+    inodes: Option<Inodes>,
 ) -> Result<()> {
     let mut stmt = tx.prepare_cached(
         r#"

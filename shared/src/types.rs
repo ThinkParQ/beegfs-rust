@@ -11,6 +11,7 @@ mod pool;
 pub use pool::*;
 mod quota;
 pub use quota::*;
+use serde::{Deserialize, Serialize};
 mod target;
 
 use crate::bee_serde::{self, *};
@@ -280,3 +281,47 @@ impl AuthenticationSecret {
         Self(hash)
     }
 }
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    BeeSerde,
+)]
+pub struct Space(u64);
+
+impl Space {
+    pub const ZERO: Self = Self(0);
+}
+
+impl_newtype_to_sql!(Space => u64);
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    BeeSerde,
+)]
+pub struct Inodes(u64);
+
+impl Inodes {
+    pub const ZERO: Self = Self(0);
+}
+
+impl_newtype_to_sql!(Inodes => u64);

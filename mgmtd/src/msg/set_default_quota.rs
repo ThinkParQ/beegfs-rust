@@ -12,11 +12,11 @@ pub(super) async fn handle(
                 msg.pool_id,
                 msg.id_type,
                 match msg.space {
-                    QuotaSpace::ZERO => None,
+                    Space::ZERO => None,
                     n => Some(n),
                 },
                 match msg.inodes {
-                    QuotaInodes::ZERO => None,
+                    Inodes::ZERO => None,
                     n => Some(n),
                 },
             )

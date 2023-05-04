@@ -3,8 +3,8 @@ use super::*;
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetDefaultQuota {
     pub pool_id: StoragePoolID,
-    pub space: QuotaSpace,
-    pub inodes: QuotaInodes,
+    pub space: Space,
+    pub inodes: Inodes,
     #[bee_serde(as = Int<i32>)]
     pub id_type: QuotaIDType,
 }

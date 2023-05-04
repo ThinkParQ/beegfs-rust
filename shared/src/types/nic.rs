@@ -32,7 +32,7 @@ impl Default for Nic {
 
 impl bee_serde::BeeSerde for Nic {
     fn serialize(&self, ser: &mut bee_serde::Serializer<'_>) -> Result<()> {
-        u32::from_le_bytes(self.addr.octets()).serialize(ser)?;
+        ser.u32(u32::from_le_bytes(self.addr.octets()))?;
 
         let alias = self.alias.as_ref();
         if alias.len() > 16 {
@@ -48,7 +48,7 @@ impl bee_serde::BeeSerde for Nic {
 
     fn deserialize(des: &mut bee_serde::Deserializer<'_>) -> Result<Self> {
         let s = Self {
-            addr: u32::deserialize(des)?.to_le_bytes().into(),
+            addr: des.u32()?.to_le_bytes().into(),
             alias: des.bytes(16)?.try_into()?,
             nic_type: des.u8()?.try_into()?,
         };
