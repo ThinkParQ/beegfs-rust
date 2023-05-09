@@ -20,13 +20,35 @@ quota_group_ids = []
 quota_update_interval = "30s"
 
 [cap_pool_meta_limits]
-inode_low = "10M"
-inode_emergency = "1M"
+inodes_low = "10M"
+inodes_emergency = "1M"
 space_low = "10GiB"
 space_emergency = "3GiB"
 
+# Uncommenting enables dynamic meta capacity pools
+# [cap_pool_dynamic_meta_limits]
+# inodes_normal_threshold = "10M"
+# inodes_low_threshold = "1M"
+# space_normal_threshold = "10GiB"
+# space_low_threshold = "3GiB"
+# inodes_low = "20M"
+# inodes_emergency = "2M"
+# space_low = "20GiB"
+# space_emergency = "6GiB"
+
 [cap_pool_storage_limits]
-inode_low = "10M"
-inode_emergency = "1M"
+inodes_low = "10M"
+inodes_emergency = "1M"
 space_low = "512GiB"
 space_emergency = "10GiB"
+
+# Uncommenting enables dynamic storage capacity pools
+# [cap_pool_dynamic_storage_limits]
+# inodes_normal_threshold = "10M"
+# inodes_low_threshold = "1M"
+# space_normal_threshold = "512GiB"
+# space_low_threshold = "10GiB"
+# inodes_low = "20M"
+# inodes_emergency = "2M"
+# space_low = "1024GiB"
+# space_emergency = "20GiB"

@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 mod target;
 
 use crate::bee_serde::{self, *};
+use crate::parser::integer_with_generic_unit;
 use crate::{impl_enum_to_int, impl_enum_to_sql_str, impl_enum_to_user_str, impl_newtype_to_sql};
 use anyhow::{bail, Result};
 use core::hash::Hash;
@@ -52,6 +53,8 @@ macro_rules! impl_enum_to_int {
         impl_enum_to_int!(INT_VARIANT $type => i32, $($variant => $number),+);
         impl_enum_to_int!(INT_VARIANT $type => u64, $($variant => $number),+);
         impl_enum_to_int!(INT_VARIANT $type => i64, $($variant => $number),+);
+        impl_enum_to_int!(INT_VARIANT $type => usize, $($variant => $number),+);
+        impl_enum_to_int!(INT_VARIANT $type => isize, $($variant => $number),+);
     };
 
     (INT_VARIANT $type:ty => $int_type:ty, $($variant:ident => $number:literal),+) => {
@@ -296,10 +299,22 @@ impl AuthenticationSecret {
     Deserialize,
     BeeSerde,
 )]
-pub struct Space(u64);
+pub struct Space(#[serde(with = "integer_with_generic_unit")] u64);
 
 impl Space {
     pub const ZERO: Self = Self(0);
+}
+
+impl From<u64> for Space {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Space> for u64 {
+    fn from(value: Space) -> u64 {
+        value.0
+    }
 }
 
 impl_newtype_to_sql!(Space => u64);
@@ -318,10 +333,23 @@ impl_newtype_to_sql!(Space => u64);
     Deserialize,
     BeeSerde,
 )]
-pub struct Inodes(u64);
+
+pub struct Inodes(#[serde(with = "integer_with_generic_unit")] u64);
 
 impl Inodes {
     pub const ZERO: Self = Self(0);
+}
+
+impl From<u64> for Inodes {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Inodes> for u64 {
+    fn from(value: Inodes) -> u64 {
+        value.0
+    }
 }
 
 impl_newtype_to_sql!(Inodes => u64);

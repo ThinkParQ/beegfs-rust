@@ -1,7 +1,7 @@
+use crate::db;
 use crate::notification::Notification;
-use crate::{db, logic};
 use ::config::{ConfigError, ConfigMap, Field};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use rusqlite::Transaction;
 use shared::config::BeeConfig;

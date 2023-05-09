@@ -5,7 +5,7 @@ use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use shared::parser::integer_with_time_unit;
-use shared::{config, CapPoolLimits, Port, QuotaID};
+use shared::{config, CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -233,6 +233,8 @@ pub struct RuntimeConfig {
     quota_update_interval: Duration,
     cap_pool_meta_limits: CapPoolLimits,
     cap_pool_storage_limits: CapPoolLimits,
+    cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits>,
+    cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits>,
 }
 
 impl RuntimeConfig {
@@ -273,6 +275,16 @@ impl RuntimeConfig {
             (
                 config::CapPoolStorageLimits::KEY.into(),
                 config::CapPoolStorageLimits::serialize(&self.cap_pool_storage_limits)?,
+            ),
+            (
+                config::CapPoolDynamicMetaLimits::KEY.into(),
+                config::CapPoolDynamicMetaLimits::serialize(&self.cap_pool_dynamic_meta_limits)?,
+            ),
+            (
+                config::CapPoolDynamicStorageLimits::KEY.into(),
+                config::CapPoolDynamicStorageLimits::serialize(
+                    &self.cap_pool_dynamic_storage_limits,
+                )?,
             ),
         ]
         .into();

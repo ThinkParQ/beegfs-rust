@@ -125,12 +125,14 @@ impl CommandExecutor {
                         NodeTypeServer::Storage => self.config.get::<CapPoolStorageLimits>(),
                     };
 
-                    limits.inode_low = inode_low_limit.unwrap_or(limits.inode_low);
-                    limits.inode_emergency =
-                        inode_emergency_limit.unwrap_or(limits.inode_emergency);
-                    limits.space_low = space_low_limit.unwrap_or(limits.space_low);
-                    limits.space_emergency =
-                        space_emergency_limit.unwrap_or(limits.space_emergency);
+                    limits.inodes_low = inode_low_limit.unwrap_or(limits.inodes_low.into()).into();
+                    limits.inodes_emergency = inode_emergency_limit
+                        .unwrap_or(limits.inodes_emergency.into())
+                        .into();
+                    limits.space_low = space_low_limit.unwrap_or(limits.space_low.into()).into();
+                    limits.space_emergency = space_emergency_limit
+                        .unwrap_or(limits.space_emergency.into())
+                        .into();
 
                     match node_type {
                         NodeTypeServer::Meta => self.set_config::<CapPoolMetaLimits>(limits).await,

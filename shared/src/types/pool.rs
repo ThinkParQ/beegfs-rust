@@ -1,5 +1,4 @@
 use super::*;
-use crate::parser::integer_with_generic_unit;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -41,9 +40,9 @@ impl TryFrom<Option<StoragePoolID>> for StoragePoolID {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CapacityPool {
-    Normal = 0,
-    Low = 1,
-    Emergency = 2,
+    Normal,
+    Low,
+    Emergency,
 }
 
 impl CapacityPool {
@@ -52,14 +51,24 @@ impl CapacityPool {
     }
 }
 
+impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapPoolLimits {
-    #[serde(with = "integer_with_generic_unit")]
-    pub inode_low: u64,
-    #[serde(with = "integer_with_generic_unit")]
-    pub inode_emergency: u64,
-    #[serde(with = "integer_with_generic_unit")]
-    pub space_low: u64,
-    #[serde(with = "integer_with_generic_unit")]
-    pub space_emergency: u64,
+    pub inodes_low: Inodes,
+    pub inodes_emergency: Inodes,
+    pub space_low: Space,
+    pub space_emergency: Space,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CapPoolDynamicLimits {
+    pub inodes_normal_threshold: Inodes,
+    pub inodes_low_threshold: Inodes,
+    pub space_normal_threshold: Space,
+    pub space_low_threshold: Space,
+    pub inodes_low: Inodes,
+    pub inodes_emergency: Inodes,
+    pub space_low: Space,
+    pub space_emergency: Space,
 }

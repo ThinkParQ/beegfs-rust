@@ -18,20 +18,28 @@ CREATE VIEW all_nodes_v AS
 
 CREATE VIEW meta_targets_v AS
     SELECT t.*, mt.target_id, mn.node_id, NULL AS pool_id, n.node_uid,
+        mgp.buddy_group_id AS primary_of,
+        mgs.buddy_group_id AS secondary_of,
         (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact)) AS last_contact_s
     FROM targets AS t
     INNER JOIN meta_targets AS mt USING(target_uid)
     INNER JOIN meta_nodes AS mn USING(node_id)
     INNER JOIN nodes AS n USING(node_uid)
+    LEFT JOIN meta_buddy_groups AS mgp ON mgp.primary_target_id = mt.target_id
+    LEFT JOIN meta_buddy_groups AS mgs ON mgs.secondary_target_id = mt.target_id
 ;
 
 CREATE VIEW storage_targets_v AS
     SELECT t.*, st.target_id, sn.node_id, st.pool_id, n.node_uid,
+        sgp.buddy_group_id AS primary_of,
+        sgs.buddy_group_id AS secondary_of,
         (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact)) AS last_contact_s
     FROM targets AS t
     INNER JOIN storage_targets AS st USING(target_uid)
     INNER JOIN storage_nodes AS sn USING(node_id)
     INNER JOIN nodes AS n USING(node_uid)
+    LEFT JOIN storage_buddy_groups AS sgp ON sgp.primary_target_id = st.target_id
+    LEFT JOIN storage_buddy_groups AS sgs ON sgs.secondary_target_id = st.target_id
 ;
 
 CREATE VIEW all_targets_v AS
@@ -51,10 +59,10 @@ CREATE VIEW all_buddy_groups_v AS
         INNER JOIN storage_buddy_groups AS sb USING(buddy_group_uid)
     )
     SELECT g.*,
-        pt.target_id AS primary_target_id, pt.node_id AS primary_node_id,
+        pt.target_uid AS primary_target_uid, pt.node_id AS primary_node_id,
         pt.free_space AS primary_free_space, pt.free_inodes AS primary_free_inodes,
         pt.last_contact_s AS primary_last_contact_s, pt.consistency AS primary_consistency,
-        st.target_id AS secondary_target_id, st.node_id AS secondary_node_id,
+        st.target_uid AS secondary_target_uid, st.node_id AS secondary_node_id,
         st.free_space AS secondary_free_space, st.free_inodes AS secondary_free_inodes,
         st.last_contact_s AS secondary_last_contact_s, st.consistency AS secondary_consistency
     FROM merged_groups AS g

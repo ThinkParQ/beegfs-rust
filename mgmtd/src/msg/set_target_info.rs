@@ -28,21 +28,12 @@ pub(super) async fn handle(
         })
         .await
     {
-        Ok(old_capacities) => {
+        Ok(_) => {
             log::info!("Updated {} target info", node_type,);
 
-            // if pool allocation changed, notify nodes to refresh
-            if old_capacities.iter().any(|e| {
-                let cap_pool = match node_type {
-                    NodeTypeServer::Meta => hnd.get_config::<config::CapPoolMetaLimits>(),
-                    NodeTypeServer::Storage => hnd.get_config::<config::CapPoolStorageLimits>(),
-                };
-                logic::calc_cap_pool(&cap_pool, e.1.free_space, e.1.free_inodes)
-                    != logic::calc_cap_pool(&cap_pool, e.1.free_space, e.1.free_inodes)
-            }) {
-                hnd.notify_nodes(&msg::RefreshCapacityPools { ack_id: "".into() })
-                    .await;
-            }
+            // in the old mgmtd, a notice to refresh cap pools is sent out here if a cap pool
+            // changed I consider this being to expensive to check here and just don't
+            // do it. Nodes refresh their cap pool every two minutes (by default) anyway
 
             chn.respond(&msg::SetTargetInfoResp {
                 result: OpsErr::SUCCESS,

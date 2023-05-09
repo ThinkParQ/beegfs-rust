@@ -1,5 +1,4 @@
 use super::*;
-use crate::logic;
 use shared::msg::types::CapacityPoolQueryType;
 
 pub(super) async fn handle(
@@ -8,53 +7,46 @@ pub(super) async fn handle(
     hnd: impl ComponentHandles,
 ) -> Result<()> {
     let pools = match async move {
-        // We return a raw u16 here as ID because BeeGFS expects a u16 that can be
-        // either a NodeNUmID, TargetNumID or BuddyGroupID here in the new code.
+        // We return raw u16 here as ID because BeeGFS expects a u16 that can be
+        // either a NodeNUmID, TargetNumID or BuddyGroupID
 
         let result: HashMap<StoragePoolID, Vec<Vec<u16>>> = match msg.query_type {
             CapacityPoolQueryType::Meta => {
-                let targets = hnd
-                    .execute_db(move |tx| db::targets::with_type(tx, NodeTypeServer::Meta))
+                let cap_pool_cfg = hnd.get_config::<config::CapPoolMetaLimits>();
+                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicMetaLimits>();
+
+                let res = hnd
+                    .execute_db(move |tx| {
+                        db::cap_pools::for_meta_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
+                    })
                     .await?;
 
                 let mut target_cap_pools = vec![Vec::<u16>::new(), vec![], vec![]];
-                let cap_pool_cfg = hnd.get_config::<config::CapPoolMetaLimits>();
 
-                for t in &targets {
-                    let cap_pool =
-                        logic::calc_cap_pool(&cap_pool_cfg, t.free_space, t.free_inodes) as usize;
-
-                    target_cap_pools[cap_pool].push(t.target_id.into());
+                for t in res {
+                    target_cap_pools[usize::from(t.cap_pool)].push(t.entity_id);
                 }
 
                 [(StoragePoolID::ZERO, target_cap_pools)].into()
             }
             CapacityPoolQueryType::Storage => {
-                let targets = hnd
-                    .execute_db(move |tx| db::targets::with_type(tx, NodeTypeServer::Storage))
+                let cap_pool_cfg = hnd.get_config::<config::CapPoolStorageLimits>();
+                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicStorageLimits>();
+
+                let res = hnd
+                    .execute_db(move |tx| {
+                        db::cap_pools::for_storage_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
+                    })
                     .await?;
 
                 let mut group_cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
-                for t in &targets {
-                    let cap_pool = logic::calc_cap_pool(
-                        &hnd.get_config::<config::CapPoolStorageLimits>(),
-                        t.free_space,
-                        t.free_inodes,
-                    ) as usize;
-
-                    if let Some(pool_groups) = group_cap_pools.get_mut(
-                        &t.pool_id
-                            .ok_or_else(|| anyhow!("Missing pool_id on storage target"))?,
-                    ) {
-                        pool_groups[cap_pool].push(t.target_id.into());
+                for t in res {
+                    if let Some(pool_groups) = group_cap_pools.get_mut(&t.pool_id) {
+                        pool_groups[usize::from(t.cap_pool)].push(t.entity_id);
                     } else {
                         let mut pool_groups = [vec![], vec![], vec![]];
-                        pool_groups[cap_pool].push(t.target_id.into());
-                        group_cap_pools.insert(
-                            t.pool_id
-                                .ok_or_else(|| anyhow!("Missing pool_id on storage target"))?,
-                            pool_groups.into(),
-                        );
+                        pool_groups[usize::from(t.cap_pool)].push(t.entity_id);
+                        group_cap_pools.insert(t.pool_id, pool_groups.into());
                     }
                 }
 
@@ -62,63 +54,45 @@ pub(super) async fn handle(
             }
 
             CapacityPoolQueryType::MetaMirrored => {
-                let hnd2 = hnd.clone();
-                let groups = hnd
-                    .execute_db(move |tx| db::buddy_groups::with_type(tx, NodeTypeServer::Meta))
+                let cap_pool_cfg = hnd.get_config::<config::CapPoolMetaLimits>();
+                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicMetaLimits>();
+
+                let res = hnd
+                    .execute_db(move |tx| {
+                        db::cap_pools::for_meta_buddy_groups(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
+                    })
                     .await?;
 
                 let mut group_cap_pools = vec![Vec::<u16>::new(), vec![], vec![]];
-                for g in groups.into_iter() {
-                    let cap_pool_1 = logic::calc_cap_pool(
-                        &hnd2.get_config::<config::CapPoolMetaLimits>(),
-                        g.primary_free_space,
-                        g.primary_free_inodes,
-                    );
-
-                    let cap_pool_2 = logic::calc_cap_pool(
-                        &hnd2.get_config::<config::CapPoolMetaLimits>(),
-                        g.secondary_free_space,
-                        g.secondary_free_inodes,
-                    );
-
-                    let lowest_cap_pool = CapacityPool::lowest(cap_pool_1, cap_pool_2);
-
-                    group_cap_pools[lowest_cap_pool as usize].push(g.id.into());
+                for g in res {
+                    group_cap_pools[usize::from(g.cap_pool)].push(g.entity_id);
                 }
 
                 [(StoragePoolID::ZERO, group_cap_pools)].into()
             }
 
             CapacityPoolQueryType::StorageMirrored => {
-                let hnd2 = hnd.clone();
-                let groups = hnd
-                    .execute_db(move |tx| db::buddy_groups::with_type(tx, NodeTypeServer::Storage))
+                let cap_pool_cfg = hnd.get_config::<config::CapPoolStorageLimits>();
+                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicStorageLimits>();
+
+                let res = hnd
+                    .execute_db(move |tx| {
+                        db::cap_pools::for_storage_buddy_groups(
+                            tx,
+                            cap_pool_cfg,
+                            cap_pool_dynamic_cfg,
+                        )
+                    })
                     .await?;
 
                 let mut group_cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
-                for g in groups.into_iter() {
-                    let cap_pool_1 = logic::calc_cap_pool(
-                        &hnd2.get_config::<config::CapPoolStorageLimits>(),
-                        g.primary_free_space,
-                        g.primary_free_inodes,
-                    );
-
-                    let cap_pool_2 = logic::calc_cap_pool(
-                        &hnd2.get_config::<config::CapPoolStorageLimits>(),
-                        g.secondary_free_space,
-                        g.secondary_free_inodes,
-                    );
-
-                    let lowest_cap_pool = CapacityPool::lowest(cap_pool_1, cap_pool_2);
-
-                    let pool_id = g.pool_id.try_into()?;
-
-                    if let Some(pool_groups) = group_cap_pools.get_mut(&pool_id) {
-                        pool_groups[lowest_cap_pool as usize].push(g.id.into());
+                for g in res {
+                    if let Some(pool_groups) = group_cap_pools.get_mut(&g.pool_id) {
+                        pool_groups[usize::from(g.cap_pool)].push(g.entity_id);
                     } else {
                         let mut pool_groups = [vec![], vec![], vec![]];
-                        pool_groups[lowest_cap_pool as usize].push(u16::from(g.id));
-                        group_cap_pools.insert(pool_id, pool_groups.into());
+                        pool_groups[usize::from(g.cap_pool)].push(g.entity_id);
+                        group_cap_pools.insert(g.pool_id, pool_groups.into());
                     }
                 }
 
