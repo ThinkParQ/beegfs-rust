@@ -138,6 +138,10 @@ struct SplitBuffers<'a> {
 
 impl<'a> SplitBuffers<'a> {
     fn from(buf: &'a mut BytesMut) -> Self {
+        if buf.capacity() < Header::LEN {
+            buf.reserve(Header::LEN);
+        }
+
         let body = buf.split_off(Header::LEN);
         Self { header: buf, body }
     }
