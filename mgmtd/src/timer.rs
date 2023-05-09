@@ -172,7 +172,6 @@ async fn update_quota_inner(
         .execute(db::quota_entries::exceeded_quota_entries)
         .await?
     {
-        log::warn!("SET EXCEEDED QUOTA");
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
                 && e.id_type == last.id_type

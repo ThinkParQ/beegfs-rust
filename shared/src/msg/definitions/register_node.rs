@@ -12,8 +12,7 @@ pub struct RegisterNode {
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
     pub node_num_id: NodeID,
-    #[bee_serde(as = Int<u32>)]
-    pub root_num_id: NodeID,
+    pub root_num_id: u32,
     #[bee_serde(as = BoolAsInt<u8>)]
     pub is_root_mirrored: bool,
     pub port: Port,

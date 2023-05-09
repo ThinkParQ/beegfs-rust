@@ -49,6 +49,7 @@ fn get_uid(tx: &mut Transaction, id: NodeID, node_type: NodeType) -> Result<Node
 
 pub(crate) fn set(
     tx: &mut Transaction,
+    enable_registration: bool,
     node_id: NodeID,
     node_type: NodeType,
     new_alias: EntityAlias,
@@ -83,6 +84,10 @@ pub(crate) fn set(
     // Doesn't exist (yet)
     if 0 == updated {
         {
+            if !enable_registration {
+                bail!("Registration of new nodes is not allowed");
+            }
+
             // try to insert
             let mut stmt = tx.prepare_cached(
                 r#"

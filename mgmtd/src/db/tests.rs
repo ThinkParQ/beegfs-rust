@@ -17,10 +17,11 @@ async fn open_db() -> Handle {
 async fn set_get_node() {
     let db = open_db().await;
 
-    let sn = move |db: Handle, id: NodeID, alias: &'static str| async move {
+    let sn = move |db: Handle, id: NodeID, alias: &'static str, enable_registration: bool| async move {
         db.execute(move |tx| {
             db::nodes::set(
                 tx,
+                enable_registration,
                 id,
                 NodeType::Meta,
                 alias.into(),
@@ -31,12 +32,14 @@ async fn set_get_node() {
         .await
     };
 
-    sn(db.clone(), NodeID::ZERO, "1").await.unwrap();
-    sn(db.clone(), NodeID::from(2), "2").await.unwrap();
-    sn(db.clone(), NodeID::from(2), "3").await.unwrap();
-    sn(db.clone(), NodeID::ZERO, "4").await.unwrap();
-    sn(db.clone(), NodeID::from(2), "5").await.unwrap();
-    sn(db.clone(), NodeID::ZERO, "4").await.unwrap_err();
+    sn(db.clone(), NodeID::ZERO, "1", true).await.unwrap();
+    sn(db.clone(), NodeID::from(2), "2", true).await.unwrap();
+    sn(db.clone(), NodeID::from(2), "2", false).await.unwrap();
+    sn(db.clone(), NodeID::from(2), "3", true).await.unwrap();
+    sn(db.clone(), NodeID::ZERO, "4", true).await.unwrap();
+    sn(db.clone(), NodeID::from(2), "5", true).await.unwrap();
+    sn(db.clone(), NodeID::ZERO, "4", true).await.unwrap_err();
+    sn(db.clone(), NodeID::ZERO, "6", false).await.unwrap_err();
 
     let nodes = db
         .execute(|tx| db::nodes::with_type(tx, NodeType::Meta))
@@ -54,6 +57,7 @@ async fn bench_setup() -> Handle {
     db.execute(|tx| {
         db::nodes::set(
             tx,
+            true,
             NodeID::from(2),
             NodeType::Storage,
             "alias".into(),
@@ -101,6 +105,7 @@ fn bench_set_node(b: &mut Bencher) {
             db.execute(move |tx| {
                 db::nodes::set(
                     tx,
+                    true,
                     NodeID::from(2),
                     NodeType::Storage,
                     "alias".into(),

@@ -53,7 +53,6 @@ pub(crate) enum MetaRoot {
 }
 
 pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
-    // try to get meta root from targets
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT mt.target_uid, mt.node_id, mn.node_uid, ri.buddy_group_id

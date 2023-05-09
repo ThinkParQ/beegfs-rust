@@ -19,10 +19,9 @@ pub struct Heartbeat {
     pub ack_id: AckID,
     #[bee_serde(as = Int<u32>)]
     pub node_num_id: NodeID,
-    // The root info is only relevant when sent from meta nodes. There it must contain the meta root nodes ID,
-    // but on other nodes it is just irrelevant and can be set to whatever.
+    // The root info is only relevant when sent from meta nodes. There it must contain the meta
+    // root nodes ID, but on other nodes it is just irrelevant and can be set to whatever.
     // Can be Node ID or BuddyGroup ID
-    #[bee_serde(as = Int<u32>)]
     pub root_num_id: u32,
     #[bee_serde(as = BoolAsInt<u8>)]
     pub is_root_mirrored: bool,

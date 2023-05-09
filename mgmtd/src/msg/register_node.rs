@@ -7,30 +7,39 @@ pub(super) async fn handle(
     chn: impl RequestChannel,
     hnd: impl ComponentHandles,
 ) -> Result<()> {
+    let node_id = process(msg, hnd).await;
+
+    chn.respond(&msg::RegisterNodeResp {
+        node_num_id: node_id,
+    })
+    .await
+}
+
+/// Processes incoming node information. Registeres new nodes if config allows it
+pub(super) async fn process(msg: msg::RegisterNode, hnd: impl ComponentHandles) -> NodeID {
     match async {
-        if !hnd.get_config::<RegistrationEnable>() {
-            bail!("Registration of new nodes is disabled");
-        }
-
         let msg = msg.clone();
+        let enable_registration = hnd.get_config::<RegistrationEnable>();
 
-        let node_id = hnd
+        let (node_id, meta_root) = hnd
             .execute_db(move |tx| {
-                db::nodes::set(
-                    tx,
-                    msg.node_num_id,
-                    msg.node_type,
-                    msg.node_alias,
-                    msg.port,
-                    msg.nic_list,
-                )
+                Ok((
+                    db::nodes::set(
+                        tx,
+                        enable_registration,
+                        msg.node_num_id,
+                        msg.node_type,
+                        msg.node_alias,
+                        msg.port,
+                        msg.nic_list,
+                    )?,
+                    match msg.node_type {
+                        NodeType::Meta => db::misc::get_meta_root(tx)?,
+                        _ => MetaRoot::Unknown,
+                    },
+                ))
             })
             .await?;
-
-        let meta_root = match msg.node_type {
-            NodeType::Meta => hnd.execute_db(db::misc::get_meta_root).await?,
-            _ => MetaRoot::Unknown,
-        };
 
         Ok((node_id, meta_root)) as Result<_>
     }
@@ -38,7 +47,7 @@ pub(super) async fn handle(
     {
         Ok((node_id, meta_root)) => {
             log::info!(
-                "Registered {} node with ID {} (Requested: {})",
+                "Processed {} node info from with ID {} (Requested: {})",
                 msg.node_type,
                 node_id,
                 msg.node_num_id,
@@ -67,23 +76,18 @@ pub(super) async fn handle(
             })
             .await;
 
-            chn.respond(&msg::RegisterNodeResp {
-                node_num_id: node_id,
-            })
-            .await
+            node_id
         }
+
         Err(err) => {
             log::error!(
-                "Registering {} node with requested ID {} failed:\n{:?}",
+                "Processing {} node info for ID {} failed:\n{:?}",
                 msg.node_type,
                 msg.node_num_id,
                 err
             );
 
-            chn.respond(&msg::RegisterNodeResp {
-                node_num_id: NodeID::ZERO,
-            })
-            .await
+            NodeID::ZERO
         }
     }
 }
