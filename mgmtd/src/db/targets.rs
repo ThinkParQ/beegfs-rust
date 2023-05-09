@@ -70,6 +70,14 @@ pub(crate) fn insert_meta(
         params![node_id, last_uid],
     )?;
 
+    // If this is the first meta target, set it as meta root
+    tx.execute(
+        r#"
+        INSERT OR IGNORE INTO root_inode (target_id) VALUES (?1)
+        "#,
+        params![node_id],
+    )?;
+
     Ok(())
 }
 
