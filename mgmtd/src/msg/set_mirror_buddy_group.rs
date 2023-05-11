@@ -31,7 +31,7 @@ pub(super) async fn handle(
 
             hnd.notify_nodes(&msg::SetMirrorBuddyGroup {
                 ack_id: "".into(),
-                node_type: NodeTypeServer::Storage,
+                node_type: msg.node_type,
                 primary_target: msg.primary_target,
                 secondary_target: msg.secondary_target,
                 buddy_group_id: actual_id,
