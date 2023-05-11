@@ -52,22 +52,30 @@ pub(crate) fn insert_meta(
     node_id: NodeID,
     alias: &EntityAlias,
 ) -> Result<()> {
-    tx.execute(
+    let mut stmt = tx.prepare_cached(
         r#"
-        INSERT INTO targets (node_type, alias)
-        VALUES ("meta", ?1)
+        INSERT INTO entities (entity_type) VALUES ("target")
         "#,
-        params![alias],
     )?;
 
-    let last_uid: TargetUID = tx.last_insert_rowid().into();
+    stmt.execute(params![])?;
+
+    let new_uid: TargetUID = tx.last_insert_rowid().into();
+
+    tx.execute(
+        r#"
+        INSERT INTO targets (target_uid, node_type, alias)
+        VALUES (?1, "meta", ?2)
+        "#,
+        params![new_uid, alias],
+    )?;
 
     tx.execute(
         r#"
         INSERT INTO meta_targets (target_id, target_uid, node_id)
         VALUES (?1, ?2, ?1)
         "#,
-        params![node_id, last_uid],
+        params![node_id, new_uid],
     )?;
 
     // If this is the first meta target, set it as meta root
@@ -87,12 +95,22 @@ pub(crate) fn insert_storage_if_new(
     alias: EntityAlias,
 ) -> Result<TargetID> {
     fn insert(tx: &mut Transaction, target_id: TargetID, alias: &EntityAlias) -> Result<()> {
+        let mut stmt = tx.prepare_cached(
+            r#"
+            INSERT INTO entities (entity_type) VALUES ("target")
+            "#,
+        )?;
+
+        stmt.execute(params![])?;
+
+        let new_uid: TargetUID = tx.last_insert_rowid().into();
+
         tx.execute(
             r#"
-            INSERT INTO targets (node_type, alias)
-            VALUES ("storage", ?1)
+            INSERT INTO targets (target_uid, node_type, alias)
+            VALUES (?1, "storage", ?2)
             "#,
-            params![alias,],
+            params![new_uid, alias,],
         )?;
 
         let last_uid: TargetUID = tx.last_insert_rowid().into();
@@ -281,16 +299,27 @@ pub(crate) fn get_and_update_capacities(
 }
 
 pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
-    let affected = tx.execute(
+    let target_uid: TargetUID = tx.query_row(
         r#"
-        DELETE FROM targets WHERE target_uid = (
-            SELECT target_uid FROM storage_targets_v WHERE target_id = ?1
-        )
+        SELECT target_uid FROM storage_targets_v WHERE target_id = ?1
         "#,
-        params![target_id],
+        [target_id],
+        |row| row.get(0),
     )?;
 
-    ensure_rows_modified!(affected, target_id);
+    tx.execute(
+        r#"
+        DELETE FROM targets WHERE target_uid = ?1
+        "#,
+        params![target_uid],
+    )?;
+
+    tx.execute(
+        r#"
+        DELETE FROM entities WHERE uid = ?1
+        "#,
+        [target_uid],
+    )?;
 
     Ok(())
 }

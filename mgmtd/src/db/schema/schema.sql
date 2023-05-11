@@ -1,7 +1,15 @@
 -- TODO: Indexes
 
+CREATE TABLE entities (
+    uid INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL
+        CHECK(entity_type IN ("node", "target", "buddy_group")),
+
+    UNIQUE(uid, entity_type)
+);
+
 CREATE TABLE nodes (
-    node_uid INTEGER PRIMARY KEY AUTOINCREMENT,
+    node_uid INTEGER PRIMARY KEY,
 
     alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0),
@@ -11,7 +19,10 @@ CREATE TABLE nodes (
 
     node_type TEXT NOT NULL
         CHECK (node_type IN ("meta", "storage", "client")),
-    UNIQUE(node_uid, node_type)
+    entity_type TEXT GENERATED ALWAYS AS ("node"),
+
+    UNIQUE(node_uid, node_type),
+    FOREIGN KEY (node_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE RESTRICT
 );
 
 CREATE TABLE meta_nodes (
@@ -55,7 +66,7 @@ CREATE TABLE node_nics (
 );
 
 CREATE TABLE targets (
-    target_uid INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_uid INTEGER PRIMARY KEY,
 
     alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0),
@@ -72,7 +83,10 @@ CREATE TABLE targets (
 
     node_type TEXT NOT NULL
         CHECK (node_type IN ("meta", "storage")),
-    UNIQUE(target_uid, node_type)
+    entity_type TEXT GENERATED ALWAYS AS ("target"),
+
+    UNIQUE(target_uid, node_type),
+    FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE RESTRICT
 );
 
 CREATE TABLE meta_targets (
@@ -124,11 +138,14 @@ BEGIN
 END;
 
 CREATE TABLE buddy_groups (
-    buddy_group_uid INTEGER PRIMARY KEY AUTOINCREMENT,
+    buddy_group_uid INTEGER PRIMARY KEY,
 
     node_type TEXT NOT NULL
         CHECK(node_type IN ("meta", "storage")),
-    UNIQUE(buddy_group_uid, node_type)
+    entity_type TEXT GENERATED ALWAYS AS ("buddy_group"),
+
+    UNIQUE(buddy_group_uid, node_type),
+    FOREIGN KEY (buddy_group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE RESTRICT
 );
 
 CREATE TABLE meta_buddy_groups (

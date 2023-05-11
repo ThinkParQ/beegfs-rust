@@ -1,5 +1,20 @@
 -- dummy data for testing operations on the database
 
+INSERT INTO entities VALUES
+    (11, "node"),
+    (12, "node"),
+    (13, "node"),
+    (14, "node"),
+    (21, "node"),
+    (22, "node"),
+    (23, "node"),
+    (24, "node"),
+    (31, "node"),
+    (32, "node"),
+    (33, "node"),
+    (34, "node")
+;
+
 INSERT INTO nodes VALUES
     (11, "meta_node_1", 8005, DATETIME("NOW"), "meta"),
     (12, "meta_node_2", 8005, DATETIME("NOW"), "meta"),
@@ -61,11 +76,27 @@ INSERT INTO storage_pools (pool_id, alias) VALUES
     (2, "storage_pool_2")
 ;
 
+INSERT INTO entities VALUES
+    (111, "target"),
+    (112, "target"),
+    (113, "target"),
+    (114, "target"),
+
+    (211, "target"),
+    (212, "target"),
+    (221, "target"),
+    (222, "target"),
+    (231, "target"),
+    (241, "target"),
+
+    (999, "target")
+;
+
 INSERT INTO targets VALUES
-    (11, "meta_target_1", 100000, 100, 10000, 10, "good", "meta"),
-    (12, "meta_target_2", 200000, 200, 20000, 20, "good", "meta"),
-    (13, "meta_target_3", 300000, 300, 30000, 30, "good", "meta"),
-    (14, "meta_target_4", 400000, 400, 40000, 40, "good", "meta"),
+    (111, "meta_target_1", 100000, 100, 10000, 10, "good", "meta"),
+    (112, "meta_target_2", 200000, 200, 20000, 20, "good", "meta"),
+    (113, "meta_target_3", 300000, 300, 30000, 30, "good", "meta"),
+    (114, "meta_target_4", 400000, 400, 40000, 40, "good", "meta"),
 
     (211, "storage_target_1_1", 1100000, 1100, 110000, 110, "good", "storage"),
     (212, "storage_target_1_2", 1200000, 1200, 120000, 120, "good", "storage"),
@@ -78,10 +109,10 @@ INSERT INTO targets VALUES
 ;
 
 INSERT INTO meta_targets (target_id, target_uid, node_id) VALUES
-    (1, 11, 1),
-    (2, 12, 2),
-    (3, 13, 3),
-    (4, 14, 4)
+    (1, 111, 1),
+    (2, 112, 2),
+    (3, 113, 3),
+    (4, 114, 4)
 ;
 
 INSERT INTO storage_targets (target_id, target_uid, node_id, pool_id) VALUES
@@ -95,19 +126,24 @@ INSERT INTO storage_targets (target_id, target_uid, node_id, pool_id) VALUES
     (99, 999, NULL, 1)
 ;
 
+INSERT INTO entities VALUES
+    (1001, "buddy_group"),
+    (2001, "buddy_group")
+;
+
 INSERT INTO buddy_groups VALUES
-    (11, "meta"),
-    (21, "storage")
+    (1001, "meta"),
+    (2001, "storage")
 ;
 
 INSERT INTO meta_buddy_groups (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id)
 VALUES
-    (1, 11, 3, 4)
+    (1, 1001, 3, 4)
 ;
 
 INSERT INTO storage_buddy_groups (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id, pool_id)
 VALUES
-    (1, 21, 31, 41, 1)
+    (2, 2001, 31, 41, 1)
 ;
 
 INSERT INTO root_inode VALUES

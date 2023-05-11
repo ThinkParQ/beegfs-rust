@@ -73,14 +73,22 @@ pub(crate) fn insert(
         .into()
     };
 
-    tx.execute(
+    let mut stmt = tx.prepare_cached(
         r#"
-        INSERT INTO buddy_groups (node_type) VALUES (?1)
+        INSERT INTO entities (entity_type) VALUES ("buddy_group")
         "#,
-        [node_type],
     )?;
 
-    let inserted_uid: BuddyGroupUID = tx.last_insert_rowid().into();
+    stmt.execute(params![])?;
+
+    let new_uid: BuddyGroupUID = tx.last_insert_rowid().into();
+
+    tx.execute(
+        r#"
+        INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES (?1, ?2)
+        "#,
+        params![new_uid, node_type],
+    )?;
 
     tx.execute(
         &format!(
@@ -101,7 +109,7 @@ pub(crate) fn insert(
                 ""
             },
         ),
-        params![new_id, inserted_uid, primary_target_id, secondary_target_id],
+        params![new_id, new_uid, primary_target_id, secondary_target_id],
     )?;
 
     Ok(new_id)
@@ -208,18 +216,28 @@ pub(crate) fn prepare_storage_deletion(
     Ok(node_uids)
 }
 
-pub(crate) fn delete_storage(tx: &mut Transaction, id: BuddyGroupID) -> Result<()> {
-    let affected = tx.execute(
+pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
+    let buddy_group_uid: BuddyGroupUID = tx.query_row(
         r#"
-        DELETE FROM buddy_groups
-        WHERE buddy_group_uid = (
-            SELECT buddy_group_uid FROM storage_buddy_groups WHERE buddy_group_id = ?1
-        )
+        SELECT buddy_group_uid FROM storage_buddy_groups WHERE buddy_group_id = ?1
         "#,
-        [id],
+        [buddy_group_id],
+        |row| row.get(0),
     )?;
 
-    ensure_rows_modified!(affected, id);
+    tx.execute(
+        r#"
+        DELETE FROM buddy_groups WHERE buddy_group_uid = ?1
+        "#,
+        [buddy_group_uid],
+    )?;
+
+    tx.execute(
+        r#"
+        DELETE FROM entities WHERE uid = ?1
+        "#,
+        [buddy_group_uid],
+    )?;
 
     Ok(())
 }

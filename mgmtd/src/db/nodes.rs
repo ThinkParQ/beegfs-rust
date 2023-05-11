@@ -91,14 +91,22 @@ pub(crate) fn set(
             // try to insert
             let mut stmt = tx.prepare_cached(
                 r#"
-            INSERT INTO nodes (node_type, alias, port, last_contact)
-            VALUES (?1, ?2, ?3, DATETIME('now'))
+                INSERT INTO entities (entity_type) VALUES ("node")
+                "#,
+            )?;
+
+            stmt.execute(params![])?;
+
+            let new_uid: NodeUID = tx.last_insert_rowid().into();
+
+            let mut stmt = tx.prepare_cached(
+                r#"
+            INSERT INTO nodes (node_uid, node_type, alias, port, last_contact)
+            VALUES (?1, ?2, ?3, ?4, DATETIME('now'))
             "#,
             )?;
 
-            stmt.execute(params![node_type, new_alias, new_port])?;
-
-            let new_uid: NodeUID = tx.last_insert_rowid().into();
+            stmt.execute(params![new_uid, node_type, new_alias, new_port])?;
 
             let mut stmt = tx.prepare_cached(&format!(
                 r#"
@@ -160,17 +168,28 @@ pub(crate) fn update_last_contact_for_targets(
     Ok(())
 }
 
-pub(crate) fn delete(tx: &mut Transaction, id: NodeID, node_type: NodeType) -> Result<()> {
-    let affected = tx.execute(
+pub(crate) fn delete(tx: &mut Transaction, node_id: NodeID, node_type: NodeType) -> Result<()> {
+    let node_uid: NodeUID = tx.query_row(
         r#"
-        DELETE FROM nodes WHERE node_uid = (
-            SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2
-        )
+        SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2
         "#,
-        params![id, node_type],
+        params![node_id, node_type],
+        |row| row.get(0),
     )?;
 
-    ensure_rows_modified!(affected, id, node_type);
+    tx.execute(
+        r#"
+        DELETE FROM nodes WHERE node_uid = ?1
+        "#,
+        params![node_uid],
+    )?;
+
+    tx.execute(
+        r#"
+        DELETE FROM entities WHERE uid = ?1
+        "#,
+        params![node_uid],
+    )?;
 
     Ok(())
 }
