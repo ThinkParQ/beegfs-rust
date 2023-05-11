@@ -78,10 +78,7 @@ pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
     )
 }
 
-pub(crate) fn enable_metadata_mirroring(
-    tx: &mut Transaction,
-    primary_target_uid: TargetUID,
-) -> Result<()> {
+pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     let affected = tx.execute(
         r#"
         UPDATE root_inode
@@ -91,7 +88,7 @@ pub(crate) fn enable_metadata_mirroring(
             INNER JOIN meta_buddy_groups AS mg ON mg.primary_target_id = ri.target_id
         )
         "#,
-        [primary_target_uid],
+        [],
     )?;
 
     ensure_rows_modified!(affected, ());

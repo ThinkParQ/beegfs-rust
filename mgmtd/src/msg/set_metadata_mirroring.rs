@@ -9,12 +9,11 @@ pub(super) async fn handle(
 ) -> Result<()> {
     match async {
         match hnd.execute_db(db::misc::get_meta_root).await? {
-            MetaRoot::Normal(target_uid, _, node_uid) => {
+            MetaRoot::Normal(_, _, node_uid) => {
                 let _: msg::SetMetadataMirroringResp =
                     hnd.request(PeerID::Node(node_uid), &msg).await?;
 
-                hnd.execute_db(move |tx| db::misc::enable_metadata_mirroring(tx, target_uid))
-                    .await?;
+                hnd.execute_db(db::misc::enable_metadata_mirroring).await?;
             }
             MetaRoot::Unknown => bail!("No root inode defined"),
             MetaRoot::Mirrored(_) => bail!("Root inode is already mirrored"),
