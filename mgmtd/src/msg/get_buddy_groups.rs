@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::GetMirrorBuddyGroups,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| db::buddy_groups::with_type(tx, msg.node_type))
         .await
     {
@@ -20,7 +20,7 @@ pub(super) async fn handle(
                 secondary_targets.push(g.secondary_target_id);
             }
 
-            chn.respond(&msg::GetMirrorBuddyGroupsResp {
+            rcc.respond(&msg::GetMirrorBuddyGroupsResp {
                 buddy_groups,
                 primary_targets,
                 secondary_targets,
@@ -29,7 +29,7 @@ pub(super) async fn handle(
         }
         Err(err) => {
             log::error!("Getting buddy groups failed:\n{:?}", err);
-            chn.respond(&msg::GetMirrorBuddyGroupsResp {
+            rcc.respond(&msg::GetMirrorBuddyGroupsResp {
                 buddy_groups: vec![],
                 primary_targets: vec![],
                 secondary_targets: vec![],

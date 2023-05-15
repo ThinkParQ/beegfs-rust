@@ -2,13 +2,13 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetTargetConsistencyStates,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     match async {
         let msg = msg.clone();
 
-        hnd.execute_db(move |tx| {
+        ci.execute_db(move |tx| {
             if msg.set_online {
                 db::nodes::update_last_contact_for_targets(
                     tx,
@@ -25,7 +25,7 @@ pub(super) async fn handle(
         })
         .await?;
 
-        hnd.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
+        ci.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
             .await;
 
         Ok(()) as Result<()>
@@ -34,7 +34,7 @@ pub(super) async fn handle(
     {
         Ok(_) => {
             log::info!("Set consistency state for targets {:?}", msg.targets,);
-            chn.respond(&msg::SetTargetConsistencyStatesResp {
+            rcc.respond(&msg::SetTargetConsistencyStatesResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -46,7 +46,7 @@ pub(super) async fn handle(
                 msg.targets,
                 err
             );
-            chn.respond(&msg::SetTargetConsistencyStatesResp {
+            rcc.respond(&msg::SetTargetConsistencyStatesResp {
                 result: OpsErr::INTERNAL,
             })
             .await

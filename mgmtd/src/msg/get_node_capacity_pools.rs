@@ -3,8 +3,8 @@ use shared::msg::types::CapacityPoolQueryType;
 
 pub(super) async fn handle(
     msg: msg::GetNodeCapacityPools,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     let pools = match async move {
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
@@ -12,10 +12,10 @@ pub(super) async fn handle(
 
         let result: HashMap<StoragePoolID, Vec<Vec<u16>>> = match msg.query_type {
             CapacityPoolQueryType::Meta => {
-                let cap_pool_cfg = hnd.get_config::<config::CapPoolMetaLimits>();
-                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicMetaLimits>();
+                let cap_pool_cfg = ci.get_config::<config::CapPoolMetaLimits>();
+                let cap_pool_dynamic_cfg = ci.get_config::<config::CapPoolDynamicMetaLimits>();
 
-                let res = hnd
+                let res = ci
                     .execute_db(move |tx| {
                         db::cap_pools::for_meta_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
                     })
@@ -30,10 +30,10 @@ pub(super) async fn handle(
                 [(StoragePoolID::ZERO, target_cap_pools)].into()
             }
             CapacityPoolQueryType::Storage => {
-                let cap_pool_cfg = hnd.get_config::<config::CapPoolStorageLimits>();
-                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicStorageLimits>();
+                let cap_pool_cfg = ci.get_config::<config::CapPoolStorageLimits>();
+                let cap_pool_dynamic_cfg = ci.get_config::<config::CapPoolDynamicStorageLimits>();
 
-                let res = hnd
+                let res = ci
                     .execute_db(move |tx| {
                         db::cap_pools::for_storage_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
                     })
@@ -54,10 +54,10 @@ pub(super) async fn handle(
             }
 
             CapacityPoolQueryType::MetaMirrored => {
-                let cap_pool_cfg = hnd.get_config::<config::CapPoolMetaLimits>();
-                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicMetaLimits>();
+                let cap_pool_cfg = ci.get_config::<config::CapPoolMetaLimits>();
+                let cap_pool_dynamic_cfg = ci.get_config::<config::CapPoolDynamicMetaLimits>();
 
-                let res = hnd
+                let res = ci
                     .execute_db(move |tx| {
                         db::cap_pools::for_meta_buddy_groups(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
                     })
@@ -72,10 +72,10 @@ pub(super) async fn handle(
             }
 
             CapacityPoolQueryType::StorageMirrored => {
-                let cap_pool_cfg = hnd.get_config::<config::CapPoolStorageLimits>();
-                let cap_pool_dynamic_cfg = hnd.get_config::<config::CapPoolDynamicStorageLimits>();
+                let cap_pool_cfg = ci.get_config::<config::CapPoolStorageLimits>();
+                let cap_pool_dynamic_cfg = ci.get_config::<config::CapPoolDynamicStorageLimits>();
 
-                let res = hnd
+                let res = ci
                     .execute_db(move |tx| {
                         db::cap_pools::for_storage_buddy_groups(
                             tx,
@@ -115,5 +115,5 @@ pub(super) async fn handle(
         }
     };
 
-    chn.respond(&msg::GetNodeCapacityPoolsResp { pools }).await
+    rcc.respond(&msg::GetNodeCapacityPoolsResp { pools }).await
 }

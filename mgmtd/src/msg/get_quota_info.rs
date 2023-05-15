@@ -3,12 +3,12 @@ use shared::msg::types::{QuotaInodeSupport, QuotaQueryType};
 
 pub(super) async fn handle(
     msg: msg::GetQuotaInfo,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     let pool_id = msg.pool_id;
 
-    match hnd
+    match ci
         .execute_db(move |tx| {
             let limits = match msg.query_type {
                 QuotaQueryType::None => return Ok(vec![]),
@@ -50,7 +50,7 @@ pub(super) async fn handle(
         .await
     {
         Ok(data) => {
-            chn.respond(&msg::GetQuotaInfoResp {
+            rcc.respond(&msg::GetQuotaInfoResp {
                 quota_inode_support: QuotaInodeSupport::Unknown,
                 quota_entry: data,
             })
@@ -63,7 +63,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::GetQuotaInfoResp {
+            rcc.respond(&msg::GetQuotaInfoResp {
                 quota_inode_support: QuotaInodeSupport::Unknown,
                 quota_entry: vec![],
             })

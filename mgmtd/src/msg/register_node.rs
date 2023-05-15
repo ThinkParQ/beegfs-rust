@@ -4,24 +4,24 @@ use shared::config::RegistrationEnable;
 
 pub(super) async fn handle(
     msg: msg::RegisterNode,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    let node_id = process(msg, hnd).await;
+    let node_id = process(msg, ci).await;
 
-    chn.respond(&msg::RegisterNodeResp {
+    rcc.respond(&msg::RegisterNodeResp {
         node_num_id: node_id,
     })
     .await
 }
 
 /// Processes incoming node information. Registeres new nodes if config allows it
-pub(super) async fn process(msg: msg::RegisterNode, hnd: impl ComponentHandles) -> NodeID {
+pub(super) async fn process(msg: msg::RegisterNode, ci: impl ComponentInteractor) -> NodeID {
     match async {
         let msg = msg.clone();
-        let enable_registration = hnd.get_config::<RegistrationEnable>();
+        let enable_registration = ci.get_config::<RegistrationEnable>();
 
-        let (node_id, meta_root) = hnd
+        let (node_id, meta_root) = ci
             .execute_db(move |tx| {
                 Ok((
                     db::nodes::set(
@@ -54,7 +54,7 @@ pub(super) async fn process(msg: msg::RegisterNode, hnd: impl ComponentHandles) 
             );
 
             // notify all nodes
-            hnd.notify_nodes(&msg::Heartbeat {
+            ci.notify_nodes(&msg::Heartbeat {
                 instance_version: 0,
                 nic_list_version: 0,
                 node_type: msg.node_type,

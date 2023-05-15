@@ -3,10 +3,10 @@ use crate::db::quota_limits::SpaceAndInodeLimits;
 
 pub(super) async fn handle(
     msg: msg::SetQuota,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             db::quota_limits::update_from_iter(
                 tx,
@@ -33,7 +33,7 @@ pub(super) async fn handle(
     {
         Ok(_) => {
             log::info!("Set quota for storage pool {}", msg.pool_id,);
-            chn.respond(&msg::SetQuotaResp { result: true }).await
+            rcc.respond(&msg::SetQuotaResp { result: true }).await
         }
 
         Err(err) => {
@@ -42,7 +42,7 @@ pub(super) async fn handle(
                 msg.pool_id,
                 err
             );
-            chn.respond(&msg::SetQuotaResp { result: false }).await
+            rcc.respond(&msg::SetQuotaResp { result: false }).await
         }
     }
 }

@@ -4,10 +4,10 @@ use shared::config::NodeOfflineTimeout;
 
 pub(super) async fn handle(
     msg: msg::GetStatesAndBuddyGroups,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             let targets = db::targets::with_type(tx, msg.node_type)?;
             let groups = db::buddy_groups::with_type(tx, msg.node_type)?;
@@ -25,7 +25,7 @@ pub(super) async fn handle(
                         msg::types::CombinedTargetState {
                             reachability: logic::calc_reachability_state(
                                 e.last_contact,
-                                hnd.get_config::<NodeOfflineTimeout>(),
+                                ci.get_config::<NodeOfflineTimeout>(),
                             ),
                             consistency: e.consistency,
                         },
@@ -33,7 +33,7 @@ pub(super) async fn handle(
                 })
                 .collect();
 
-            chn.respond(&msg::GetStatesAndBuddyGroupsResp {
+            rcc.respond(&msg::GetStatesAndBuddyGroupsResp {
                 groups: groups
                     .into_iter()
                     .map(|e| {
@@ -57,7 +57,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::GetStatesAndBuddyGroupsResp {
+            rcc.respond(&msg::GetStatesAndBuddyGroupsResp {
                 groups: HashMap::new(),
                 states: HashMap::new(),
             })

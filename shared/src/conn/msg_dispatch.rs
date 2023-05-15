@@ -12,11 +12,14 @@ use tokio::net::UdpSocket;
 
 #[async_trait]
 pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
-    async fn dispatch_request(&mut self, chn: impl RequestChannel + DeserializeMsg) -> Result<()>;
+    async fn dispatch_request(
+        &mut self,
+        chn: impl RequestConnectionController + DeserializeMsg,
+    ) -> Result<()>;
 }
 
 #[async_trait]
-pub trait RequestChannel: Send + Sync {
+pub trait RequestConnectionController: Send + Sync {
     async fn respond(mut self, msg: &impl Msg) -> Result<()>;
     fn authenticate(&mut self);
     fn peer(&self) -> PeerID;
@@ -34,7 +37,7 @@ pub struct StreamRequestChannel<'a> {
 }
 
 #[async_trait]
-impl<'a> RequestChannel for StreamRequestChannel<'a> {
+impl<'a> RequestConnectionController for StreamRequestChannel<'a> {
     async fn respond(mut self, msg: &impl Msg) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
         self.msg_buf.write_to_stream(self.stream).await
@@ -73,7 +76,7 @@ pub struct SocketRequestChannel<'a> {
 }
 
 #[async_trait]
-impl<'a> RequestChannel for SocketRequestChannel<'a> {
+impl<'a> RequestConnectionController for SocketRequestChannel<'a> {
     async fn respond(mut self, msg: &impl Msg) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
 

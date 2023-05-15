@@ -9,28 +9,57 @@ pub(crate) struct EntityWithCapPool {
     pub cap_pool: CapacityPool,
 }
 
-macro_rules! define_for_xxx {
-    ($xxx:ident, $select_entities:literal) => {
-        pub(crate) fn $xxx(
-            tx: &mut Transaction,
-            limits: CapPoolLimits,
-            dynamic_limits: Option<CapPoolDynamicLimits>,
-        ) -> Result<Vec<EntityWithCapPool>> {
-            select(tx, include_str!($select_entities), limits, dynamic_limits)
-        }
-    };
+pub(crate) fn for_meta_targets(
+    tx: &mut Transaction,
+    limits: CapPoolLimits,
+    dynamic_limits: Option<CapPoolDynamicLimits>,
+) -> Result<Vec<EntityWithCapPool>> {
+    select(
+        tx,
+        include_str!("cap_pools/select_meta_targets.sql"),
+        limits,
+        dynamic_limits,
+    )
 }
 
-define_for_xxx!(for_meta_targets, "cap_pools/select_meta_targets.sql");
-define_for_xxx!(for_storage_targets, "cap_pools/select_storage_targets.sql");
-define_for_xxx!(
-    for_meta_buddy_groups,
-    "cap_pools/select_meta_buddy_groups.sql"
-);
-define_for_xxx!(
-    for_storage_buddy_groups,
-    "cap_pools/select_storage_buddy_groups.sql"
-);
+pub(crate) fn for_storage_targets(
+    tx: &mut Transaction,
+    limits: CapPoolLimits,
+    dynamic_limits: Option<CapPoolDynamicLimits>,
+) -> Result<Vec<EntityWithCapPool>> {
+    select(
+        tx,
+        include_str!("cap_pools/select_storage_targets.sql"),
+        limits,
+        dynamic_limits,
+    )
+}
+
+pub(crate) fn for_meta_buddy_groups(
+    tx: &mut Transaction,
+    limits: CapPoolLimits,
+    dynamic_limits: Option<CapPoolDynamicLimits>,
+) -> Result<Vec<EntityWithCapPool>> {
+    select(
+        tx,
+        include_str!("cap_pools/select_meta_targets.sql"),
+        limits,
+        dynamic_limits,
+    )
+}
+
+pub(crate) fn for_storage_buddy_groups(
+    tx: &mut Transaction,
+    limits: CapPoolLimits,
+    dynamic_limits: Option<CapPoolDynamicLimits>,
+) -> Result<Vec<EntityWithCapPool>> {
+    select(
+        tx,
+        include_str!("cap_pools/select_storage_targets.sql"),
+        limits,
+        dynamic_limits,
+    )
+}
 
 fn select(
     tx: &mut Transaction,

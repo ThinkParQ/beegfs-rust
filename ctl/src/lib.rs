@@ -18,7 +18,10 @@ struct EmptyMsgHandler {}
 
 #[async_trait::async_trait]
 impl DispatchRequest for EmptyMsgHandler {
-    async fn dispatch_request(&mut self, _req: impl RequestChannel + DeserializeMsg) -> Result<()> {
+    async fn dispatch_request(
+        &mut self,
+        _req: impl RequestConnectionController + DeserializeMsg,
+    ) -> Result<()> {
         unreachable!("Unexpected incoming stream request");
     }
 }

@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetMirrorBuddyGroup,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             db::buddy_groups::insert(
                 tx,
@@ -29,7 +29,7 @@ pub(super) async fn handle(
                 msg.buddy_group_id,
             );
 
-            hnd.notify_nodes(&msg::SetMirrorBuddyGroup {
+            ci.notify_nodes(&msg::SetMirrorBuddyGroup {
                 ack_id: "".into(),
                 node_type: msg.node_type,
                 primary_target: msg.primary_target,
@@ -39,10 +39,10 @@ pub(super) async fn handle(
             })
             .await;
 
-            hnd.notify_nodes(&msg::RefreshCapacityPools { ack_id: "".into() })
+            ci.notify_nodes(&msg::RefreshCapacityPools { ack_id: "".into() })
                 .await;
 
-            chn.respond(&msg::SetMirrorBuddyGroupResp {
+            rcc.respond(&msg::SetMirrorBuddyGroupResp {
                 result: OpsErr::SUCCESS,
                 buddy_group_id: actual_id,
             })
@@ -56,7 +56,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::SetMirrorBuddyGroupResp {
+            rcc.respond(&msg::SetMirrorBuddyGroupResp {
                 result: OpsErr::INTERNAL,
                 buddy_group_id: BuddyGroupID::ZERO,
             })

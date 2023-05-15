@@ -54,7 +54,7 @@ mod unmap_storage_target;
 // TODO do not depend on rusqlite::Transaction, abstract the DB interface away
 // (if possible)
 #[async_trait]
-pub(crate) trait ComponentHandles: ::config::Source + Clone {
+pub(crate) trait ComponentInteractor: ::config::Source + Clone {
     async fn execute_db<
         T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>,
         R: Send + 'static,
@@ -74,8 +74,8 @@ pub(crate) trait ComponentHandles: ::config::Source + Clone {
 }
 
 pub(crate) async fn dispatch_request(
-    interactors: impl ComponentHandles,
-    req: impl RequestChannel + DeserializeMsg,
+    interactors: impl ComponentInteractor,
+    req: impl RequestConnectionController + DeserializeMsg,
 ) -> Result<()> {
     macro_rules! dispatch_msg {
         ($($msg_type:path => $submod:ident),*) => {

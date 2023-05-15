@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetDefaultQuota,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             db::quota_default_limits::update(
                 tx,
@@ -29,7 +29,7 @@ pub(super) async fn handle(
                 msg.id_type,
                 msg.pool_id,
             );
-            chn.respond(&msg::SetDefaultQuotaResp { result: true })
+            rcc.respond(&msg::SetDefaultQuotaResp { result: true })
                 .await
         }
 
@@ -40,7 +40,7 @@ pub(super) async fn handle(
                 msg.pool_id,
                 err
             );
-            chn.respond(&msg::SetDefaultQuotaResp { result: false })
+            rcc.respond(&msg::SetDefaultQuotaResp { result: false })
                 .await
         }
     }

@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::ChangeTargetConsistencyStates,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             // TODO This is where old mgmtd updates the "last_seen" time
             // (as this msg comes in every 30 seconds)
@@ -34,11 +34,11 @@ pub(super) async fn handle(
             );
 
             if changed {
-                hnd.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
+                ci.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
                     .await;
             }
 
-            chn.respond(&msg::ChangeTargetConsistencyStatesResp {
+            rcc.respond(&msg::ChangeTargetConsistencyStatesResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -50,7 +50,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::ChangeTargetConsistencyStatesResp {
+            rcc.respond(&msg::ChangeTargetConsistencyStatesResp {
                 result: OpsErr::INTERNAL,
             })
             .await

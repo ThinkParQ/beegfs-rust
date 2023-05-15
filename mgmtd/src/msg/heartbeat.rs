@@ -3,8 +3,8 @@ use shared::msg::Ack;
 
 pub(super) async fn handle(
     msg: msg::Heartbeat,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     let _ = register_node::process(
         msg::RegisterNode {
@@ -19,9 +19,9 @@ pub(super) async fn handle(
             port: msg.port,
             port_tcp_unused: msg.port_tcp_unused,
         },
-        hnd,
+        ci,
     )
     .await;
 
-    chn.respond(&Ack { ack_id: msg.ack_id }).await
+    rcc.respond(&Ack { ack_id: msg.ack_id }).await
 }

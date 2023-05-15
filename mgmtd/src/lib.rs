@@ -11,7 +11,7 @@ mod msg;
 mod notification;
 mod timer;
 
-use crate::component_handles::LiveComponentHandles;
+use crate::component_handles::ComponentHandles;
 use crate::config::{Config, RuntimeConfig};
 use anyhow::Result;
 use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig};
@@ -79,7 +79,7 @@ pub async fn start(
     // run tasks
 
     conn_pool_actor.start_tasks(
-        LiveComponentHandles {
+        ComponentHandles {
             conn: conn.clone(),
             db: db.clone(),
             static_config: static_info,

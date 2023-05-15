@@ -4,14 +4,14 @@ use shared::msg::types::{BuddyGroupCapacityPools, TargetCapacityPools};
 
 pub(super) async fn handle(
     _msg: msg::GetStoragePools,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     let pools = match async move {
-        let limits = hnd.get_config::<CapPoolStorageLimits>();
-        let dynamic_limits = hnd.get_config::<CapPoolDynamicStorageLimits>();
+        let limits = ci.get_config::<CapPoolStorageLimits>();
+        let dynamic_limits = ci.get_config::<CapPoolDynamicStorageLimits>();
 
-        let (targets, pools, buddy_groups) = hnd
+        let (targets, pools, buddy_groups) = ci
             .execute_db(move |tx| {
                 let pools = db::storage_pools::all(tx)?;
                 let targets =
@@ -92,5 +92,5 @@ pub(super) async fn handle(
         }
     };
 
-    chn.respond(&msg::GetStoragePoolsResp { pools }).await
+    rcc.respond(&msg::GetStoragePoolsResp { pools }).await
 }

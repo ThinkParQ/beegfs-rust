@@ -3,23 +3,23 @@ use crate::db::NonexistingKey;
 
 pub(super) async fn handle(
     msg: msg::RemoveNode,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| db::nodes::delete(tx, msg.num_id, msg.node_type))
         .await
     {
         Ok(_) => {
             log::info!("Removed {} node with ID {}", msg.node_type, msg.num_id,);
 
-            hnd.notify_nodes(&msg::RemoveNode {
+            ci.notify_nodes(&msg::RemoveNode {
                 ack_id: "".into(),
                 ..msg
             })
             .await;
 
-            chn.respond(&msg::RemoveNodeResp {
+            rcc.respond(&msg::RemoveNodeResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -32,7 +32,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::RemoveNodeResp {
+            rcc.respond(&msg::RemoveNodeResp {
                 result: match err.downcast_ref() {
                     Some(NonexistingKey(_)) => OpsErr::UNKNOWN_NODE,
                     None => OpsErr::INTERNAL,

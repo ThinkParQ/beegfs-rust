@@ -2,11 +2,11 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::ModifyStoragePool,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     match async {
-        hnd.execute_db(move |tx| {
+        ci.execute_db(move |tx| {
             if let Some(alias) = msg.alias {
                 db::storage_pools::update_alias(tx, msg.id, &alias)?;
             }
@@ -32,10 +32,10 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Storage pool {} modified", msg.id,);
 
-            hnd.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
+            ci.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
                 .await;
 
-            chn.respond(&msg::ModifyStoragePoolResp {
+            rcc.respond(&msg::ModifyStoragePoolResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -43,7 +43,7 @@ pub(super) async fn handle(
         Err(err) => {
             log::error!("Modifying storage pool {} failed:\n{:?}", msg.id, err);
 
-            chn.respond(&msg::ModifyStoragePoolResp {
+            rcc.respond(&msg::ModifyStoragePoolResp {
                 result: OpsErr::INTERNAL,
             })
             .await

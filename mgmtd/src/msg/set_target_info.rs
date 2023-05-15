@@ -4,11 +4,11 @@ use crate::db::NonexistingKey;
 
 pub(super) async fn handle(
     msg: msg::SetTargetInfo,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     let node_type = msg.node_type;
-    match hnd
+    match ci
         .execute_db(move |tx| {
             db::targets::get_and_update_capacities(
                 tx,
@@ -35,7 +35,7 @@ pub(super) async fn handle(
             // changed I consider this being to expensive to check here and just don't
             // do it. Nodes refresh their cap pool every two minutes (by default) anyway
 
-            chn.respond(&msg::SetTargetInfoResp {
+            rcc.respond(&msg::SetTargetInfoResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -43,7 +43,7 @@ pub(super) async fn handle(
 
         Err(err) => {
             log::error!("Updating {} target info failed:\n{:?}", node_type, err);
-            chn.respond(&msg::SetTargetInfoResp {
+            rcc.respond(&msg::SetTargetInfoResp {
                 result: match err.downcast_ref() {
                     Some(NonexistingKey(_)) => OpsErr::INVAL,
                     None => OpsErr::INTERNAL,

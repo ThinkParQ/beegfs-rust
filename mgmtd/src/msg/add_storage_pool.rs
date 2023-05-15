@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::AddStoragePool,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             let id = db::storage_pools::insert(
                 tx,
@@ -31,10 +31,10 @@ pub(super) async fn handle(
                 msg.id,
             );
 
-            hnd.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
+            ci.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
                 .await;
 
-            chn.respond(&msg::AddStoragePoolResp {
+            rcc.respond(&msg::AddStoragePoolResp {
                 result: OpsErr::SUCCESS,
                 pool_id: actual_id,
             })
@@ -43,7 +43,7 @@ pub(super) async fn handle(
         Err(err) => {
             log::error!("Adding storage pool with ID {} failed:\n{:?}", msg.id, err);
 
-            chn.respond(&msg::AddStoragePoolResp {
+            rcc.respond(&msg::AddStoragePoolResp {
                 result: OpsErr::EXISTS,
                 pool_id: StoragePoolID::ZERO,
             })

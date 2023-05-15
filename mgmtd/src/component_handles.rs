@@ -1,4 +1,4 @@
-use crate::msg::{dispatch_request, ComponentHandles};
+use crate::msg::{dispatch_request, ComponentInteractor};
 use crate::notification::{notify_nodes, Notification};
 use crate::{db, MgmtdPool};
 use ::config::{ConfigError, ConfigMap, Field};
@@ -13,7 +13,7 @@ use shared::msg::Msg;
 
 // TODO find a better name
 #[derive(Clone, Debug)]
-pub(crate) struct LiveComponentHandles {
+pub(crate) struct ComponentHandles {
     pub conn: MgmtdPool,
     pub db: db::Handle,
     pub static_config: &'static crate::StaticInfo,
@@ -22,7 +22,7 @@ pub(crate) struct LiveComponentHandles {
 }
 
 #[async_trait]
-impl ComponentHandles for LiveComponentHandles {
+impl ComponentInteractor for ComponentHandles {
     async fn execute_db<
         T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>,
         R: Send + 'static,
@@ -59,15 +59,18 @@ impl ComponentHandles for LiveComponentHandles {
 }
 
 #[async_trait]
-impl ::config::Source for LiveComponentHandles {
+impl ::config::Source for ComponentHandles {
     async fn get(&self) -> Result<ConfigMap, ::config::BoxedError> {
         self.db.get().await
     }
 }
 
 #[async_trait]
-impl DispatchRequest for LiveComponentHandles {
-    async fn dispatch_request(&mut self, req: impl RequestChannel + DeserializeMsg) -> Result<()> {
+impl DispatchRequest for ComponentHandles {
+    async fn dispatch_request(
+        &mut self,
+        req: impl RequestConnectionController + DeserializeMsg,
+    ) -> Result<()> {
         dispatch_request(self.clone(), req).await
     }
 }

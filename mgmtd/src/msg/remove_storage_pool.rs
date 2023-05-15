@@ -2,11 +2,11 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::RemoveStoragePool,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     match async {
-        hnd.execute_db(move |tx| db::storage_pools::delete(tx, msg.id))
+        ci.execute_db(move |tx| db::storage_pools::delete(tx, msg.id))
             .await?;
 
         Ok(()) as Result<_>
@@ -16,10 +16,10 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Storage pool {} removed", msg.id,);
 
-            hnd.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
+            ci.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
                 .await;
 
-            chn.respond(&msg::RemoveStoragePoolResp {
+            rcc.respond(&msg::RemoveStoragePoolResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -27,7 +27,7 @@ pub(super) async fn handle(
         Err(err) => {
             log::error!("Removing storage pool {} failed:\n{:?}", msg.id, err);
 
-            chn.respond(&msg::RemoveStoragePoolResp {
+            rcc.respond(&msg::RemoveStoragePoolResp {
                 result: OpsErr::INTERNAL,
             })
             .await

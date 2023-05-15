@@ -3,20 +3,20 @@ use crate::db::NonexistingKey;
 
 pub(super) async fn handle(
     msg: msg::UnmapStorageTarget,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| db::targets::delete_storage(tx, msg.target_id))
         .await
     {
         Ok(_) => {
             log::info!("Removed storage target {}", msg.target_id,);
 
-            hnd.notify_nodes(&msg::RefreshCapacityPools { ack_id: "".into() })
+            ci.notify_nodes(&msg::RefreshCapacityPools { ack_id: "".into() })
                 .await;
 
-            chn.respond(&msg::UnmapStorageTargetResp {
+            rcc.respond(&msg::UnmapStorageTargetResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -28,7 +28,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::UnmapStorageTargetResp {
+            rcc.respond(&msg::UnmapStorageTargetResp {
                 result: match err.downcast_ref() {
                     Some(NonexistingKey(_)) => OpsErr::UNKNOWN_TARGET,
                     None => OpsErr::INTERNAL,

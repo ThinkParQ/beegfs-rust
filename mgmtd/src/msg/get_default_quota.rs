@@ -3,15 +3,15 @@ use shared::msg::types::QuotaDefaultLimits;
 
 pub(super) async fn handle(
     msg: msg::GetDefaultQuota,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| db::quota_default_limits::with_pool_id(tx, msg.pool_id))
         .await
     {
         Ok(res) => {
-            chn.respond(&msg::GetDefaultQuotaResp {
+            rcc.respond(&msg::GetDefaultQuotaResp {
                 limits: QuotaDefaultLimits {
                     user_space_limit: res.user_space_limit.unwrap_or_default(),
                     user_inode_limit: res.user_inode_limit.unwrap_or_default(),
@@ -28,7 +28,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::GetDefaultQuotaResp {
+            rcc.respond(&msg::GetDefaultQuotaResp {
                 limits: QuotaDefaultLimits::default(),
             })
             .await

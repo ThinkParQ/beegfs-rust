@@ -3,10 +3,10 @@ use crate::db::quota_entries::PoolOrTargetID;
 
 pub(super) async fn handle(
     msg: msg::RequestExceededQuota,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             let exceeded_ids = db::quota_entries::exceeded_quota_ids(
                 tx,
@@ -29,7 +29,7 @@ pub(super) async fn handle(
         .await
     {
         Ok(inner) => {
-            chn.respond(&msg::RequestExceededQuotaResp {
+            rcc.respond(&msg::RequestExceededQuotaResp {
                 result: OpsErr::SUCCESS,
                 inner,
             })
@@ -41,7 +41,7 @@ pub(super) async fn handle(
                 msg.pool_id,
                 msg.target_id
             );
-            chn.respond(&msg::RequestExceededQuotaResp {
+            rcc.respond(&msg::RequestExceededQuotaResp {
                 result: OpsErr::INTERNAL,
                 inner: msg::SetExceededQuota::default(),
             })

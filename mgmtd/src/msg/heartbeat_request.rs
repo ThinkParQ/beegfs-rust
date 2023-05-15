@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     _msg: msg::HeartbeatRequest,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    chn.respond(&msg::Heartbeat {
+    rcc.respond(&msg::Heartbeat {
         instance_version: 0,
         nic_list_version: 0,
         node_type: NodeType::Management,
@@ -14,9 +14,9 @@ pub(super) async fn handle(
         node_num_id: NodeID::MGMTD,
         root_num_id: 0,
         is_root_mirrored: false,
-        port: hnd.get_static_info().static_config.port,
-        port_tcp_unused: hnd.get_static_info().static_config.port,
-        nic_list: hnd.get_static_info().network_interfaces.to_vec(),
+        port: ci.get_static_info().static_config.port,
+        port_tcp_unused: ci.get_static_info().static_config.port,
+        nic_list: ci.get_static_info().network_interfaces.to_vec(),
     })
     .await
 }

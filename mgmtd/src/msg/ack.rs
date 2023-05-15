@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::Ack,
-    chn: impl RequestChannel,
-    _hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    _ci: impl ComponentInteractor,
 ) -> Result<()> {
-    log::debug!("Ignoring Ack from {:?}: ID: {:?}", chn.peer(), msg.ack_id);
+    log::debug!("Ignoring Ack from {:?}: ID: {:?}", rcc.peer(), msg.ack_id);
 
     Ok(())
 }

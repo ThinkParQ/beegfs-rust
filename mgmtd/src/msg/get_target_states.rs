@@ -4,10 +4,10 @@ use shared::config::NodeOfflineTimeout;
 
 pub(super) async fn handle(
     msg: msg::GetTargetStates,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| db::targets::with_type(tx, msg.node_type))
         .await
     {
@@ -20,12 +20,12 @@ pub(super) async fn handle(
                 targets.push(e.target_id);
                 reachability_states.push(logic::calc_reachability_state(
                     e.last_contact,
-                    hnd.get_config::<NodeOfflineTimeout>(),
+                    ci.get_config::<NodeOfflineTimeout>(),
                 ));
                 consistency_states.push(e.consistency);
             }
 
-            chn.respond(&msg::GetTargetStatesResp {
+            rcc.respond(&msg::GetTargetStatesResp {
                 targets,
                 reachability_states,
                 consistency_states,
@@ -38,7 +38,7 @@ pub(super) async fn handle(
                 msg.node_type,
                 err
             );
-            chn.respond(&msg::GetTargetStatesResp {
+            rcc.respond(&msg::GetTargetStatesResp {
                 targets: vec![],
                 reachability_states: vec![],
                 consistency_states: vec![],

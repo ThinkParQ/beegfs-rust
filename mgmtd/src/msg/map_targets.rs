@@ -2,13 +2,13 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::MapTargets,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
     let mut results = HashMap::with_capacity(msg.targets.len());
 
     for (target_id, _) in msg.targets.clone() {
-        let res = hnd
+        let res = ci
             .execute_db(move |tx| {
                 db::targets::update_node(tx, target_id, NodeTypeServer::Storage, msg.node_num_id)
             })
@@ -51,12 +51,12 @@ pub(super) async fn handle(
 
     // forward to all nodes if
     // TODO only do it with successful ones
-    hnd.notify_nodes(&msg::MapTargets {
+    ci.notify_nodes(&msg::MapTargets {
         targets: msg.targets,
         node_num_id: msg.node_num_id,
         ack_id: "".into(),
     })
     .await;
 
-    chn.respond(&msg::MapTargetsResp { results }).await
+    rcc.respond(&msg::MapTargetsResp { results }).await
 }

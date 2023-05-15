@@ -2,12 +2,12 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetConfig,
-    chn: impl RequestChannel,
-    mut hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    mut ci: impl ComponentInteractor,
 ) -> Result<()> {
     let entries = msg.entries.clone();
 
-    match hnd
+    match ci
         .execute_db(move |tx| db::config::set(tx, msg.entries))
         .await
     {
@@ -15,14 +15,14 @@ pub(super) async fn handle(
             log::info!("Set {} config entries: {:?}", entries.len(), entries,);
 
             // update the cache
-            if let Err(err) = hnd.set_raw_config(entries).await {
+            if let Err(err) = ci.set_raw_config(entries).await {
                 log::error!(
                     "Updated the persistent configuration, but updating the local config cache \
                      failed: {err}"
                 )
             }
 
-            chn.respond(&msg::SetConfigResp {
+            rcc.respond(&msg::SetConfigResp {
                 result: OpsErr::SUCCESS,
             })
             .await
@@ -35,7 +35,7 @@ pub(super) async fn handle(
                 err
             );
 
-            chn.respond(&msg::SetConfigResp {
+            rcc.respond(&msg::SetConfigResp {
                 result: OpsErr::INTERNAL,
             })
             .await

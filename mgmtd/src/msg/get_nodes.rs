@@ -3,10 +3,10 @@ use db::misc::MetaRoot;
 
 pub(super) async fn handle(
     msg: msg::GetNodes,
-    chn: impl RequestChannel,
-    hnd: impl ComponentHandles,
+    rcc: impl RequestConnectionController,
+    ci: impl ComponentInteractor,
 ) -> Result<()> {
-    match hnd
+    match ci
         .execute_db(move |tx| {
             let res = (
                 db::nodes::with_type(tx, msg.node_type)?,
@@ -22,7 +22,7 @@ pub(super) async fn handle(
         .await
     {
         Ok(res) => {
-            chn.respond(&msg::GetNodesResp {
+            rcc.respond(&msg::GetNodesResp {
                 nodes: res
                     .0
                     .into_iter()
@@ -65,7 +65,7 @@ pub(super) async fn handle(
         Err(err) => {
             log::error!("Getting {} node list failed:\n{:?}", msg.node_type, err);
 
-            chn.respond(&msg::GetNodesResp {
+            rcc.respond(&msg::GetNodesResp {
                 nodes: vec![],
                 root_num_id: 0,
                 is_root_mirrored: false,
