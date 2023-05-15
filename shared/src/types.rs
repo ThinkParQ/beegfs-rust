@@ -254,6 +254,12 @@ impl From<&str> for EntityAlias {
     }
 }
 
+impl From<String> for EntityAlias {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
 impl TryFrom<Vec<u8>> for EntityAlias {
     type Error = FromUtf8Error;
 

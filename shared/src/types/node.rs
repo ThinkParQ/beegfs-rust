@@ -15,6 +15,12 @@ impl From<i64> for NodeUID {
     }
 }
 
+impl Display for NodeUID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 // BeeGFS handles node num ids as u32 in most cases, but there are some messages
 // where meta node ID is reused as target ID, and that is u16... So, in reality,
 // u32 node IDs don't work.

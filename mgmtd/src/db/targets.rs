@@ -113,14 +113,12 @@ pub(crate) fn insert_storage_if_new(
             params![new_uid, alias,],
         )?;
 
-        let last_uid: TargetUID = tx.last_insert_rowid().into();
-
         tx.execute(
             r#"
             INSERT INTO storage_targets (target_id, target_uid)
             VALUES (?1, ?2)
             "#,
-            params![target_id, last_uid],
+            params![target_id, new_uid],
         )?;
 
         Ok(())
@@ -221,18 +219,16 @@ pub(crate) fn update_storage_pools(
     Ok(())
 }
 
-pub(crate) fn update_node(
+pub(crate) fn update_storage_node_mapping(
     tx: &mut Transaction,
     target_id: TargetID,
-    node_type: NodeTypeServer,
     new_node_id: NodeID,
 ) -> Result<()> {
-    let mut stmt = tx.prepare_cached(&format!(
+    let mut stmt = tx.prepare_cached(
         r#"
-        UPDATE {}_targets SET node_id = ?1 WHERE target_id = ?2
+        UPDATE storage_targets SET node_id = ?1 WHERE target_id = ?2
         "#,
-        node_type.as_sql_str(),
-    ))?;
+    )?;
 
     let affected = stmt.execute(params![new_node_id, target_id])?;
 

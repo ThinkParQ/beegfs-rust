@@ -10,7 +10,7 @@ pub(super) async fn handle(
     for (target_id, _) in msg.targets.clone() {
         let res = ci
             .execute_db(move |tx| {
-                db::targets::update_node(tx, target_id, NodeTypeServer::Storage, msg.node_num_id)
+                db::targets::update_storage_node_mapping(tx, target_id, msg.node_num_id)
             })
             .await;
 
