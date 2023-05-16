@@ -21,21 +21,21 @@ INSERT INTO entities (uid, entity_type) VALUES
     (103004, "node")
 ;
 
-INSERT INTO nodes (node_uid, alias, port, last_contact, node_type) VALUES
-    (101001, "meta_node_1", 8005, DATETIME("NOW"), "meta"),
-    (101002, "meta_node_2", 8005, DATETIME("NOW"), "meta"),
-    (101003, "meta_node_3", 8005, DATETIME("NOW"), "meta"),
-    (101004, "meta_node_4", 8005, DATETIME("NOW"), "meta"),
+INSERT INTO nodes (node_uid, node_type, alias, port, last_contact) VALUES
+    (101001, "meta", "meta_node_1", 8005, DATETIME("NOW")),
+    (101002, "meta", "meta_node_2", 8005, DATETIME("NOW")),
+    (101003, "meta", "meta_node_3", 8005, DATETIME("NOW")),
+    (101004, "meta", "meta_node_4", 8005, DATETIME("NOW")),
 
-    (102001, "storage_node_1", 8003, DATETIME("NOW"), "storage"),
-    (102002, "storage_node_2", 8003, DATETIME("NOW"), "storage"),
-    (102003, "storage_node_3", 8003, DATETIME("NOW"), "storage"),
-    (102004, "storage_node_4", 8003, DATETIME("NOW"), "storage"),
+    (102001, "storage", "storage_node_1", 8003, DATETIME("NOW")),
+    (102002, "storage", "storage_node_2", 8003, DATETIME("NOW")),
+    (102003, "storage", "storage_node_3", 8003, DATETIME("NOW")),
+    (102004, "storage", "storage_node_4", 8003, DATETIME("NOW")),
 
-    (103001, "client_node_1", 8008, DATETIME("NOW"), "client"),
-    (103002, "client_node_2", 8008, DATETIME("NOW"), "client"),
-    (103003, "client_node_3", 8008, DATETIME("NOW"), "client"),
-    (103004, "client_node_4", 8008, DATETIME("NOW"), "client")
+    (103001, "client", "client_node_1", 8008, DATETIME("NOW")),
+    (103002, "client", "client_node_2", 8008, DATETIME("NOW")),
+    (103003, "client", "client_node_3", 8008, DATETIME("NOW")),
+    (103004, "client", "client_node_4", 8008, DATETIME("NOW"))
 ;
 
 INSERT INTO meta_nodes (node_id, node_uid) VALUES
@@ -90,7 +90,7 @@ INSERT INTO storage_pools (pool_id, alias) VALUES
     (4, "storage_pool_4")
 ;
 
-INSERT INTO entities VALUES
+INSERT INTO entities (uid, entity_type) VALUES
     (201001, "target"),
     (201002, "target"),
     (201003, "target"),
@@ -116,31 +116,31 @@ INSERT INTO entities VALUES
     (202099, "target")
 ;
 
-INSERT INTO targets (target_uid, alias, total_space, total_inodes, free_space, free_inodes,
-    consistency, node_type) VALUES
-    (201001, "meta_target_1", 1000000, 1000000, 200000, 200000, "good", "meta"),
-    (201002, "meta_target_2", 1000000, 1000000, 400000, 400000, "good", "meta"),
-    (201003, "meta_target_3", 1000000, 1000000, 600000, 600000, "good", "meta"),
-    (201004, "meta_target_4", 1000000, 1000000, 800000, 800000, "good", "meta"),
+INSERT INTO targets (target_uid, node_type, alias, total_space, total_inodes, free_space, free_inodes,
+    consistency) VALUES
+    (201001, "meta", "meta_target_1", 1000000, 1000000, 200000, 200000, "good"),
+    (201002, "meta", "meta_target_2", 1000000, 1000000, 400000, 400000, "good"),
+    (201003, "meta", "meta_target_3", 1000000, 1000000, 600000, 600000, "good"),
+    (201004, "meta", "meta_target_4", 1000000, 1000000, 800000, 800000, "good"),
 
-    (202001, "storage_target_1", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202002, "storage_target_2", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202003, "storage_target_3", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202004, "storage_target_4", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202005, "storage_target_5", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202006, "storage_target_6", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202007, "storage_target_7", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202008, "storage_target_8", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202009, "storage_target_9", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202010, "storage_target_10", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202011, "storage_target_11", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202012, "storage_target_12", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202013, "storage_target_13", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202014, "storage_target_14", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202015, "storage_target_15", 1000000, 1000000, 500000, 500000, "good", "storage"),
-    (202016, "storage_target_16", 1000000, 1000000, 500000, 500000, "good", "storage"),
+    (202001, "storage", "storage_target_1", 1000000, 1000000, 500000, 500000, "good"),
+    (202002, "storage", "storage_target_2", 1000000, 1000000, 500000, 500000, "good"),
+    (202003, "storage", "storage_target_3", 1000000, 1000000, 500000, 500000, "good"),
+    (202004, "storage", "storage_target_4", 1000000, 1000000, 500000, 500000, "good"),
+    (202005, "storage", "storage_target_5", 1000000, 1000000, 500000, 500000, "good"),
+    (202006, "storage", "storage_target_6", 1000000, 1000000, 500000, 500000, "good"),
+    (202007, "storage", "storage_target_7", 1000000, 1000000, 500000, 500000, "good"),
+    (202008, "storage", "storage_target_8", 1000000, 1000000, 500000, 500000, "good"),
+    (202009, "storage", "storage_target_9", 1000000, 1000000, 500000, 500000, "good"),
+    (202010, "storage", "storage_target_10", 1000000, 1000000, 500000, 500000, "good"),
+    (202011, "storage", "storage_target_11", 1000000, 1000000, 500000, 500000, "good"),
+    (202012, "storage", "storage_target_12", 1000000, 1000000, 500000, 500000, "good"),
+    (202013, "storage", "storage_target_13", 1000000, 1000000, 500000, 500000, "good"),
+    (202014, "storage", "storage_target_14", 1000000, 1000000, 500000, 500000, "good"),
+    (202015, "storage", "storage_target_15", 1000000, 1000000, 500000, 500000, "good"),
+    (202016, "storage", "storage_target_16", 1000000, 1000000, 500000, 500000, "good"),
 
-    (202099, "unassigned_storage_target", NULL, NULL, NULL, NULL, "good", "storage")
+    (202099, "storage", "unassigned_storage_target", NULL, NULL, NULL, NULL, "good")
 ;
 
 INSERT INTO meta_targets (target_id, target_uid, node_id) VALUES
@@ -173,12 +173,14 @@ INSERT INTO storage_targets (target_id, target_uid, node_id, pool_id) VALUES
 
 INSERT INTO entities (uid, entity_type) VALUES
     (301001, "buddy_group"),
-    (302001, "buddy_group")
+    (302001, "buddy_group"),
+    (302002, "buddy_group")
 ;
 
 INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES
     (301001, "meta"),
-    (302001, "storage")
+    (302001, "storage"),
+    (302002, "storage")
 ;
 
 INSERT INTO meta_buddy_groups (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id)
@@ -188,7 +190,8 @@ VALUES
 
 INSERT INTO storage_buddy_groups (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id, pool_id)
 VALUES
-    (1, 302001, 1, 5, 1)
+    (1, 302001, 1, 5, 1),
+    (2, 302002, 9, 13, 1)
 ;
 
 INSERT INTO root_inode (_only_one_row, target_id, buddy_group_id) VALUES

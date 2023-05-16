@@ -177,19 +177,13 @@ pub(crate) fn delete(tx: &mut Transaction, node_id: NodeID, node_type: NodeType)
         |row| row.get(0),
     )?;
 
-    tx.execute(
+    let affected = tx.execute(
         r#"
         DELETE FROM nodes WHERE node_uid = ?1
         "#,
         params![node_uid],
     )?;
-
-    tx.execute(
-        r#"
-        DELETE FROM entities WHERE uid = ?1
-        "#,
-        params![node_uid],
-    )?;
+    ensure_rows_modified!(affected, node_id, node_type);
 
     Ok(())
 }

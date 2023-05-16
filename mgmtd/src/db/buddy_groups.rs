@@ -217,27 +217,17 @@ pub(crate) fn prepare_storage_deletion(
 }
 
 pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
-    let buddy_group_uid: BuddyGroupUID = tx.query_row(
+    let affected = tx.execute(
         r#"
-        SELECT buddy_group_uid FROM storage_buddy_groups WHERE buddy_group_id = ?1
+        DELETE FROM storage_buddy_groups WHERE buddy_group_id = ?1
         "#,
         [buddy_group_id],
-        |row| row.get(0),
     )?;
+    ensure_rows_modified!(affected, buddy_group_id);
 
-    tx.execute(
-        r#"
-        DELETE FROM buddy_groups WHERE buddy_group_uid = ?1
-        "#,
-        [buddy_group_uid],
-    )?;
+    Ok(())
+}
 
-    tx.execute(
-        r#"
-        DELETE FROM entities WHERE uid = ?1
-        "#,
-        [buddy_group_uid],
-    )?;
 
     Ok(())
 }

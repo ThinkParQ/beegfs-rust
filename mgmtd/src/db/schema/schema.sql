@@ -10,6 +10,8 @@ CREATE TABLE entities (
 
 CREATE TABLE nodes (
     node_uid INTEGER PRIMARY KEY,
+    node_type TEXT NOT NULL
+        CHECK (node_type IN ("meta", "storage", "client")),
 
     alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0),
@@ -17,13 +19,17 @@ CREATE TABLE nodes (
         CHECK(port BETWEEN 0 AND 0xFFFF),
     last_contact TEXT NOT NULL,
 
-    node_type TEXT NOT NULL
-        CHECK (node_type IN ("meta", "storage", "client")),
     entity_type TEXT GENERATED ALWAYS AS ("node"),
 
     UNIQUE(node_uid, node_type),
-    FOREIGN KEY (node_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE RESTRICT
+    FOREIGN KEY (node_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 );
+
+CREATE TRIGGER "Auto delete entity after node delete" AFTER DELETE ON nodes
+FOR EACH ROW
+BEGIN
+    DELETE FROM entities WHERE uid = OLD.node_uid;
+END;
 
 CREATE TABLE meta_nodes (
     node_id INTEGER PRIMARY KEY
@@ -32,8 +38,15 @@ CREATE TABLE meta_nodes (
         REFERENCES nodes (node_uid) ON DELETE CASCADE,
 
     node_type TEXT GENERATED ALWAYS AS ("meta"),
+
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type)
 );
+
+CREATE TRIGGER "Auto delete node after meta delete" AFTER DELETE ON meta_nodes
+FOR EACH ROW
+BEGIN
+    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
+END;
 
 CREATE TABLE storage_nodes (
     node_id INTEGER PRIMARY KEY
@@ -42,8 +55,15 @@ CREATE TABLE storage_nodes (
         REFERENCES nodes (node_uid) ON DELETE CASCADE,
 
     node_type TEXT GENERATED ALWAYS AS ("storage"),
+
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type)
 );
+
+CREATE TRIGGER "Auto delete node after storage delete" AFTER DELETE ON storage_nodes
+FOR EACH ROW
+BEGIN
+    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
+END;
 
 CREATE TABLE client_nodes (
     node_id INTEGER PRIMARY KEY
@@ -52,8 +72,15 @@ CREATE TABLE client_nodes (
         REFERENCES nodes (node_uid) ON DELETE CASCADE,
 
     node_type TEXT GENERATED ALWAYS AS ("client"),
+
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type)
 );
+
+CREATE TRIGGER "Auto delete node after client delete" AFTER DELETE ON client_nodes
+FOR EACH ROW
+BEGIN
+    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
+END;
 
 CREATE TABLE node_nics (
     nic_uid INTEGER PRIMARY KEY,
@@ -67,6 +94,8 @@ CREATE TABLE node_nics (
 
 CREATE TABLE targets (
     target_uid INTEGER PRIMARY KEY,
+    node_type TEXT NOT NULL
+        CHECK (node_type IN ("meta", "storage")),
 
     alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0),
@@ -81,13 +110,17 @@ CREATE TABLE targets (
     consistency TEXT NOT NULL DEFAULT "good"
         CHECK(consistency IN ("good", "needs_resync", "bad")),
 
-    node_type TEXT NOT NULL
-        CHECK (node_type IN ("meta", "storage")),
     entity_type TEXT GENERATED ALWAYS AS ("target"),
 
     UNIQUE(target_uid, node_type),
-    FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE RESTRICT
+    FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 );
+
+CREATE TRIGGER "Auto delete entity after target delete" AFTER DELETE ON targets
+FOR EACH ROW
+BEGIN
+    DELETE FROM entities WHERE uid = OLD.target_uid;
+END;
 
 CREATE TABLE meta_targets (
     target_id INTEGER PRIMARY KEY
@@ -103,8 +136,15 @@ CREATE TABLE meta_targets (
         REFERENCES meta_nodes (node_id) ON DELETE RESTRICT,
 
     node_type TEXT GENERATED ALWAYS AS ("meta"),
+
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type)
 );
+
+CREATE TRIGGER "Auto delete target after meta delete" AFTER DELETE ON meta_targets
+FOR EACH ROW
+BEGIN
+    DELETE FROM targets WHERE target_uid = OLD.target_uid;
+END;
 
 CREATE TABLE storage_targets (
     target_id INTEGER PRIMARY KEY
@@ -119,8 +159,15 @@ CREATE TABLE storage_targets (
         REFERENCES storage_pools (pool_id) ON DELETE RESTRICT,
 
     node_type TEXT GENERATED ALWAYS AS ("storage"),
+
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type)
 );
+
+CREATE TRIGGER "Auto delete target after storage delete" AFTER DELETE ON storage_targets
+FOR EACH ROW
+BEGIN
+    DELETE FROM targets WHERE target_uid = OLD.target_uid;
+END;
 
 CREATE TABLE storage_pools (
     pool_id INTEGER PRIMARY KEY
@@ -139,14 +186,20 @@ END;
 
 CREATE TABLE buddy_groups (
     buddy_group_uid INTEGER PRIMARY KEY,
-
     node_type TEXT NOT NULL
         CHECK(node_type IN ("meta", "storage")),
+
     entity_type TEXT GENERATED ALWAYS AS ("buddy_group"),
 
     UNIQUE(buddy_group_uid, node_type),
-    FOREIGN KEY (buddy_group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE RESTRICT
+    FOREIGN KEY (buddy_group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 );
+
+CREATE TRIGGER "Auto delete entity after buddy group delete" AFTER DELETE ON buddy_groups
+FOR EACH ROW
+BEGIN
+    DELETE FROM entities WHERE uid = OLD.buddy_group_uid;
+END;
 
 CREATE TABLE meta_buddy_groups (
     buddy_group_id INTEGER PRIMARY KEY
@@ -161,9 +214,15 @@ CREATE TABLE meta_buddy_groups (
         REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
 
     node_type TEXT GENERATED ALWAYS AS ("meta"),
+
     FOREIGN KEY (buddy_group_uid, node_type) REFERENCES buddy_groups (buddy_group_uid, node_type)
 );
 
+CREATE TRIGGER "Auto delete buddy group after meta delete" AFTER DELETE ON meta_buddy_groups
+FOR EACH ROW
+BEGIN
+    DELETE FROM buddy_groups WHERE buddy_group_uid = OLD.buddy_group_uid;
+END;
 
 CREATE TABLE storage_buddy_groups (
     buddy_group_id INTEGER PRIMARY KEY
@@ -181,8 +240,15 @@ CREATE TABLE storage_buddy_groups (
         REFERENCES storage_pools (pool_id) ON DELETE RESTRICT,
 
     node_type TEXT GENERATED ALWAYS AS ("storage"),
+
     FOREIGN KEY (buddy_group_uid, node_type) REFERENCES buddy_groups (buddy_group_uid, node_type)
 );
+
+CREATE TRIGGER "Auto delete buddy group after storage delete" AFTER DELETE ON storage_buddy_groups
+FOR EACH ROW
+BEGIN
+    DELETE FROM buddy_groups WHERE buddy_group_uid = OLD.buddy_group_uid;
+END;
 
 CREATE TABLE root_inode (
     _only_one_row INTEGER PRIMARY KEY DEFAULT 1

@@ -295,27 +295,13 @@ pub(crate) fn get_and_update_capacities(
 }
 
 pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
-    let target_uid: TargetUID = tx.query_row(
+    let affected = tx.execute(
         r#"
-        SELECT target_uid FROM storage_targets_v WHERE target_id = ?1
+        DELETE FROM storage_targets WHERE target_id = ?1
         "#,
-        [target_id],
-        |row| row.get(0),
+        params![target_id],
     )?;
-
-    tx.execute(
-        r#"
-        DELETE FROM targets WHERE target_uid = ?1
-        "#,
-        params![target_uid],
-    )?;
-
-    tx.execute(
-        r#"
-        DELETE FROM entities WHERE uid = ?1
-        "#,
-        [target_uid],
-    )?;
+    ensure_rows_modified!(affected, target_id);
 
     Ok(())
 }
