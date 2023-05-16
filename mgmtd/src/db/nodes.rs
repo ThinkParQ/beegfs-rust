@@ -209,3 +209,47 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
 
     Ok(affected)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::on_memory_db;
+
+    #[test]
+    fn set_get() {
+        let sn =
+            move |tx: &mut Transaction, id: u16, alias: &'static str, enable_registration: bool| {
+                set(
+                    tx,
+                    enable_registration,
+                    id.into(),
+                    NodeType::Meta,
+                    alias.into(),
+                    Port::from(8000),
+                    vec![],
+                )
+            };
+
+        on_memory_db(|tx| {
+            // Existing node
+            sn(tx, 1, "existing_node", false).unwrap();
+            sn(tx, 1, "existing_node", true).unwrap();
+            // New node, auto ID
+            sn(tx, 0, "new_node_1", true).unwrap();
+            // New node, manual ID
+            sn(tx, 1234, "new_node_2", true).unwrap();
+            // New node not allowed
+            sn(tx, 1235, "new_node_3", false).unwrap_err();
+            // Non unique alias
+            sn(tx, 1235, "existing_node", true).unwrap_err();
+
+            let nodes = with_type(tx, NodeType::Meta).unwrap();
+
+            // 2 new nodes added to test data
+            assert_eq!(nodes.len(), 4 + 2);
+            assert!(nodes.iter().any(|n| n.id == 1234.into()));
+            assert!(nodes.iter().any(|n| n.alias == "new_node_1".into()));
+            assert!(nodes.iter().any(|n| n.alias == "new_node_2".into()));
+        });
+    }
+}

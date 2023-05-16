@@ -8,7 +8,7 @@ pub(super) async fn handle(
 ) -> Result<()> {
     match ci
         .execute_db(move |tx| {
-            db::quota_limits::update_from_iter(
+            db::quota_limits::update(
                 tx,
                 msg.quota_entry.into_iter().map(|e| {
                     (

@@ -114,7 +114,7 @@ fn fetch(
     Ok(res)
 }
 
-pub(crate) fn update_from_iter(
+pub(crate) fn update(
     tx: &mut Transaction,
     iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
 ) -> Result<()> {
