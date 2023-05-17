@@ -5,7 +5,6 @@ use std::time::Duration;
 #[allow(dead_code)]
 pub(crate) struct BuddyGroup {
     pub id: BuddyGroupID,
-    pub node_type: NodeTypeServer,
     pub primary_node_id: NodeID,
     pub secondary_node_id: NodeID,
     pub primary_target_id: TargetID,
@@ -23,8 +22,8 @@ pub(crate) fn with_type(
 ) -> Result<Vec<BuddyGroup>> {
     let mut stmt = tx.prepare_cached(
         r#"
-        SELECT 
-            buddy_group_id, node_type, primary_node_id, secondary_node_id,
+        SELECT
+            buddy_group_id, primary_node_id, secondary_node_id,
             primary_target_id, secondary_target_id, pool_id,
             primary_free_space, primary_free_inodes,
             secondary_free_space, secondary_free_inodes
@@ -37,16 +36,15 @@ pub(crate) fn with_type(
         .query_map([node_type], |row| {
             Ok(BuddyGroup {
                 id: row.get(0)?,
-                node_type: row.get(1)?,
-                primary_node_id: row.get(2)?,
-                secondary_node_id: row.get(3)?,
-                primary_target_id: row.get(4)?,
-                secondary_target_id: row.get(5)?,
-                pool_id: row.get(6)?,
-                primary_free_space: row.get(7)?,
-                primary_free_inodes: row.get(8)?,
-                secondary_free_space: row.get(9)?,
-                secondary_free_inodes: row.get(10)?,
+                primary_node_id: row.get(1)?,
+                secondary_node_id: row.get(2)?,
+                primary_target_id: row.get(3)?,
+                secondary_target_id: row.get(4)?,
+                pool_id: row.get(5)?,
+                primary_free_space: row.get(6)?,
+                primary_free_inodes: row.get(7)?,
+                secondary_free_space: row.get(8)?,
+                secondary_free_inodes: row.get(9)?,
             })
         })?
         .try_collect()?;
@@ -126,8 +124,9 @@ pub(crate) fn update_storage_pools(
         "#,
     )?;
 
-    for t in move_ids {
-        stmt.execute(params![new_pool_id, t])?;
+    for id in move_ids {
+        let affected = stmt.execute(params![new_pool_id, id])?;
+        ensure_rows_modified!(affected, id);
     }
 
     Ok(())
@@ -228,6 +227,235 @@ pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID)
     Ok(())
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::with_test_data;
 
-    Ok(())
+    /// Test inserting and getting buddy groups
+    #[test]
+    fn insert_and_get_with_type() {
+        with_test_data(|tx| {
+            super::insert(
+                tx,
+                Some(1234.into()),
+                NodeTypeServer::Meta,
+                3.into(),
+                4.into(),
+            )
+            .unwrap();
+            super::insert(tx, None, NodeTypeServer::Storage, 2.into(), 6.into()).unwrap();
+
+            super::insert(tx, None, NodeTypeServer::Meta, 5.into(), 6.into()).unwrap_err();
+            super::insert(
+                tx,
+                Some(1.into()),
+                NodeTypeServer::Storage,
+                3.into(),
+                7.into(),
+            )
+            .unwrap_err();
+
+            let meta_groups = super::with_type(tx, NodeTypeServer::Meta).unwrap();
+            let storage_groups = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+
+            assert_eq!(2, meta_groups.len());
+            assert_eq!(3, storage_groups.len());
+            assert!(meta_groups.iter().any(|e| e.id == 1234.into()));
+        })
+    }
+
+    /// Test updating the storage pool of a buddy group
+    #[test]
+    fn update_storage_pool() {
+        with_test_data(|tx| {
+            super::update_storage_pools(tx, 2.into(), [1.into()]).unwrap();
+            super::update_storage_pools(tx, 2.into(), [99.into()]).unwrap_err();
+            super::update_storage_pools(tx, 99.into(), [1.into()]).unwrap_err();
+
+            let storage_groups = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+
+            assert_eq!(
+                Some(2.into()),
+                storage_groups
+                    .iter()
+                    .find(|e| e.id == 1.into())
+                    .unwrap()
+                    .pool_id
+            );
+        })
+    }
+
+    /// Makes sure targets of buddy groups 1 (meta and storage) have been swapped
+    fn ensure_swapped_buddies(tx: &mut Transaction) {
+        let meta_groups = super::with_type(tx, NodeTypeServer::Meta).unwrap();
+        let storage_groups = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+
+        assert_eq!(TargetID::from(2), meta_groups[0].primary_target_id);
+        assert_eq!(TargetID::from(1), meta_groups[0].secondary_target_id);
+        assert_eq!(TargetID::from(5), storage_groups[0].primary_target_id);
+        assert_eq!(TargetID::from(1), storage_groups[0].secondary_target_id);
+    }
+
+    /// Makes sure targets of buddy groups 1 (meta and storage) have not been swapped
+    fn ensure_no_swapped_buddies(tx: &mut Transaction) {
+        let meta_groups = super::with_type(tx, NodeTypeServer::Meta).unwrap();
+        let storage_groups = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+
+        assert_eq!(TargetID::from(1), meta_groups[0].primary_target_id);
+        assert_eq!(TargetID::from(2), meta_groups[0].secondary_target_id);
+        assert_eq!(TargetID::from(1), storage_groups[0].primary_target_id);
+        assert_eq!(TargetID::from(5), storage_groups[0].secondary_target_id);
+    }
+
+    /// Test swapping primary and secondary member (switchover) when primary is needs_resync
+    #[test]
+    fn swap_buddies_on_needs_resync() {
+        with_test_data(|tx| {
+            targets::update_consistency_states(
+                tx,
+                [(TargetID::from(1), TargetConsistencyState::NeedsResync)],
+                NodeTypeServer::Meta,
+            )
+            .unwrap();
+
+            targets::update_consistency_states(
+                tx,
+                [(TargetID::from(1), TargetConsistencyState::NeedsResync)],
+                NodeTypeServer::Storage,
+            )
+            .unwrap();
+
+            let swaps = super::check_and_swap_buddies(tx, Duration::from_secs(10000)).unwrap();
+
+            assert_eq!(2, swaps.len());
+            assert!(swaps
+                .iter()
+                .any(|e| e.0 == 1.into() && e.1 == NodeTypeServer::Meta));
+            assert!(swaps
+                .iter()
+                .any(|e| e.0 == 1.into() && e.1 == NodeTypeServer::Storage));
+
+            ensure_swapped_buddies(tx);
+
+            assert!(
+                super::check_and_swap_buddies(tx, Duration::from_secs(99999))
+                    .unwrap()
+                    .is_empty()
+            );
+        })
+    }
+
+    /// Test swapping primary and secondary member (switchover) when primary runs into timeout
+    #[test]
+    fn swap_buddies_on_timeout() {
+        with_test_data(|tx| {
+            tx.execute(
+                r#"
+                UPDATE nodes
+                SET last_contact = DATETIME("now", "-1 hour")
+                WHERE node_uid IN (101001, 102001)
+                "#,
+                [],
+            )
+            .unwrap();
+
+            let swaps = super::check_and_swap_buddies(tx, Duration::from_secs(100)).unwrap();
+
+            assert_eq!(2, swaps.len());
+            assert!(swaps
+                .iter()
+                .any(|e| e.0 == 1.into() && e.1 == NodeTypeServer::Meta));
+            assert!(swaps
+                .iter()
+                .any(|e| e.0 == 1.into() && e.1 == NodeTypeServer::Storage));
+
+            ensure_swapped_buddies(tx);
+        })
+    }
+
+    /// Test that buddies are not swapped if secodary doesn't satisfy the conditions
+    #[test]
+    fn no_swap_buddies_on_secondary_timeout() {
+        with_test_data(|tx| {
+            // Trigger timeout for all buddy nodes (including secondaries). This should not cause a
+            // switchover
+            tx.execute(
+                r#"
+                UPDATE nodes
+                SET last_contact = DATETIME("now", "-1 hour")
+                WHERE node_uid IN (101001, 101002, 102001, 102002)
+                "#,
+                [],
+            )
+            .unwrap();
+
+            super::check_and_swap_buddies(tx, Duration::from_secs(99999)).unwrap();
+
+            ensure_no_swapped_buddies(tx);
+        })
+    }
+
+    #[test]
+    fn no_swap_buddies_on_secondary_needs_resync() {
+        with_test_data(|tx| {
+            targets::update_consistency_states(
+                tx,
+                [
+                    (TargetID::from(1), TargetConsistencyState::NeedsResync),
+                    (TargetID::from(2), TargetConsistencyState::NeedsResync),
+                ],
+                NodeTypeServer::Meta,
+            )
+            .unwrap();
+
+            targets::update_consistency_states(
+                tx,
+                [
+                    (TargetID::from(1), TargetConsistencyState::NeedsResync),
+                    (TargetID::from(5), TargetConsistencyState::NeedsResync),
+                ],
+                NodeTypeServer::Storage,
+            )
+            .unwrap();
+
+            super::check_and_swap_buddies(tx, Duration::from_secs(99999)).unwrap();
+
+            ensure_no_swapped_buddies(tx);
+        })
+    }
+
+    #[test]
+    fn mounted_clients_fail_prepare_storage_deletion() {
+        with_test_data(|tx| {
+            super::prepare_storage_deletion(tx, 1.into()).unwrap_err();
+        })
+    }
+
+    #[test]
+    fn prepare_storage_deletion_returns_correct_node_uids() {
+        with_test_data(|tx| {
+            tx.execute(
+                r#"
+                DELETE FROM nodes WHERE node_type = "client"
+                "#,
+                [],
+            )
+            .unwrap();
+
+            let res = super::prepare_storage_deletion(tx, 1.into()).unwrap();
+
+            assert_eq!((NodeUID::from(102001), NodeUID::from(102002)), res);
+        })
+    }
+
+    #[test]
+    fn delete_storage() {
+        with_test_data(|tx| {
+            super::delete_storage(tx, 1.into()).unwrap();
+
+            let groups = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+            assert_eq!(1, groups.len());
+        })
+    }
 }

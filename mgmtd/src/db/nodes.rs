@@ -198,7 +198,7 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
                 AND node_uid IN (SELECT node_uid FROM client_nodes)
             "#,
         )?;
-        stmt.execute(rusqlite::params![timeout.as_secs()])?
+        stmt.execute(params![timeout.as_secs()])?
     };
 
     Ok(affected)
@@ -207,7 +207,7 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::on_memory_db;
+    use tests::with_test_data;
 
     #[test]
     fn set_get() {
@@ -224,7 +224,7 @@ mod test {
                 )
             };
 
-        on_memory_db(|tx| {
+        with_test_data(|tx| {
             // Existing node
             sn(tx, 1, "existing_node", false).unwrap();
             sn(tx, 1, "existing_node", true).unwrap();
