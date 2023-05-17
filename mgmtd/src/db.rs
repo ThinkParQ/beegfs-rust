@@ -7,6 +7,7 @@ use thiserror::Error;
 pub(crate) mod buddy_groups;
 pub(crate) mod cap_pools;
 pub(crate) mod config;
+pub(crate) mod logic;
 pub(crate) mod misc;
 pub(crate) mod node_nics;
 pub(crate) mod nodes;

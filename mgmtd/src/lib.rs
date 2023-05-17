@@ -6,7 +6,6 @@
 mod component_handles;
 pub mod config;
 mod db;
-mod logic;
 mod msg;
 mod notification;
 mod timer;

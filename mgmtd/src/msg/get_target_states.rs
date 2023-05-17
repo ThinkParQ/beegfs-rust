@@ -1,5 +1,5 @@
 use super::*;
-use crate::logic;
+use crate::db::logic::calc_reachability_state;
 use shared::config::NodeOfflineTimeout;
 
 pub(super) async fn handle(
@@ -18,7 +18,7 @@ pub(super) async fn handle(
 
             for e in res {
                 targets.push(e.target_id);
-                reachability_states.push(logic::calc_reachability_state(
+                reachability_states.push(calc_reachability_state(
                     e.last_contact,
                     ci.get_config::<NodeOfflineTimeout>(),
                 ));
