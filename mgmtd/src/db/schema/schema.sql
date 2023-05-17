@@ -88,7 +88,8 @@ CREATE TABLE node_nics (
         REFERENCES nodes (node_uid) ON DELETE CASCADE,
     nic_type TEXT NOT NULL
         CHECK(nic_type in ("ethernet", "sdp", "rdma")),
-    addr BLOB NOT NULL,
+    addr BLOB NOT NULL
+        CHECK(LENGTH(addr) = 4),
     name TEXT NOT NULL
 );
 

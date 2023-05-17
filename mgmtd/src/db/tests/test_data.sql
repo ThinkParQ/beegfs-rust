@@ -60,28 +60,28 @@ INSERT INTO client_nodes (node_id, node_uid) VALUES
 ;
 
 INSERT INTO node_nics (node_uid, nic_type, addr, name) VALUES
-    (101001, "ethernet", 0x00000011, "eth0"),
-    (101001, "ethernet", 0x00000111, "eth1"),
-    (101001, "ethernet", 0x00000211, "eth2"),
-    (101001, "ethernet", 0x00000311, "eth3"),
-    (101002, "ethernet", 0x00000012, "eth0"),
-    (101003, "ethernet", 0x00000013, "eth0"),
-    (101004, "ethernet", 0x00000014, "eth0"),
-    (102001, "ethernet", 0x00000021, "eth0"),
-    (102001, "ethernet", 0x00000121, "eth1"),
-    (102001, "ethernet", 0x00000221, "eth2"),
-    (102001, "ethernet", 0x00000321, "eth3"),
-    (102002, "ethernet", 0x00000022, "eth0"),
-    (102003, "ethernet", 0x00000023, "eth0"),
-    (102004, "ethernet", 0x00000024, "eth0"),
-    (103001, "ethernet", 0x00000031, "eth0"),
-    (103001, "rdma", 0x00000031, "rdma"),
-    (103002, "ethernet", 0x00000032, "eth0"),
-    (103002, "rdma", 0x00000032, "rdma"),
-    (103003, "ethernet", 0x00000033, "eth0"),
-    (103003, "rdma", 0x00000033, "rdma"),
-    (103004, "ethernet", 0x00000034, "eth0"),
-    (103004, "rdma", 0x0000003F, "rdma")
+    (101001, "ethernet", X'00000001', "eth0"),
+    (101001, "ethernet", X'00000002', "eth1"),
+    (101001, "ethernet", X'00000003', "eth2"),
+    (101001, "ethernet", X'00000004', "eth3"),
+    (101002, "ethernet", X'00000005', "eth0"),
+    (101003, "ethernet", X'00000006', "eth0"),
+    (101004, "ethernet", X'00000007', "eth0"),
+    (102001, "ethernet", X'00000008', "eth0"),
+    (102001, "ethernet", X'00000009', "eth1"),
+    (102001, "ethernet", X'0000000A', "eth2"),
+    (102001, "ethernet", X'0000000B', "eth3"),
+    (102002, "ethernet", X'0000000C', "eth0"),
+    (102003, "ethernet", X'0000000D', "eth0"),
+    (102004, "ethernet", X'0000000E', "eth0"),
+    (103001, "ethernet", X'0000000F', "eth0"),
+    (103001, "rdma", X'00000010', "rdma"),
+    (103002, "ethernet", X'00000011', "eth0"),
+    (103002, "rdma", X'00000012', "rdma"),
+    (103003, "ethernet", X'00000013', "eth0"),
+    (103003, "rdma", X'00000014', "rdma"),
+    (103004, "ethernet", X'00000015', "eth0"),
+    (103004, "rdma", X'00000016', "rdma")
 ;
 
 INSERT INTO storage_pools (pool_id, alias) VALUES
@@ -118,10 +118,10 @@ INSERT INTO entities (uid, entity_type) VALUES
 
 INSERT INTO targets (target_uid, node_type, alias, total_space, total_inodes, free_space, free_inodes,
     consistency) VALUES
-    (201001, "meta", "meta_target_1", 1000000, 1000000, 200000, 200000, "good"),
-    (201002, "meta", "meta_target_2", 1000000, 1000000, 400000, 400000, "good"),
-    (201003, "meta", "meta_target_3", 1000000, 1000000, 600000, 600000, "good"),
-    (201004, "meta", "meta_target_4", 1000000, 1000000, 800000, 800000, "good"),
+    (201001, "meta", "meta_target_1", 1000000, 1000000, 500000, 500000, "good"),
+    (201002, "meta", "meta_target_2", 1000000, 1000000, 500000, 500000, "good"),
+    (201003, "meta", "meta_target_3", 1000000, 1000000, 500000, 500000, "good"),
+    (201004, "meta", "meta_target_4", 1000000, 1000000, 500000, 500000, "good"),
 
     (202001, "storage", "storage_target_1", 1000000, 1000000, 500000, 500000, "good"),
     (202002, "storage", "storage_target_2", 1000000, 1000000, 500000, 500000, "good"),

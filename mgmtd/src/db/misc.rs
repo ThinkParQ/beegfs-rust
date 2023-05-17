@@ -4,7 +4,8 @@ use rusqlite::OptionalExtension;
 use std::ops::RangeInclusive;
 
 /// Finds unused ID for specified table in the given range. It tries by the
-/// following order: 1. The biggest unused id within the allowed range
+/// following order:
+/// 1. The biggest unused id within the allowed range
 /// 2. The smallest unused id within the allowed range
 /// 3. The minimum value if unused (this happens when the table is empty)
 ///
@@ -24,14 +25,15 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
         &format!(
             r#"
             SELECT COALESCE(
-                (SELECT {field} + 1 FROM {table}
-                    WHERE ({field} + 1)BETWEEN {min} AND {max}
-                    ORDER BY {field} DESC LIMIT 1
+                (SELECT MAX(t1.{field}) + 1 AS new
+                    FROM {table} AS t1
+                    LEFT JOIN {table} AS t2 ON t2.{field} = t1.{field} + 1
+                    WHERE t2.{field} IS NULL AND t1.{field} + 1 BETWEEN {min} AND {max}
                 ),
-                (SELECT {field} + 1 FROM {table} WHERE NOT EXISTS
-                    (SELECT NULL FROM {table} AS i WHERE i.{field} = {field} + 1)
-                    AND ({field} + 1) BETWEEN {min} AND {max}
-                    ORDER BY {field} ASC LIMIT 1
+                (SELECT MIN(t1.{field}) + 1 AS new
+                    FROM {table} AS t1
+                    LEFT JOIN {table} AS t2 ON t2.{field} = t1.{field} + 1
+                    WHERE t2.{field} IS NULL AND t1.{field} + 1 BETWEEN {min} AND {max}
                 ),
                 (SELECT {min} WHERE NOT EXISTS
                     (SELECT NULL FROM {table} WHERE {field} = {min})
@@ -46,6 +48,7 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
     Ok(id)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MetaRoot {
     Unknown,
     Normal(TargetUID, NodeID, NodeUID),
@@ -109,4 +112,46 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     ensure_rows_modified!(affected, ());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::with_test_data;
+
+    #[test]
+    fn find_new_id() {
+        with_test_data(|tx| {
+            // New max id
+            let new_id = super::find_new_id(tx, "meta_targets", "target_id", 1..=100).unwrap();
+            assert_eq!(new_id, 5);
+            // New min ID in a non-empty range
+            let new_id = super::find_new_id(tx, "meta_targets", "target_id", 0..=4).unwrap();
+            assert_eq!(new_id, 0);
+            // New min ID in an empty range
+            let new_id = super::find_new_id(tx, "meta_targets", "target_id", 100..=101).unwrap();
+            assert_eq!(new_id, 100);
+
+            // All IDs taken
+            super::find_new_id(tx, "meta_targets", "target_id", 1..=4).unwrap_err();
+        })
+    }
+
+    #[test]
+    fn meta_root() {
+        with_test_data(|tx| {
+            let meta_root = super::get_meta_root(tx).unwrap();
+            assert_eq!(
+                MetaRoot::Normal(201001.into(), 1.into(), 101001.into()),
+                meta_root
+            );
+
+            super::enable_metadata_mirroring(tx).unwrap();
+
+            let meta_root = super::get_meta_root(tx).unwrap();
+            assert_eq!(MetaRoot::Mirrored(1.into()), meta_root);
+
+            super::enable_metadata_mirroring(tx).unwrap_err();
+        })
+    }
 }

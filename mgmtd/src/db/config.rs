@@ -30,3 +30,39 @@ pub(crate) fn get(tx: &mut Transaction) -> Result<ConfigMap> {
 
     Ok(map)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::with_test_data;
+
+    #[test]
+    fn set_get() {
+        with_test_data(|tx| {
+            super::set(
+                tx,
+                [("test_key_1".to_string(), "test_value_1".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+
+            let map = super::get(tx).unwrap();
+
+            assert_eq!(5, map.len());
+            assert_eq!("test_value_1", map["test_key_1"]);
+
+            super::set(
+                tx,
+                [("test_key_1".to_string(), "test_value_2".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+
+            let map = super::get(tx).unwrap();
+
+            assert_eq!("test_value_2", map["test_key_1"]);
+        })
+    }
+}

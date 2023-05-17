@@ -19,7 +19,7 @@ pub(crate) fn with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec
         r#"
         SELECT nn.nic_uid, nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
         FROM node_nics AS nn
-        INNER JOIN all_nodes_v AS n USING(node_uid)
+        INNER JOIN nodes AS n USING(node_uid)
         WHERE n.node_type = ?1
         "#,
         params![node_type],
@@ -56,4 +56,26 @@ fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> Result<Vec<
         .try_collect()?;
 
     Ok(nics)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::with_test_data;
+
+    #[test]
+    fn with_type() {
+        with_test_data(|tx| {
+            let nics = super::with_type(tx, NodeType::Meta).unwrap();
+            assert_eq!(7, nics.len());
+        })
+    }
+
+    #[test]
+    fn with_node_uid() {
+        with_test_data(|tx| {
+            let nics = super::with_node_uid(tx, 102001.into()).unwrap();
+            assert_eq!(4, nics.len());
+        })
+    }
 }
