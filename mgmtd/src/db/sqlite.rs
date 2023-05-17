@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use tokio_rusqlite::Connection;
 
-fn setup_connection(conn: &mut rusqlite::Connection) -> Result<()> {
+pub(crate) fn setup_connection(conn: &mut rusqlite::Connection) -> Result<()> {
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
     conn.pragma_update(None, "journal_mode", "DELETE")?;
