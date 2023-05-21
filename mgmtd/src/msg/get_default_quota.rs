@@ -14,9 +14,9 @@ pub(super) async fn handle(
             rcc.respond(&msg::GetDefaultQuotaResp {
                 limits: QuotaDefaultLimits {
                     user_space_limit: res.user_space_limit.unwrap_or_default(),
-                    user_inode_limit: res.user_inode_limit.unwrap_or_default(),
+                    user_inode_limit: res.user_inodes_limit.unwrap_or_default(),
                     group_space_limit: res.group_space_limit.unwrap_or_default(),
-                    group_inode_limit: res.group_inode_limit.unwrap_or_default(),
+                    group_inode_limit: res.group_inodes_limit.unwrap_or_default(),
                 },
             })
             .await

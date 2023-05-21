@@ -7,19 +7,39 @@ pub(super) async fn handle(
 ) -> Result<()> {
     match ci
         .execute_db(move |tx| {
-            db::quota_default_limits::update(
-                tx,
-                msg.pool_id,
-                msg.id_type,
-                match msg.space {
-                    Space::ZERO => None,
-                    n => Some(n),
-                },
-                match msg.inodes {
-                    Inodes::ZERO => None,
-                    n => Some(n),
-                },
-            )
+            match msg.space {
+                Space::ZERO => db::quota_default_limits::delete(
+                    tx,
+                    msg.pool_id,
+                    msg.id_type,
+                    QuotaType::Space,
+                )?,
+                n => db::quota_default_limits::update(
+                    tx,
+                    msg.pool_id,
+                    msg.id_type,
+                    QuotaType::Space,
+                    n.into(),
+                )?,
+            };
+
+            match msg.inodes {
+                Inodes::ZERO => db::quota_default_limits::delete(
+                    tx,
+                    msg.pool_id,
+                    msg.id_type,
+                    QuotaType::Inodes,
+                )?,
+                n => db::quota_default_limits::update(
+                    tx,
+                    msg.pool_id,
+                    msg.id_type,
+                    QuotaType::Inodes,
+                    n.into(),
+                )?,
+            };
+
+            Ok(())
         })
         .await
     {

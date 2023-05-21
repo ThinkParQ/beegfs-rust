@@ -4,9 +4,9 @@ use rusqlite::OptionalExtension;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DefaultLimits {
     pub user_space_limit: Option<Space>,
-    pub user_inode_limit: Option<Inodes>,
+    pub user_inodes_limit: Option<Inodes>,
     pub group_space_limit: Option<Space>,
-    pub group_inode_limit: Option<Inodes>,
+    pub group_inodes_limit: Option<Inodes>,
 }
 
 pub(crate) fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
@@ -22,9 +22,9 @@ pub(crate) fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Resu
         .query_row(params![pool_id], |row| {
             Ok(DefaultLimits {
                 user_space_limit: row.get(0)?,
-                user_inode_limit: row.get(1)?,
+                user_inodes_limit: row.get(1)?,
                 group_space_limit: row.get(2)?,
-                group_inode_limit: row.get(3)?,
+                group_inodes_limit: row.get(3)?,
             })
         })
         .optional()?;
@@ -36,8 +36,8 @@ pub(crate) fn update(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-    space: Option<Space>,
-    inodes: Option<Inodes>,
+    quota_type: QuotaType,
+    value: u64,
 ) -> Result<()> {
     let mut stmt = tx.prepare_cached(
         r#"
@@ -49,13 +49,60 @@ pub(crate) fn update(
         "#,
     )?;
 
-    if let Some(space) = space {
-        stmt.execute(params![id_type, QuotaType::Space, pool_id, space])?;
-    }
-
-    if let Some(inodes) = inodes {
-        stmt.execute(params![id_type, QuotaType::Inodes, pool_id, inodes])?;
-    }
+    stmt.execute(params![id_type, quota_type, pool_id, value])?;
 
     Ok(())
+}
+
+pub(crate) fn delete(
+    tx: &mut Transaction,
+    pool_id: StoragePoolID,
+    id_type: QuotaIDType,
+    quota_type: QuotaType,
+) -> Result<()> {
+    let mut stmt = tx.prepare_cached(
+        r#"
+        DELETE FROM quota_default_limits
+        WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
+        "#,
+    )?;
+
+    stmt.execute(params![id_type, quota_type, pool_id])?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tests::with_test_data;
+
+    #[test]
+    fn set_get() {
+        with_test_data(|tx| {
+            let defaults = super::with_pool_id(tx, 1.into()).unwrap();
+
+            assert_eq!(Some(1000.into()), defaults.user_space_limit);
+            assert_eq!(Some(1000.into()), defaults.user_inodes_limit);
+            assert_eq!(Some(1000.into()), defaults.group_space_limit);
+            assert_eq!(Some(1000.into()), defaults.group_inodes_limit);
+
+            let defaults = super::with_pool_id(tx, 2.into()).unwrap();
+
+            assert_eq!(None, defaults.user_space_limit);
+            assert_eq!(None, defaults.user_inodes_limit);
+            assert_eq!(None, defaults.group_space_limit);
+            assert_eq!(None, defaults.group_inodes_limit);
+
+            super::delete(tx, 1.into(), QuotaIDType::User, QuotaType::Space).unwrap();
+            super::update(tx, 1.into(), QuotaIDType::User, QuotaType::Inodes, 2000).unwrap();
+
+            let defaults = super::with_pool_id(tx, 1.into()).unwrap();
+
+            assert_eq!(None, defaults.user_space_limit);
+            assert_eq!(Some(2000.into()), defaults.user_inodes_limit);
+            assert_eq!(Some(1000.into()), defaults.group_space_limit);
+            assert_eq!(Some(1000.into()), defaults.group_inodes_limit);
+        })
+    }
 }

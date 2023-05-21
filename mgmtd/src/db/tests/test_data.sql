@@ -200,7 +200,9 @@ INSERT INTO root_inode (_only_one_row, target_id, buddy_group_id) VALUES
 
 INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value) VALUES
     ("user", "space", 1, 1000),
-    ("user", "inodes", 1, 1000)
+    ("user", "inodes", 1, 1000),
+    ("group", "space", 1, 1000),
+    ("group", "inodes", 1, 1000)
 ;
 
 INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value) VALUES

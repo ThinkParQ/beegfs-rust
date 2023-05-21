@@ -246,4 +246,38 @@ mod test {
             assert!(nodes.iter().any(|n| n.alias == "new_node_2".into()));
         });
     }
+
+    #[test]
+    fn delete() {
+        with_test_data(|tx| {
+            super::delete(tx, 1.into(), NodeType::Client).unwrap();
+            super::delete(tx, 1.into(), NodeType::Client).unwrap_err();
+
+            super::delete(tx, 1.into(), NodeType::Meta).unwrap_err();
+        })
+    }
+
+    #[test]
+    fn delete_stale_clients() {
+        with_test_data(|tx| {
+            let deleted = super::delete_stale_clients(tx, Duration::from_secs(99999)).unwrap();
+            assert_eq!(0, deleted);
+
+            tx.execute(
+                r#"
+                UPDATE nodes
+                SET last_contact = DATETIME("now", "-1 hour")
+                WHERE node_uid IN (103001, 103002)
+                "#,
+                [],
+            )
+            .unwrap();
+
+            let deleted = super::delete_stale_clients(tx, Duration::from_secs(100)).unwrap();
+            assert_eq!(2, deleted);
+
+            let clients = nodes::with_type(tx, NodeType::Client).unwrap();
+            assert_eq!(2, clients.len());
+        })
+    }
 }
