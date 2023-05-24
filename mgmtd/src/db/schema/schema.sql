@@ -3,7 +3,9 @@
 CREATE TABLE entities (
     uid INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL
-        CHECK(entity_type IN ("node", "target", "buddy_group")),
+        CHECK(entity_type IN ("node", "target", "buddy_group", "storage_pool")),
+    alias TEXT UNIQUE NOT NULL
+        CHECK(LENGTH(alias) > 0),
 
     UNIQUE(uid, entity_type)
 );
@@ -13,8 +15,6 @@ CREATE TABLE nodes (
     node_type TEXT NOT NULL
         CHECK (node_type IN ("meta", "storage", "client")),
 
-    alias TEXT UNIQUE NOT NULL
-        CHECK(LENGTH(alias) > 0),
     port INTEGER NOT NULL
         CHECK(port BETWEEN 0 AND 0xFFFF),
     last_contact TEXT NOT NULL,
@@ -34,12 +34,11 @@ END;
 CREATE TABLE meta_nodes (
     node_id INTEGER PRIMARY KEY
         CHECK(node_id BETWEEN 1 AND 0xFFFF),
-    node_uid INTEGER NOT NULL
-        REFERENCES nodes (node_uid) ON DELETE CASCADE,
+    node_uid INTEGER UNIQUE NOT NULL,
 
     node_type TEXT GENERATED ALWAYS AS ("meta"),
 
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type)
+    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 );
 
 CREATE TRIGGER "Auto delete node after meta delete" AFTER DELETE ON meta_nodes
@@ -51,12 +50,11 @@ END;
 CREATE TABLE storage_nodes (
     node_id INTEGER PRIMARY KEY
         CHECK(node_id BETWEEN 1 AND 0xFFFF),
-    node_uid INTEGER NOT NULL
-        REFERENCES nodes (node_uid) ON DELETE CASCADE,
+    node_uid INTEGER UNIQUE NOT NULL,
 
     node_type TEXT GENERATED ALWAYS AS ("storage"),
 
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type)
+    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 );
 
 CREATE TRIGGER "Auto delete node after storage delete" AFTER DELETE ON storage_nodes
@@ -68,12 +66,11 @@ END;
 CREATE TABLE client_nodes (
     node_id INTEGER PRIMARY KEY
         CHECK(node_id BETWEEN 1 AND 0xFFFF),
-    node_uid INTEGER NOT NULL
-        REFERENCES nodes (node_uid) ON DELETE CASCADE,
+    node_uid INTEGER UNIQUE NOT NULL,
 
     node_type TEXT GENERATED ALWAYS AS ("client"),
 
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type)
+    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 );
 
 CREATE TRIGGER "Auto delete node after client delete" AFTER DELETE ON client_nodes
@@ -98,8 +95,6 @@ CREATE TABLE targets (
     node_type TEXT NOT NULL
         CHECK (node_type IN ("meta", "storage")),
 
-    alias TEXT UNIQUE NOT NULL
-        CHECK(LENGTH(alias) > 0),
     total_space INTEGER
         CHECK(total_space >= 0),
     total_inodes INTEGER
@@ -130,15 +125,14 @@ CREATE TABLE meta_targets (
         -- node and enforce it to have that same ID.
         REFERENCES meta_nodes (node_id) ON DELETE RESTRICT
         CHECK(target_id BETWEEN 1 AND 0xFFFF),
-    target_uid INTEGER UNIQUE NOT NULL
-        REFERENCES targets (target_uid) ON DELETE CASCADE,
+    target_uid INTEGER UNIQUE NOT NULL,
 
     node_id INTEGER NOT NULL
         REFERENCES meta_nodes (node_id) ON DELETE RESTRICT,
 
     node_type TEXT GENERATED ALWAYS AS ("meta"),
 
-    FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type)
+    FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
 );
 
 CREATE TRIGGER "Auto delete target after meta delete" AFTER DELETE ON meta_targets
@@ -150,8 +144,7 @@ END;
 CREATE TABLE storage_targets (
     target_id INTEGER PRIMARY KEY
         CHECK(target_id BETWEEN 1 AND 0xFFFF),
-    target_uid INTEGER UNIQUE NOT NULL
-        REFERENCES targets (target_uid) ON DELETE CASCADE,
+    target_uid INTEGER UNIQUE NOT NULL,
 
     -- NULL means the target is "unmapped", meaning it is not assigned to a node
     node_id INTEGER
@@ -161,7 +154,7 @@ CREATE TABLE storage_targets (
 
     node_type TEXT GENERATED ALWAYS AS ("storage"),
 
-    FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type)
+    FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
 );
 
 CREATE TRIGGER "Auto delete target after storage delete" AFTER DELETE ON storage_targets
@@ -173,11 +166,23 @@ END;
 CREATE TABLE storage_pools (
     pool_id INTEGER PRIMARY KEY
         CHECK(pool_id BETWEEN 1 AND 0xFFFF),
-    alias TEXT NOT NULL
+    pool_uid INTEGER UNIQUE NOT NULL,
+
+    entity_type TEXT GENERATED ALWAYS AS ("storage_pool"),
+
+    FOREIGN KEY (pool_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 );
 
+CREATE TRIGGER "Auto delete entity after pool delete" AFTER DELETE ON storage_pools
+FOR EACH ROW
+BEGIN
+    DELETE FROM entities WHERE uid = OLD.pool_uid;
+END;
+
+
 -- Default storage pool
-INSERT INTO storage_pools (pool_id, alias) VALUES (1, "Default");
+INSERT INTO entities VALUES (1, "storage_pool", "storage_pool_default");
+INSERT INTO storage_pools (pool_id, pool_uid) VALUES (1, 1);
 
 CREATE TRIGGER "Prevent default pool deletion" BEFORE DELETE ON storage_pools
 FOR EACH ROW WHEN OLD.pool_id == 1

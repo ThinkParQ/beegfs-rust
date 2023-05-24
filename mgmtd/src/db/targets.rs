@@ -54,20 +54,20 @@ pub(crate) fn insert_meta(
 ) -> Result<()> {
     let mut stmt = tx.prepare_cached(
         r#"
-        INSERT INTO entities (entity_type) VALUES ("target")
+        INSERT INTO entities (entity_type, alias) VALUES ("target", ?1)
         "#,
     )?;
 
-    stmt.execute(params![])?;
+    stmt.execute(params![alias])?;
 
     let new_uid: TargetUID = tx.last_insert_rowid().into();
 
     tx.execute(
         r#"
-        INSERT INTO targets (target_uid, node_type, alias)
-        VALUES (?1, "meta", ?2)
+        INSERT INTO targets (target_uid, node_type)
+        VALUES (?1, "meta")
         "#,
-        params![new_uid, alias],
+        params![new_uid],
     )?;
 
     tx.execute(
@@ -97,20 +97,20 @@ pub(crate) fn insert_storage_if_new(
     fn insert(tx: &mut Transaction, target_id: TargetID, alias: &EntityAlias) -> Result<()> {
         let mut stmt = tx.prepare_cached(
             r#"
-            INSERT INTO entities (entity_type) VALUES ("target")
+            INSERT INTO entities (entity_type, alias) VALUES ("target", ?1)
             "#,
         )?;
 
-        stmt.execute(params![])?;
+        stmt.execute(params![alias])?;
 
         let new_uid: TargetUID = tx.last_insert_rowid().into();
 
         tx.execute(
             r#"
-            INSERT INTO targets (target_uid, node_type, alias)
-            VALUES (?1, "storage", ?2)
+            INSERT INTO targets (target_uid, node_type)
+            VALUES (?1, "storage")
             "#,
-            params![new_uid, alias,],
+            params![new_uid],
         )?;
 
         tx.execute(

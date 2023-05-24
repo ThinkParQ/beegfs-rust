@@ -42,7 +42,7 @@ pub(crate) fn for_meta_buddy_groups(
 ) -> Result<Vec<EntityWithCapPool>> {
     select(
         tx,
-        include_str!("cap_pools/select_meta_targets.sql"),
+        include_str!("cap_pools/select_meta_buddy_groups.sql"),
         limits,
         dynamic_limits,
     )
@@ -55,7 +55,7 @@ pub(crate) fn for_storage_buddy_groups(
 ) -> Result<Vec<EntityWithCapPool>> {
     select(
         tx,
-        include_str!("cap_pools/select_storage_targets.sql"),
+        include_str!("cap_pools/select_storage_buddy_groups.sql"),
         limits,
         dynamic_limits,
     )

@@ -10,7 +10,8 @@ pub(crate) struct StoragePool {
 pub(crate) fn all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
     let mut stmt = tx.prepare_cached(
         r#"
-        SELECT pool_id, alias FROM storage_pools
+        SELECT p.pool_id, alias FROM storage_pools AS p
+        INNER JOIN entities AS e ON e.uid = p.pool_uid
         "#,
     )?;
 
@@ -37,11 +38,21 @@ pub(crate) fn insert(
         misc::find_new_id(tx, "storage_pools", "pool_id", 1..=0xFFFF)?.into()
     };
 
+    let mut stmt = tx.prepare_cached(
+        r#"
+        INSERT INTO entities (entity_type, alias) VALUES ("storage_pool", ?1)
+        "#,
+    )?;
+
+    stmt.execute(params![alias])?;
+
+    let new_uid: NodeUID = tx.last_insert_rowid().into();
+
     tx.execute(
         r#"
-        INSERT INTO storage_pools (pool_id, alias) VALUES (?1, ?2);
+        INSERT INTO storage_pools (pool_id, pool_uid) VALUES (?1, ?2);
         "#,
-        params![pool_id, alias],
+        params![pool_id, new_uid],
     )?;
 
     Ok(pool_id)

@@ -73,11 +73,12 @@ pub(crate) fn insert(
 
     let mut stmt = tx.prepare_cached(
         r#"
-        INSERT INTO entities (entity_type) VALUES ("buddy_group")
+        INSERT INTO entities (entity_type, alias)
+        VALUES ("buddy_group", ?1)
         "#,
     )?;
 
-    stmt.execute(params![])?;
+    stmt.execute(params![format!("{node_type}_buddy_group_{new_id}")])?;
 
     let new_uid: BuddyGroupUID = tx.last_insert_rowid().into();
 

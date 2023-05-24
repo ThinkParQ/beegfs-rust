@@ -1,7 +1,8 @@
 CREATE VIEW all_nodes_v AS
     WITH all_nodes AS (
-        SELECT *, (STRFTIME('%s', 'now') - STRFTIME('%s', last_contact)) AS last_contact_s
-        FROM nodes
+        SELECT n.*, e.alias, (STRFTIME('%s', 'now') - STRFTIME('%s', last_contact)) AS last_contact_s
+        FROM nodes AS n
+        INNER JOIN entities AS e ON e.uid = n.node_uid
     )
         SELECT n.*, mn.node_id
         FROM all_nodes AS n
@@ -17,7 +18,7 @@ CREATE VIEW all_nodes_v AS
 ;
 
 CREATE VIEW meta_targets_v AS
-    SELECT t.*, mt.target_id, mn.node_id, NULL AS pool_id, n.node_uid,
+    SELECT t.*, e.alias, mt.target_id, mn.node_id, NULL AS pool_id, n.node_uid,
         mgp.buddy_group_id AS primary_of,
         mgs.buddy_group_id AS secondary_of,
         (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact)) AS last_contact_s
@@ -25,12 +26,13 @@ CREATE VIEW meta_targets_v AS
     INNER JOIN meta_targets AS mt USING(target_uid)
     INNER JOIN meta_nodes AS mn USING(node_id)
     INNER JOIN nodes AS n USING(node_uid)
+    INNER JOIN entities AS e ON e.uid = t.target_uid
     LEFT JOIN meta_buddy_groups AS mgp ON mgp.primary_target_id = mt.target_id
     LEFT JOIN meta_buddy_groups AS mgs ON mgs.secondary_target_id = mt.target_id
 ;
 
 CREATE VIEW storage_targets_v AS
-    SELECT t.*, st.target_id, sn.node_id, st.pool_id, n.node_uid,
+    SELECT t.*, e.alias, st.target_id, sn.node_id, st.pool_id, n.node_uid,
         sgp.buddy_group_id AS primary_of,
         sgs.buddy_group_id AS secondary_of,
         (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact)) AS last_contact_s
@@ -38,6 +40,7 @@ CREATE VIEW storage_targets_v AS
     INNER JOIN storage_targets AS st USING(target_uid)
     INNER JOIN storage_nodes AS sn USING(node_id)
     INNER JOIN nodes AS n USING(node_uid)
+    INNER JOIN entities AS e ON e.uid = t.target_uid
     LEFT JOIN storage_buddy_groups AS sgp ON sgp.primary_target_id = st.target_id
     LEFT JOIN storage_buddy_groups AS sgs ON sgs.secondary_target_id = st.target_id
 ;

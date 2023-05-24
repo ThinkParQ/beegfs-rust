@@ -72,13 +72,23 @@ pub(crate) fn set(
         // Try to update existing node
         let mut stmt = tx.prepare_cached(
             r#"
-            UPDATE nodes SET alias = ?1, port = ?2, last_contact = DATETIME('now')
-            WHERE node_uid = (
-                SELECT node_uid FROM all_nodes_v WHERE node_id = ?3 AND node_type = ?4
+            UPDATE entities SET alias = ?1
+            WHERE uid = (
+                SELECT node_uid FROM all_nodes_v WHERE node_id = ?2 AND node_type = ?3
             )
             "#,
         )?;
-        stmt.execute(params![new_alias, new_port, node_id, node_type])?
+        stmt.execute(params![new_alias, node_id, node_type])?;
+
+        let mut stmt = tx.prepare_cached(
+            r#"
+            UPDATE nodes SET port = ?1, last_contact = DATETIME('now')
+            WHERE node_uid = (
+                SELECT node_uid FROM all_nodes_v WHERE node_id = ?2 AND node_type = ?3
+            )
+            "#,
+        )?;
+        stmt.execute(params![new_port, node_id, node_type])?
     };
 
     // Doesn't exist (yet)
@@ -91,22 +101,22 @@ pub(crate) fn set(
             // try to insert
             let mut stmt = tx.prepare_cached(
                 r#"
-                INSERT INTO entities (entity_type) VALUES ("node")
+                INSERT INTO entities (entity_type, alias) VALUES ("node", ?1)
                 "#,
             )?;
 
-            stmt.execute(params![])?;
+            stmt.execute(params![new_alias])?;
 
             let new_uid: NodeUID = tx.last_insert_rowid().into();
 
             let mut stmt = tx.prepare_cached(
                 r#"
-            INSERT INTO nodes (node_uid, node_type, alias, port, last_contact)
-            VALUES (?1, ?2, ?3, ?4, DATETIME('now'))
+            INSERT INTO nodes (node_uid, node_type, port, last_contact)
+            VALUES (?1, ?2, ?3, DATETIME('now'))
             "#,
             )?;
 
-            stmt.execute(params![new_uid, node_type, new_alias, new_port])?;
+            stmt.execute(params![new_uid, node_type, new_port])?;
 
             let mut stmt = tx.prepare_cached(&format!(
                 r#"
@@ -120,7 +130,7 @@ pub(crate) fn set(
         }
 
         if node_type == NodeType::Meta {
-            targets::insert_meta(tx, node_id, &new_alias)?;
+            targets::insert_meta(tx, node_id, &format!("{new_alias}_target").into())?;
         }
     }
 
