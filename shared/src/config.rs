@@ -47,16 +47,16 @@ config::define_config!(
 
     // Capacity pools
     CapPoolMetaLimits: CapPoolLimits = CapPoolLimits {
-        inodes_low: (10 * 1000 * 1000).into(),
-        inodes_emergency: (1000 * 1000).into(),
-        space_low: (10 * 1024 * 1024 * 1024).into(),
-        space_emergency: (3 * 1024 * 1024 * 1024).into()
+        inodes_low: 10 * 1000 * 1000,
+        inodes_emergency: 1000 * 1000,
+        space_low: 10 * 1024 * 1024 * 1024,
+        space_emergency: 3 * 1024 * 1024 * 1024
     },
     CapPoolStorageLimits: CapPoolLimits = CapPoolLimits {
-        inodes_low: (10 * 1000 * 1000).into(),
-        inodes_emergency: (1000 * 1000).into(),
-        space_low: (512 * 1024 * 1024 * 1024).into(),
-        space_emergency: (10 * 1024 * 1024 * 1024).into()
+        inodes_low: 10 * 1000 * 1000,
+        inodes_emergency: 1000 * 1000,
+        space_low: 512 * 1024 * 1024 * 1024,
+        space_emergency: 10 * 1024 * 1024 * 1024
     },
 
     // Dynamic capacity pools

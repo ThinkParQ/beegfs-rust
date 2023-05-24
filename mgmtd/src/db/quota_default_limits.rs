@@ -3,10 +3,10 @@ use rusqlite::OptionalExtension;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DefaultLimits {
-    pub user_space_limit: Option<Space>,
-    pub user_inodes_limit: Option<Inodes>,
-    pub group_space_limit: Option<Space>,
-    pub group_inodes_limit: Option<Inodes>,
+    pub user_space_limit: Option<u64>,
+    pub user_inodes_limit: Option<u64>,
+    pub group_space_limit: Option<u64>,
+    pub group_inodes_limit: Option<u64>,
 }
 
 pub(crate) fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
@@ -82,10 +82,10 @@ mod test {
         with_test_data(|tx| {
             let defaults = super::with_pool_id(tx, 1.into()).unwrap();
 
-            assert_eq!(Some(1000.into()), defaults.user_space_limit);
-            assert_eq!(Some(1000.into()), defaults.user_inodes_limit);
-            assert_eq!(Some(1000.into()), defaults.group_space_limit);
-            assert_eq!(Some(1000.into()), defaults.group_inodes_limit);
+            assert_eq!(Some(1000), defaults.user_space_limit);
+            assert_eq!(Some(1000), defaults.user_inodes_limit);
+            assert_eq!(Some(1000), defaults.group_space_limit);
+            assert_eq!(Some(1000), defaults.group_inodes_limit);
 
             let defaults = super::with_pool_id(tx, 2.into()).unwrap();
 
@@ -100,9 +100,9 @@ mod test {
             let defaults = super::with_pool_id(tx, 1.into()).unwrap();
 
             assert_eq!(None, defaults.user_space_limit);
-            assert_eq!(Some(2000.into()), defaults.user_inodes_limit);
-            assert_eq!(Some(1000.into()), defaults.group_space_limit);
-            assert_eq!(Some(1000.into()), defaults.group_inodes_limit);
+            assert_eq!(Some(2000), defaults.user_inodes_limit);
+            assert_eq!(Some(1000), defaults.group_space_limit);
+            assert_eq!(Some(1000), defaults.group_inodes_limit);
         })
     }
 }

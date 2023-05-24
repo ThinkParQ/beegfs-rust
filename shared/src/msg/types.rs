@@ -193,8 +193,8 @@ impl_enum_to_int!(GetQuotaInfoTransferMethod,
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct QuotaEntry {
-    pub space: Space,
-    pub inodes: Inodes,
+    pub space: u64,
+    pub inodes: u64,
     pub id: QuotaID,
     #[bee_serde(as = Int<i32>)]
     pub id_type: QuotaIDType,
@@ -204,10 +204,10 @@ pub struct QuotaEntry {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct QuotaDefaultLimits {
-    pub user_inode_limit: Inodes,
-    pub user_space_limit: Space,
-    pub group_inode_limit: Inodes,
-    pub group_space_limit: Space,
+    pub user_inode_limit: u64,
+    pub user_space_limit: u64,
+    pub group_inode_limit: u64,
+    pub group_space_limit: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

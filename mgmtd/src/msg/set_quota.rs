@@ -17,11 +17,11 @@ pub(super) async fn handle(
                         SpaceAndInodeLimits {
                             quota_id: e.id,
                             space: match e.space {
-                                Space::ZERO => None,
+                                0 => None,
                                 n => Some(n),
                             },
                             inodes: match e.inodes {
-                                Inodes::ZERO => None,
+                                0 => None,
                                 n => Some(n),
                             },
                         },

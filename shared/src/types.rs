@@ -11,11 +11,9 @@ mod pool;
 pub use pool::*;
 mod quota;
 pub use quota::*;
-use serde::{Deserialize, Serialize};
 mod target;
 
 use crate::bee_serde::{self, *};
-use crate::parser::integer_with_generic_unit;
 use crate::{impl_enum_to_int, impl_enum_to_sql_str, impl_enum_to_user_str, impl_newtype_to_sql};
 use anyhow::{bail, Result};
 use core::hash::Hash;
@@ -290,72 +288,3 @@ impl AuthenticationSecret {
         Self(hash)
     }
 }
-
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    BeeSerde,
-)]
-pub struct Space(#[serde(with = "integer_with_generic_unit")] u64);
-
-impl Space {
-    pub const ZERO: Self = Self(0);
-}
-
-impl From<u64> for Space {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Space> for u64 {
-    fn from(value: Space) -> u64 {
-        value.0
-    }
-}
-
-impl_newtype_to_sql!(Space => u64);
-
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    Hash,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    BeeSerde,
-)]
-
-pub struct Inodes(#[serde(with = "integer_with_generic_unit")] u64);
-
-impl Inodes {
-    pub const ZERO: Self = Self(0);
-}
-
-impl From<u64> for Inodes {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Inodes> for u64 {
-    fn from(value: Inodes) -> u64 {
-        value.0
-    }
-}
-
-impl_newtype_to_sql!(Inodes => u64);

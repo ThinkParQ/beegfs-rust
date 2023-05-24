@@ -68,10 +68,10 @@ fn select(
     dynamic_limits: Option<CapPoolDynamicLimits>,
 ) -> Result<Vec<EntityWithCapPool>> {
     let dynamic_limits = dynamic_limits.unwrap_or(CapPoolDynamicLimits {
-        inodes_normal_threshold: Inodes::ZERO,
-        inodes_low_threshold: Inodes::ZERO,
-        space_normal_threshold: Space::ZERO,
-        space_low_threshold: Space::ZERO,
+        inodes_normal_threshold: 0,
+        inodes_low_threshold: 0,
+        space_normal_threshold: 0,
+        space_low_threshold: 0,
         inodes_low: limits.inodes_low,
         inodes_emergency: limits.inodes_emergency,
         space_low: limits.space_low,

@@ -8,7 +8,7 @@ pub(super) async fn handle(
     match ci
         .execute_db(move |tx| {
             match msg.space {
-                Space::ZERO => db::quota_default_limits::delete(
+                0 => db::quota_default_limits::delete(
                     tx,
                     msg.pool_id,
                     msg.id_type,
@@ -19,12 +19,12 @@ pub(super) async fn handle(
                     msg.pool_id,
                     msg.id_type,
                     QuotaType::Space,
-                    n.into(),
+                    n,
                 )?,
             };
 
             match msg.inodes {
-                Inodes::ZERO => db::quota_default_limits::delete(
+                0 => db::quota_default_limits::delete(
                     tx,
                     msg.pool_id,
                     msg.id_type,
@@ -35,7 +35,7 @@ pub(super) async fn handle(
                     msg.pool_id,
                     msg.id_type,
                     QuotaType::Inodes,
-                    n.into(),
+                    n,
                 )?,
             };
 

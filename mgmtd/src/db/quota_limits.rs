@@ -7,8 +7,8 @@ use std::ops::RangeInclusive;
 #[allow(dead_code)]
 pub(crate) struct SpaceAndInodeLimits {
     pub quota_id: QuotaID,
-    pub space: Option<Space>,
-    pub inodes: Option<Inodes>,
+    pub space: Option<u64>,
+    pub inodes: Option<u64>,
 }
 
 pub(crate) fn with_quota_id(

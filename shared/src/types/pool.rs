@@ -1,4 +1,5 @@
 use super::*;
+use crate::parser::integer_with_generic_unit;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -55,20 +56,32 @@ impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapPoolLimits {
-    pub inodes_low: Inodes,
-    pub inodes_emergency: Inodes,
-    pub space_low: Space,
-    pub space_emergency: Space,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_emergency: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_emergency: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CapPoolDynamicLimits {
-    pub inodes_normal_threshold: Inodes,
-    pub inodes_low_threshold: Inodes,
-    pub space_normal_threshold: Space,
-    pub space_low_threshold: Space,
-    pub inodes_low: Inodes,
-    pub inodes_emergency: Inodes,
-    pub space_low: Space,
-    pub space_emergency: Space,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_normal_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_low_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_normal_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_low_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_emergency: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_emergency: u64,
 }

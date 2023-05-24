@@ -73,8 +73,8 @@ pub(crate) fn exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<Exceede
 pub(crate) struct QuotaData {
     pub quota_id: QuotaID,
     pub id_type: QuotaIDType,
-    pub space: Space,
-    pub inodes: Inodes,
+    pub space: u64,
+    pub inodes: u64,
 }
 
 pub(crate) fn upsert(
@@ -100,7 +100,7 @@ pub(crate) fn upsert(
 
     for d in data {
         match d.space {
-            Space::ZERO => {
+            0 => {
                 delete_stmt.execute(params![d.quota_id, d.id_type, QuotaType::Space, target_id,])?
             }
             _ => insert_stmt.execute(params![
@@ -113,7 +113,7 @@ pub(crate) fn upsert(
         };
 
         match d.inodes {
-            Inodes::ZERO => {
+            0 => {
                 delete_stmt
                     .execute(params![d.quota_id, d.id_type, QuotaType::Inodes, target_id,])?
             }
