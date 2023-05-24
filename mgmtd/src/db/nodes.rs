@@ -217,7 +217,6 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::with_test_data;
 
     #[test]
     fn set_get() {

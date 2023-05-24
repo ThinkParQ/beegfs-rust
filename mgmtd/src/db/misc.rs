@@ -117,7 +117,6 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::with_test_data;
 
     #[test]
     fn find_new_id() {

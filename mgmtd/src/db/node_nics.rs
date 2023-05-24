@@ -61,7 +61,6 @@ fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> Result<Vec<
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::with_test_data;
 
     #[test]
     fn with_type() {

@@ -231,7 +231,6 @@ pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID)
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::with_test_data;
 
     /// Test inserting and getting buddy groups
     #[test]

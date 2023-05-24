@@ -75,7 +75,6 @@ pub(crate) fn delete(
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::with_test_data;
 
     #[test]
     fn set_get() {

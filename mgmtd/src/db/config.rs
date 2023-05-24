@@ -34,7 +34,6 @@ pub(crate) fn get(tx: &mut Transaction) -> Result<ConfigMap> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use tests::with_test_data;
 
     #[test]
     fn set_get() {
