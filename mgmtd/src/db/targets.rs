@@ -1,5 +1,4 @@
 use super::*;
-use rusqlite::OptionalExtension;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -52,30 +51,12 @@ pub(crate) fn insert_meta(
     node_id: NodeID,
     alias: &EntityAlias,
 ) -> Result<()> {
-    let mut stmt = tx.prepare_cached(
-        r#"
-        INSERT INTO entities (entity_type, alias) VALUES ("target", ?1)
-        "#,
-    )?;
-
-    stmt.execute(params![alias])?;
-
-    let new_uid: TargetUID = tx.last_insert_rowid().into();
-
-    tx.execute(
-        r#"
-        INSERT INTO targets (target_uid, node_type)
-        VALUES (?1, "meta")
-        "#,
-        params![new_uid],
-    )?;
-
-    tx.execute(
-        r#"
-        INSERT INTO meta_targets (target_id, target_uid, node_id)
-        VALUES (?1, ?2, ?1)
-        "#,
-        params![node_id, new_uid],
+    insert(
+        tx,
+        u16::from(node_id).into(),
+        NodeTypeServer::Meta,
+        Some(node_id),
+        alias,
     )?;
 
     // If this is the first meta target, set it as meta root
@@ -89,94 +70,73 @@ pub(crate) fn insert_meta(
     Ok(())
 }
 
-pub(crate) fn insert_storage_if_new(
+pub(crate) fn insert_or_ignore_storage(
     tx: &mut Transaction,
-    target_id: TargetID,
-    alias: EntityAlias,
+    target_id: Option<TargetID>,
+    alias: &EntityAlias,
 ) -> Result<TargetID> {
-    fn insert(tx: &mut Transaction, target_id: TargetID, alias: &EntityAlias) -> Result<()> {
+    let target_id = if let Some(target_id) = target_id {
         let mut stmt = tx.prepare_cached(
-            r#"
-            INSERT INTO entities (entity_type, alias) VALUES ("target", ?1)
-            "#,
-        )?;
-
-        stmt.execute(params![alias])?;
-
-        let new_uid: TargetUID = tx.last_insert_rowid().into();
-
-        tx.execute(
-            r#"
-            INSERT INTO targets (target_uid, node_type)
-            VALUES (?1, "storage")
-            "#,
-            params![new_uid],
-        )?;
-
-        tx.execute(
-            r#"
-            INSERT INTO storage_targets (target_id, target_uid)
-            VALUES (?1, ?2)
-            "#,
-            params![target_id, new_uid],
-        )?;
-
-        Ok(())
-    }
-
-    if target_id == TargetID::ZERO {
-        if let Some(matching_id) = tx
-            .query_row(
-                r#"
-                SELECT target_id FROM storage_targets_v WHERE alias = ?1
-                "#,
-                [&alias],
-                |row| row.get(0),
-            )
-            .optional()?
-        {
-            Ok(matching_id)
-        } else {
-            let new_id = misc::find_new_id(tx, "storage_targets", "target_id", 1..=0xFFFF)?.into();
-            insert(tx, new_id, &alias)?;
-            Ok(new_id)
-        }
-    } else if 1
-        == tx.query_row(
-            r#"
-            SELECT COUNT(*) FROM storage_targets_v WHERE target_id = ?1 AND alias = ?2
-            "#,
-            params![target_id, alias],
-            |row| row.get::<_, i32>(0),
-        )?
-    {
-        // both IDs given and they match with existing entry
-        Ok(target_id)
-    } else if 1
-        == tx.query_row(
-            r#"
-            SELECT COUNT(*) FROM storage_targets_v WHERE alias = ?1
-            "#,
-            params![alias],
-            |row| row.get::<_, i32>(0),
-        )?
-    {
-        bail!(format!("{alias:?} conflicts with existing entry"));
-    } else if 1
-        == tx.query_row(
             r#"
             SELECT COUNT(*) FROM storage_targets_v WHERE target_id = ?1
             "#,
-            params![target_id],
-            |row| row.get::<_, i32>(0),
-        )?
-    {
-        bail!(format!("{target_id:?} conflicts with existing entry"));
+        )?;
+
+        let count = stmt.query_row(params![target_id], |row| row.get::<_, i32>(0))?;
+
+        drop(stmt);
+
+        if count == 0 {
+            insert(tx, target_id, NodeTypeServer::Storage, None, alias)?;
+        }
+
+        target_id
     } else {
-        // both IDs given and none of them is already used
-        insert(tx, target_id, &alias)?;
-        Ok(target_id)
-    }
+        let target_id = misc::find_new_id(tx, "storage_targets", "target_id", 1..=0xFFFF)?.into();
+        insert(tx, target_id, NodeTypeServer::Storage, None, alias)?;
+        target_id
+    };
+
+    Ok(target_id)
+}
+
+fn insert(
+    tx: &mut Transaction,
+    target_id: TargetID,
+    node_type: NodeTypeServer,
+    node_id: Option<NodeID>,
+    alias: &EntityAlias,
+) -> Result<()> {
+    println!("AAA insert");
+    let mut stmt = tx.prepare_cached(
+        r#"
+        INSERT INTO entities (entity_type, alias) VALUES ("target", ?1)
+        "#,
+    )?;
+
+    stmt.execute(params![alias])?;
+
+    let new_uid: TargetUID = tx.last_insert_rowid().into();
+
+    tx.execute(
+        r#"
+        INSERT INTO targets (target_uid, node_type)
+        VALUES (?1, ?2)
+        "#,
+        params![new_uid, node_type],
+    )?;
+
+    tx.execute(
+        &format!(
+            r#"
+            INSERT INTO {node_type}_targets (target_id, target_uid, node_id)
+            VALUES (?1, ?2, ?3)
+            "#,
+        ),
+        params![target_id, new_uid, node_id],
+    )?;
+
+    Ok(())
 }
 
 pub(crate) fn update_consistency_states(
@@ -304,4 +264,49 @@ pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Resul
     ensure_rows_modified!(affected, target_id);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn insert_meta() {
+        with_test_data(|tx| {
+            super::insert_meta(tx, 1.into(), &"existing_meta_target".into()).unwrap_err();
+            super::insert_meta(tx, 99.into(), &"new_meta_target".into()).unwrap();
+            // existing alias
+            super::insert_meta(tx, 99.into(), &"new_meta_target".into()).unwrap_err();
+
+            let targets = super::with_type(tx, NodeTypeServer::Meta).unwrap();
+
+            assert_eq!(5, targets.len());
+        })
+    }
+
+    #[test]
+    fn insert_storage_and_map() {
+        with_test_data(|tx| {
+            let new_target_id =
+                super::insert_or_ignore_storage(tx, None, &"new_storage_target".into()).unwrap();
+            super::insert_or_ignore_storage(tx, Some(1000.into()), &"new_storage_target_2".into())
+                .unwrap();
+
+            // existing alias
+            super::insert_or_ignore_storage(tx, None, &"new_storage_target".into()).unwrap_err();
+
+            super::update_storage_node_mapping(tx, new_target_id, 1.into()).unwrap();
+            super::update_storage_node_mapping(tx, 1000.into(), 1.into()).unwrap();
+
+            super::update_storage_node_mapping(tx, 9999.into(), 1.into()).unwrap_err();
+            super::update_storage_node_mapping(tx, 1.into(), 9999.into()).unwrap_err();
+
+            let targets = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+
+            assert_eq!(18, targets.len());
+
+            assert!(targets.iter().any(|e| e.target_id == new_target_id));
+            assert!(targets.iter().any(|e| e.target_id == 1000.into()));
+        })
+    }
 }

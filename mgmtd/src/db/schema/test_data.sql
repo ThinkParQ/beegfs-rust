@@ -11,6 +11,7 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (101002, "node", "meta_node_2"),
     (101003, "node", "meta_node_3"),
     (101004, "node", "meta_node_4"),
+    (101099, "node", "meta_node_no_target"),
     (102001, "node", "storage_node_1"),
     (102002, "node", "storage_node_2"),
     (102003, "node", "storage_node_3"),
@@ -27,6 +28,8 @@ INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES
     (101003, "meta", 8005, DATETIME("NOW")),
     (101004, "meta", 8005, DATETIME("NOW")),
 
+    (101099, "meta", 8005, DATETIME("NOW")),
+
     (102001, "storage", 8003, DATETIME("NOW")),
     (102002, "storage", 8003, DATETIME("NOW")),
     (102003, "storage", 8003, DATETIME("NOW")),
@@ -42,7 +45,9 @@ INSERT INTO meta_nodes (node_id, node_uid) VALUES
     (1, 101001),
     (2, 101002),
     (3, 101003),
-    (4, 101004)
+    (4, 101004),
+
+    (99, 101099)
 ;
 
 INSERT INTO storage_nodes (node_id, node_uid) VALUES

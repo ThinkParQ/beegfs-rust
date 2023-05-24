@@ -11,8 +11,17 @@ pub(super) async fn handle(
             bail!("Registration of new targets is disabled");
         }
 
-        ci.execute_db(move |tx| db::targets::insert_storage_if_new(tx, msg.id, msg.alias))
-            .await
+        ci.execute_db(move |tx| {
+            db::targets::insert_or_ignore_storage(
+                tx,
+                match msg.id {
+                    TargetID::ZERO => None,
+                    n => Some(n),
+                },
+                &msg.alias,
+            )
+        })
+        .await
     }
     .await
     {

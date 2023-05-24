@@ -130,7 +130,11 @@ pub(crate) fn set(
         }
 
         if node_type == NodeType::Meta {
-            targets::insert_meta(tx, node_id, &format!("{new_alias}_target").into())?;
+            targets::insert_meta(
+                tx,
+                u16::from(node_id).into(),
+                &format!("{new_alias}_target").into(),
+            )?;
         }
     }
 
@@ -249,7 +253,7 @@ mod test {
             let nodes = with_type(tx, NodeType::Meta).unwrap();
 
             // 2 new nodes added to test data
-            assert_eq!(nodes.len(), 4 + 2);
+            assert_eq!(nodes.len(), 5 + 2);
             assert!(nodes.iter().any(|n| n.id == 1234.into()));
             assert!(nodes.iter().any(|n| n.alias == "new_node_1".into()));
             assert!(nodes.iter().any(|n| n.alias == "new_node_2".into()));
