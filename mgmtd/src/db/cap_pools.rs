@@ -139,6 +139,18 @@ mod bench {
                 for_storage_targets(tx, limits.clone(), None).unwrap();
             });
 
+            transaction(&mut conn, |tx| {
+                for_meta_targets(tx, limits.clone(), None).unwrap();
+            });
+
+            transaction(&mut conn, |tx| {
+                for_storage_buddy_groups(tx, limits.clone(), None).unwrap();
+            });
+
+            transaction(&mut conn, |tx| {
+                for_meta_buddy_groups(tx, limits.clone(), None).unwrap();
+            });
+
             counter += 1;
         })
     }
