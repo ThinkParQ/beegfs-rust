@@ -24,8 +24,13 @@ sanity:
 test:
   image: rustlang/rust:nightly
   stage: test
-  # Some of the mgmtd tests use an sqlite file in the same location and can only be run sequentially
-  script: cargo test -- --test-threads=1
+  script: cargo test
+
+benchmark:
+  image: rustlang/rust:nightly
+  stage: test
+  when: manual
+  script: BEEGFS_BENCHMARK_DIR=/benchmarks cargo bench
 
 package:
   image: rustlang/rust:nightly
