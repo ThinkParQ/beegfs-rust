@@ -5,7 +5,7 @@
 
 mod component_handles;
 pub mod config;
-mod db;
+pub mod db;
 mod msg;
 mod notification;
 mod timer;
@@ -17,7 +17,6 @@ use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig};
 use shared::shutdown::Shutdown;
 use shared::{AuthenticationSecret, Nic};
 use std::net::SocketAddr;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
 
@@ -91,8 +90,4 @@ pub async fn start(
     timer::start_tasks(db, conn, config, shutdown);
 
     Ok(())
-}
-
-pub fn initialize_database(db_path: &Path) -> Result<()> {
-    db::sqlite::initialize(db_path)
 }

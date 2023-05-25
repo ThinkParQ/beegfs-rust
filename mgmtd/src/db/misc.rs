@@ -2,6 +2,17 @@ use super::*;
 use rusqlite::types::FromSql;
 use rusqlite::OptionalExtension;
 use std::ops::RangeInclusive;
+use std::time::Duration;
+
+pub fn calc_reachability_state(age: Duration, timeout: Duration) -> TargetReachabilityState {
+    if age < timeout {
+        TargetReachabilityState::Online
+    } else if age < timeout / 2 {
+        TargetReachabilityState::ProbablyOffline
+    } else {
+        TargetReachabilityState::Offline
+    }
+}
 
 /// Finds unused ID for specified table in the given range. It tries by the
 /// following order:
@@ -12,7 +23,7 @@ use std::ops::RangeInclusive;
 /// If all of these fail, the range is full and an empty result is returned
 ///
 /// Vulnerable to sql injection, do not call with user supplied input
-pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
+pub fn find_new_id<T: FromSql + std::fmt::Display>(
     tx: &mut Transaction,
     table: &str,
     field: &str,
@@ -49,13 +60,13 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MetaRoot {
+pub enum MetaRoot {
     Unknown,
     Normal(TargetUID, NodeID, NodeUID),
     Mirrored(BuddyGroupID),
 }
 
-pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
+pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT mt.target_uid, mt.node_id, mn.node_uid, ri.buddy_group_id
@@ -81,7 +92,7 @@ pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
     )
 }
 
-pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
+pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     let affected = tx.execute(
         r#"
         UPDATE root_inode
@@ -117,6 +128,7 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::db::test::*;
 
     #[test]
     fn find_new_id() {

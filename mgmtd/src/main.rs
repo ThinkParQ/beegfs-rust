@@ -1,6 +1,6 @@
 use anyhow::Context;
 use mgmtd::config::LogTarget;
-use mgmtd::{initialize_database, start};
+use mgmtd::start;
 use shared::{journald_logger, shutdown, AuthenticationSecret};
 use tokio::signal::ctrl_c;
 
@@ -28,7 +28,7 @@ fn inner_main() -> anyhow::Result<()> {
 
     match static_config.init {
         true => {
-            initialize_database(static_config.db_file.as_path())?;
+            mgmtd::db::initialize(static_config.db_file.as_path())?;
 
             println!("Database initialized");
         }

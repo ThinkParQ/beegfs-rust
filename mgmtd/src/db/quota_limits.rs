@@ -5,13 +5,13 @@ use std::ops::RangeInclusive;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct SpaceAndInodeLimits {
+pub struct SpaceAndInodeLimits {
     pub quota_id: QuotaID,
     pub space: Option<u64>,
     pub inodes: Option<u64>,
 }
 
-pub(crate) fn with_quota_id(
+pub fn with_quota_id(
     tx: &mut Transaction,
     quota_id: QuotaID,
     pool_id: StoragePoolID,
@@ -38,7 +38,7 @@ pub(crate) fn with_quota_id(
     })
 }
 
-pub(crate) fn with_quota_id_range(
+pub fn with_quota_id_range(
     tx: &mut Transaction,
     quota_id_range: RangeInclusive<QuotaID>,
     pool_id: StoragePoolID,
@@ -59,7 +59,7 @@ pub(crate) fn with_quota_id_range(
     )
 }
 
-pub(crate) fn with_quota_id_list(
+pub fn with_quota_id_list(
     tx: &mut Transaction,
     quota_ids: impl IntoIterator<Item = QuotaID>,
     pool_id: StoragePoolID,
@@ -79,7 +79,7 @@ pub(crate) fn with_quota_id_list(
     )
 }
 
-pub(crate) fn all(
+pub fn all(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
@@ -114,7 +114,7 @@ fn fetch(
     Ok(res)
 }
 
-pub(crate) fn update(
+pub fn update(
     tx: &mut Transaction,
     iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
 ) -> Result<()> {
@@ -149,4 +149,78 @@ pub(crate) fn update(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::db::test::*;
+
+    const QUOTA_ID_NUM: u32 = 1000;
+
+    #[bench]
+    fn bench_quota_limits_read(b: &mut Bencher) {
+        let mut conn = setup_benchmark();
+        let mut counter = 0;
+
+        transaction(&mut conn, |tx| {
+            update(
+                tx,
+                (1..=QUOTA_ID_NUM).map(|e| {
+                    (
+                        QuotaIDType::User,
+                        1.into(),
+                        SpaceAndInodeLimits {
+                            quota_id: e.into(),
+                            space: Some(e.into()),
+                            inodes: None,
+                        },
+                    )
+                }),
+            )
+            .unwrap();
+        });
+
+        b.iter(|| {
+            transaction(&mut conn, |tx| {
+                quota_limits::with_quota_id_list(
+                    tx,
+                    (1..=QUOTA_ID_NUM).map(|e| e.into()),
+                    1.into(),
+                    QuotaIDType::User,
+                )
+                .unwrap();
+            });
+
+            counter += 1;
+        })
+    }
+
+    #[bench]
+    fn bench_quota_limits_write(b: &mut Bencher) {
+        let mut conn = setup_benchmark();
+        let mut counter = 0;
+
+        b.iter(|| {
+            transaction(&mut conn, |tx| {
+                update(
+                    tx,
+                    (1..=QUOTA_ID_NUM).map(|e| {
+                        (
+                            QuotaIDType::User,
+                            1.into(),
+                            SpaceAndInodeLimits {
+                                quota_id: (e + counter).into(),
+                                space: Some((e + counter).into()),
+                                inodes: None,
+                            },
+                        )
+                    }),
+                )
+                .unwrap();
+            });
+
+            counter += 1;
+        })
+    }
 }

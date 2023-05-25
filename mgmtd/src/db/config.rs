@@ -1,7 +1,7 @@
 use super::*;
 use ::config::ConfigMap;
 
-pub(crate) fn set(tx: &mut Transaction, entries: ConfigMap) -> Result<()> {
+pub fn set(tx: &mut Transaction, entries: ConfigMap) -> Result<()> {
     let mut stmt = tx.prepare_cached(
         r#"
         INSERT INTO config (key, value) VALUES (?1, ?2)
@@ -17,7 +17,7 @@ pub(crate) fn set(tx: &mut Transaction, entries: ConfigMap) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn get(tx: &mut Transaction) -> Result<ConfigMap> {
+pub fn get(tx: &mut Transaction) -> Result<ConfigMap> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT key, value FROM config
@@ -33,7 +33,7 @@ pub(crate) fn get(tx: &mut Transaction) -> Result<ConfigMap> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use crate::db::test::*;
 
     #[test]
     fn set_get() {

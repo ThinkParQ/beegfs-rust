@@ -2,12 +2,12 @@ use super::*;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct StoragePool {
+pub struct StoragePool {
     pub pool_id: StoragePoolID,
     pub alias: EntityAlias,
 }
 
-pub(crate) fn all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
+pub fn all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT p.pool_id, alias FROM storage_pools AS p
@@ -27,7 +27,7 @@ pub(crate) fn all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
     Ok(res)
 }
 
-pub(crate) fn insert(
+pub fn insert(
     tx: &mut Transaction,
     id: Option<StoragePoolID>,
     alias: &EntityAlias,
@@ -58,7 +58,7 @@ pub(crate) fn insert(
     Ok(pool_id)
 }
 
-pub(crate) fn update_alias(
+pub fn update_alias(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     new_alias: &EntityAlias,
@@ -75,7 +75,7 @@ pub(crate) fn update_alias(
     Ok(())
 }
 
-pub(crate) fn delete(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<()> {
+pub fn delete(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<()> {
     // move targets back to default pool
     tx.execute(
         r#"

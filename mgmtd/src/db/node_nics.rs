@@ -4,7 +4,7 @@ use std::net::Ipv4Addr;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct NodeNic {
+pub struct NodeNic {
     pub uid: NodeUID,
     pub node_uid: NodeUID,
     pub addr: Ipv4Addr,
@@ -13,7 +13,7 @@ pub(crate) struct NodeNic {
     pub alias: EntityAlias,
 }
 
-pub(crate) fn with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<NodeNic>> {
+pub fn with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<NodeNic>> {
     fetch(
         tx,
         r#"
@@ -26,7 +26,7 @@ pub(crate) fn with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec
     )
 }
 
-pub(crate) fn with_node_uid(tx: &mut Transaction, node_uid: NodeUID) -> Result<Vec<NodeNic>> {
+pub fn with_node_uid(tx: &mut Transaction, node_uid: NodeUID) -> Result<Vec<NodeNic>> {
     fetch(
         tx,
         r#"
@@ -61,6 +61,7 @@ fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> Result<Vec<
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::db::test::*;
 
     #[test]
     fn with_type() {

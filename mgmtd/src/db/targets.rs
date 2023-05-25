@@ -3,7 +3,7 @@ use std::time::Duration;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct Target {
+pub struct Target {
     pub target_uid: TargetUID,
     pub target_id: TargetID,
     pub node_type: NodeTypeServer,
@@ -16,7 +16,7 @@ pub(crate) struct Target {
     pub last_contact: Duration,
 }
 
-pub(crate) fn with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<Target>> {
+pub fn with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<Target>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT target_uid, target_id, node_type, node_uid, node_id, pool_id,
@@ -46,11 +46,7 @@ pub(crate) fn with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Resu
     Ok(res)
 }
 
-pub(crate) fn insert_meta(
-    tx: &mut Transaction,
-    node_id: NodeID,
-    alias: &EntityAlias,
-) -> Result<()> {
+pub fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &EntityAlias) -> Result<()> {
     insert(
         tx,
         u16::from(node_id).into(),
@@ -70,7 +66,7 @@ pub(crate) fn insert_meta(
     Ok(())
 }
 
-pub(crate) fn insert_or_ignore_storage(
+pub fn insert_or_ignore_storage(
     tx: &mut Transaction,
     target_id: Option<TargetID>,
     alias: &EntityAlias,
@@ -139,7 +135,7 @@ fn insert(
     Ok(())
 }
 
-pub(crate) fn update_consistency_states(
+pub fn update_consistency_states(
     tx: &mut Transaction,
     changes: impl IntoIterator<Item = (TargetID, TargetConsistencyState)>,
     node_type: NodeTypeServer,
@@ -161,7 +157,7 @@ pub(crate) fn update_consistency_states(
     Ok(affected)
 }
 
-pub(crate) fn update_storage_pools(
+pub fn update_storage_pools(
     tx: &mut Transaction,
     new_pool_id: StoragePoolID,
     move_ids: impl IntoIterator<Item = TargetID>,
@@ -179,7 +175,7 @@ pub(crate) fn update_storage_pools(
     Ok(())
 }
 
-pub(crate) fn update_storage_node_mapping(
+pub fn update_storage_node_mapping(
     tx: &mut Transaction,
     target_id: TargetID,
     new_node_id: NodeID,
@@ -196,14 +192,14 @@ pub(crate) fn update_storage_node_mapping(
     Ok(())
 }
 
-pub(crate) struct TargetCapacities {
+pub struct TargetCapacities {
     pub total_space: Option<u64>,
     pub total_inodes: Option<u64>,
     pub free_space: Option<u64>,
     pub free_inodes: Option<u64>,
 }
 
-pub(crate) fn get_and_update_capacities(
+pub fn get_and_update_capacities(
     tx: &mut Transaction,
     items: impl IntoIterator<Item = (TargetID, TargetCapacities)>,
     node_type: NodeTypeServer,
@@ -254,7 +250,7 @@ pub(crate) fn get_and_update_capacities(
     Ok(old_values)
 }
 
-pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
+pub fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
     let affected = tx.execute(
         r#"
         DELETE FROM storage_targets WHERE target_id = ?1
@@ -269,6 +265,7 @@ pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Resul
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::db::test::*;
 
     #[test]
     fn insert_meta() {

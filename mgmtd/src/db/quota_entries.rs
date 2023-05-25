@@ -1,11 +1,11 @@
 use super::*;
 
-pub(crate) enum PoolOrTargetID {
+pub enum PoolOrTargetID {
     PoolID(StoragePoolID),
     TargetID(TargetID),
 }
 
-pub(crate) fn exceeded_quota_ids(
+pub fn exceeded_quota_ids(
     tx: &mut Transaction,
     pool_or_target_id: PoolOrTargetID,
     id_type: QuotaIDType,
@@ -40,14 +40,14 @@ pub(crate) fn exceeded_quota_ids(
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExceededQuotaEntry {
+pub struct ExceededQuotaEntry {
     pub quota_id: QuotaID,
     pub id_type: QuotaIDType,
     pub quota_type: QuotaType,
     pub pool_id: StoragePoolID,
 }
 
-pub(crate) fn exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
+pub fn exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT quota_id, id_type, quota_type, pool_id
@@ -70,14 +70,14 @@ pub(crate) fn exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<Exceede
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct QuotaData {
+pub struct QuotaData {
     pub quota_id: QuotaID,
     pub id_type: QuotaIDType,
     pub space: u64,
     pub inodes: u64,
 }
 
-pub(crate) fn upsert(
+pub fn upsert(
     tx: &mut Transaction,
     target_id: TargetID,
     data: impl IntoIterator<Item = QuotaData>,

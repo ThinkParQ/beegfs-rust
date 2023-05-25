@@ -3,7 +3,7 @@ use std::time::Duration;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct BuddyGroup {
+pub struct BuddyGroup {
     pub id: BuddyGroupID,
     pub primary_node_id: NodeID,
     pub secondary_node_id: NodeID,
@@ -16,10 +16,7 @@ pub(crate) struct BuddyGroup {
     pub secondary_free_inodes: Option<u64>,
 }
 
-pub(crate) fn with_type(
-    tx: &mut Transaction,
-    node_type: NodeTypeServer,
-) -> Result<Vec<BuddyGroup>> {
+pub fn with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<BuddyGroup>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT
@@ -52,7 +49,7 @@ pub(crate) fn with_type(
     Ok(res)
 }
 
-pub(crate) fn insert(
+pub fn insert(
     tx: &mut Transaction,
     id: Option<BuddyGroupID>,
     node_type: NodeTypeServer,
@@ -114,7 +111,7 @@ pub(crate) fn insert(
     Ok(new_id)
 }
 
-pub(crate) fn update_storage_pools(
+pub fn update_storage_pools(
     tx: &mut Transaction,
     new_pool_id: StoragePoolID,
     move_ids: impl IntoIterator<Item = BuddyGroupID>,
@@ -133,7 +130,7 @@ pub(crate) fn update_storage_pools(
     Ok(())
 }
 
-pub(crate) fn check_and_swap_buddies(
+pub fn check_and_swap_buddies(
     tx: &mut Transaction,
     timeout: Duration,
 ) -> Result<Vec<(BuddyGroupID, NodeTypeServer)>> {
@@ -185,7 +182,7 @@ pub(crate) fn check_and_swap_buddies(
     Ok(affected)
 }
 
-pub(crate) fn prepare_storage_deletion(
+pub fn prepare_storage_deletion(
     tx: &mut Transaction,
     id: BuddyGroupID,
 ) -> Result<(NodeUID, NodeUID)> {
@@ -216,7 +213,7 @@ pub(crate) fn prepare_storage_deletion(
     Ok(node_uids)
 }
 
-pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
+pub fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
     let affected = tx.execute(
         r#"
         DELETE FROM storage_buddy_groups WHERE buddy_group_id = ?1
@@ -231,6 +228,7 @@ pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID)
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::db::test::*;
 
     /// Test inserting and getting buddy groups
     #[test]

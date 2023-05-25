@@ -4,7 +4,7 @@ use std::time::Duration;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub(crate) struct Node {
+pub struct Node {
     pub uid: NodeUID,
     pub id: NodeID,
     pub node_type: NodeType,
@@ -12,7 +12,7 @@ pub(crate) struct Node {
     pub port: Port,
 }
 
-pub(crate) fn with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
+pub fn with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT node_uid, node_id, node_type, alias, port
@@ -47,7 +47,7 @@ fn get_uid(tx: &mut Transaction, id: NodeID, node_type: NodeType) -> Result<Node
     Ok(id)
 }
 
-pub(crate) fn set(
+pub fn set(
     tx: &mut Transaction,
     enable_registration: bool,
     node_id: NodeID,
@@ -162,7 +162,7 @@ pub(crate) fn set(
     Ok(node_id)
 }
 
-pub(crate) fn update_last_contact_for_targets(
+pub fn update_last_contact_for_targets(
     tx: &mut Transaction,
     target_ids: impl IntoIterator<Item = TargetID>,
     node_type: NodeType,
@@ -182,7 +182,7 @@ pub(crate) fn update_last_contact_for_targets(
     Ok(())
 }
 
-pub(crate) fn delete(tx: &mut Transaction, node_id: NodeID, node_type: NodeType) -> Result<()> {
+pub fn delete(tx: &mut Transaction, node_id: NodeID, node_type: NodeType) -> Result<()> {
     let node_uid: NodeUID = tx.query_row(
         r#"
         SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2
@@ -202,7 +202,7 @@ pub(crate) fn delete(tx: &mut Transaction, node_id: NodeID, node_type: NodeType)
     Ok(())
 }
 
-pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
+pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
     let affected = {
         let mut stmt = tx.prepare_cached(
             r#"
@@ -221,6 +221,7 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::db::test::*;
 
     #[test]
     fn set_get() {

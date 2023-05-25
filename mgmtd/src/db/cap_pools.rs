@@ -2,14 +2,14 @@ use super::*;
 use rusqlite::named_params;
 
 #[derive(Clone, Debug)]
-pub(crate) struct EntityWithCapPool {
+pub struct EntityWithCapPool {
     pub entity_id: u16,
     pub node_id: NodeID,
     pub pool_id: StoragePoolID,
     pub cap_pool: CapacityPool,
 }
 
-pub(crate) fn for_meta_targets(
+pub fn for_meta_targets(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
@@ -22,7 +22,7 @@ pub(crate) fn for_meta_targets(
     )
 }
 
-pub(crate) fn for_storage_targets(
+pub fn for_storage_targets(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
@@ -35,7 +35,7 @@ pub(crate) fn for_storage_targets(
     )
 }
 
-pub(crate) fn for_meta_buddy_groups(
+pub fn for_meta_buddy_groups(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
@@ -48,7 +48,7 @@ pub(crate) fn for_meta_buddy_groups(
     )
 }
 
-pub(crate) fn for_storage_buddy_groups(
+pub fn for_storage_buddy_groups(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
@@ -115,4 +115,31 @@ fn select(
         .try_collect()?;
 
     Ok(cap_pools)
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+    use crate::db::test::*;
+
+    #[bench]
+    fn bench_get_all_cap_pools(b: &mut Bencher) {
+        let mut conn = setup_benchmark();
+        let mut counter = 0;
+
+        b.iter(|| {
+            let limits = CapPoolLimits {
+                inodes_low: counter * 20000,
+                inodes_emergency: counter * 10000,
+                space_low: counter * 20000,
+                space_emergency: counter * 10000,
+            };
+
+            transaction(&mut conn, |tx| {
+                for_storage_targets(tx, limits.clone(), None).unwrap();
+            });
+
+            counter += 1;
+        })
+    }
 }

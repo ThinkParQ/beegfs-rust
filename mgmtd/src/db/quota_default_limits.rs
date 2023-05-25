@@ -2,14 +2,14 @@ use super::*;
 use rusqlite::OptionalExtension;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct DefaultLimits {
+pub struct DefaultLimits {
     pub user_space_limit: Option<u64>,
     pub user_inodes_limit: Option<u64>,
     pub group_space_limit: Option<u64>,
     pub group_inodes_limit: Option<u64>,
 }
 
-pub(crate) fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
+pub fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
     let mut stmt = tx.prepare_cached(
         r#"
             SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
@@ -32,7 +32,7 @@ pub(crate) fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Resu
     Ok(limits.unwrap_or_default())
 }
 
-pub(crate) fn update(
+pub fn update(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
@@ -54,7 +54,7 @@ pub(crate) fn update(
     Ok(())
 }
 
-pub(crate) fn delete(
+pub fn delete(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
@@ -75,6 +75,7 @@ pub(crate) fn delete(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::db::test::*;
 
     #[test]
     fn set_get() {
