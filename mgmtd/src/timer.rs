@@ -1,16 +1,13 @@
-use crate::db::quota_entries::QuotaData;
 use crate::db::{self};
-use crate::notification::{notify_nodes, request_tcp_by_type};
+use crate::notification::notify_nodes;
+use crate::quota::update_and_distribute;
 use crate::MgmtdPool;
-use anyhow::Result;
 use config::Cache;
 use shared::config::{
-    BeeConfig, ClientAutoRemoveTimeout, NodeOfflineTimeout, QuotaEnable, QuotaGroupIDs,
-    QuotaUpdateInterval, QuotaUserIDs,
+    BeeConfig, ClientAutoRemoveTimeout, NodeOfflineTimeout, QuotaEnable, QuotaUpdateInterval,
 };
-use shared::conn::PeerID;
+use shared::msg;
 use shared::shutdown::Shutdown;
-use shared::{msg, NodeTypeServer, OpsErr};
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
@@ -70,7 +67,7 @@ async fn update_quota(
 ) {
     loop {
         if config.get::<QuotaEnable>() {
-            match update_quota_inner(&db, &conn_pool, &config).await {
+            match update_and_distribute(&db, &conn_pool, &config).await {
                 Ok(_) => {}
                 Err(err) => log::error!("Updating quota failed:\n{:?}", err),
             }
@@ -83,137 +80,6 @@ async fn update_quota(
     }
 
     log::debug!("Timed task update_quota has been shut down");
-}
-
-async fn update_quota_inner(
-    db: &db::Handle,
-    conn_pool: &MgmtdPool,
-    config: &Cache<BeeConfig>,
-) -> Result<()> {
-    // Fetch quota data from storage daemons
-
-    let targets = db
-        .execute(move |tx| db::targets::with_type(tx, NodeTypeServer::Storage))
-        .await?;
-
-    if !targets.is_empty() {
-        log::info!(
-            "Requesting quota information for {:?}",
-            targets.iter().map(|t| t.target_id).collect::<Vec<_>>()
-        );
-    }
-
-    let mut tasks = vec![];
-    for t in targets {
-        let cp = conn_pool.clone();
-        let cfg = config.clone();
-        let pool_id = t.pool_id.try_into()?;
-
-        tasks.push(tokio::spawn(async move {
-            let res: Result<msg::GetQuotaInfoResp> = cp
-                .request(
-                    PeerID::Node(t.node_uid),
-                    &msg::GetQuotaInfo::with_user_ids(
-                        cfg.get::<QuotaUserIDs>(),
-                        t.target_id,
-                        pool_id,
-                    ),
-                )
-                .await;
-
-            (t.target_id, res)
-        }));
-
-        let cp = conn_pool.clone();
-        let cfg = config.clone();
-
-        tasks.push(tokio::spawn(async move {
-            let res: Result<msg::GetQuotaInfoResp> = cp
-                .request(
-                    PeerID::Node(t.node_uid),
-                    &msg::GetQuotaInfo::with_group_ids(
-                        cfg.get::<QuotaGroupIDs>(),
-                        t.target_id,
-                        pool_id,
-                    ),
-                )
-                .await;
-            (t.target_id, res)
-        }));
-    }
-
-    for t in tasks {
-        let (target_id, resp) = t.await?;
-        match resp {
-            Ok(r) => {
-                db.execute(move |tx| {
-                    db::quota_entries::upsert(
-                        tx,
-                        target_id,
-                        r.quota_entry.into_iter().map(|e| QuotaData {
-                            quota_id: e.id,
-                            id_type: e.id_type,
-                            space: e.space,
-                            inodes: e.inodes,
-                        }),
-                    )
-                })
-                .await?;
-            }
-            Err(err) => {
-                log::error!("Getting quota info for storage target {target_id:?} failed:\n{err:?}");
-            }
-        }
-    }
-
-    // calculate exceeded quota information and send to daemons
-    let mut msges: Vec<msg::SetExceededQuota> = vec![];
-    for e in db
-        .execute(db::quota_entries::exceeded_quota_entries)
-        .await?
-    {
-        if let Some(last) = msges.last_mut() {
-            if e.pool_id == last.pool_id
-                && e.id_type == last.id_type
-                && e.quota_type == last.quota_type
-            {
-                last.exceeded_quota_ids.push(e.quota_id);
-                continue;
-            }
-        }
-
-        msges.push(msg::SetExceededQuota {
-            pool_id: e.pool_id,
-            id_type: e.id_type,
-            quota_type: e.quota_type,
-            exceeded_quota_ids: vec![e.quota_id],
-        });
-    }
-
-    for e in msges {
-        let storage_responses: Vec<msg::SetExceededQuotaResp> =
-            request_tcp_by_type(conn_pool, db, NodeTypeServer::Storage, e.clone()).await?;
-
-        let meta_responses: Vec<msg::SetExceededQuotaResp> =
-            request_tcp_by_type(conn_pool, db, NodeTypeServer::Meta, e.clone()).await?;
-
-        let fail_count = storage_responses
-            .iter()
-            .chain(&meta_responses)
-            .fold(0, |acc, e| {
-                if e.result == OpsErr::SUCCESS {
-                    acc
-                } else {
-                    acc + 1
-                }
-            });
-
-        if fail_count > 0 {
-            log::error!("Pushing exceeded quota IDs to nodes failed {fail_count} times");
-        }
-    }
-
-    Ok(())
 }
 
 async fn check_for_switchover(

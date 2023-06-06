@@ -6,7 +6,6 @@ use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use shared::parser::integer_with_time_unit;
 use shared::{config, CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -227,10 +226,16 @@ pub struct RuntimeConfig {
     #[serde(with = "integer_with_time_unit")]
     client_auto_remove_timeout: Duration,
     quota_enable: bool,
-    quota_user_ids: HashSet<QuotaID>,
-    quota_group_ids: HashSet<QuotaID>,
     #[serde(with = "integer_with_time_unit")]
     quota_update_interval: Duration,
+    quota_user_system_ids_min: Option<QuotaID>,
+    quota_user_ids_file: Option<PathBuf>,
+    quota_user_ids_range_start: Option<u32>,
+    quota_user_ids_range_end: Option<u32>,
+    quota_group_system_ids_min: Option<QuotaID>,
+    quota_group_ids_file: Option<PathBuf>,
+    quota_group_ids_range_start: Option<u32>,
+    quota_group_ids_range_end: Option<u32>,
     cap_pool_meta_limits: CapPoolLimits,
     cap_pool_storage_limits: CapPoolLimits,
     cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits>,
@@ -239,6 +244,14 @@ pub struct RuntimeConfig {
 
 impl RuntimeConfig {
     pub async fn apply_to_db(&self, db: &db::Handle) -> anyhow::Result<()> {
+        let quota_user_ids_range = self
+            .quota_user_ids_range_start
+            .map(|start| start..=self.quota_user_ids_range_end.unwrap_or(start));
+
+        let quota_group_ids_range = self
+            .quota_group_ids_range_start
+            .map(|start| start..=self.quota_group_ids_range_end.unwrap_or(start));
+
         let entries = [
             (
                 config::RegistrationEnable::KEY.into(),
@@ -257,16 +270,32 @@ impl RuntimeConfig {
                 config::QuotaEnable::serialize(&self.quota_enable)?,
             ),
             (
-                config::QuotaUserIDs::KEY.into(),
-                config::QuotaUserIDs::serialize(&self.quota_user_ids)?,
-            ),
-            (
-                config::QuotaGroupIDs::KEY.into(),
-                config::QuotaGroupIDs::serialize(&self.quota_group_ids)?,
-            ),
-            (
                 config::QuotaUpdateInterval::KEY.into(),
                 config::QuotaUpdateInterval::serialize(&self.quota_update_interval)?,
+            ),
+            (
+                config::QuotaUserSystemIDsMin::KEY.into(),
+                config::QuotaUserSystemIDsMin::serialize(&self.quota_user_system_ids_min)?,
+            ),
+            (
+                config::QuotaUserIDsFile::KEY.into(),
+                config::QuotaUserIDsFile::serialize(&self.quota_user_ids_file)?,
+            ),
+            (
+                config::QuotaUserIDsRange::KEY.into(),
+                config::QuotaUserIDsRange::serialize(&quota_user_ids_range)?,
+            ),
+            (
+                config::QuotaGroupSystemIDsMin::KEY.into(),
+                config::QuotaGroupSystemIDsMin::serialize(&self.quota_group_system_ids_min)?,
+            ),
+            (
+                config::QuotaGroupIDsFile::KEY.into(),
+                config::QuotaGroupIDsFile::serialize(&self.quota_group_ids_file)?,
+            ),
+            (
+                config::QuotaGroupIDsRange::KEY.into(),
+                config::QuotaGroupIDsRange::serialize(&quota_group_ids_range)?,
             ),
             (
                 config::CapPoolMetaLimits::KEY.into(),

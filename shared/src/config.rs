@@ -2,7 +2,8 @@ use crate::conn::{AddrResolver, ConnPool, PeerID};
 use crate::{msg, CapPoolDynamicLimits, CapPoolLimits, QuotaID};
 use async_trait::async_trait;
 use config::{BoxedError, ConfigMap, Source};
-use std::collections::HashSet;
+use std::ops::RangeInclusive;
+use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -41,9 +42,14 @@ config::define_config!(
 
     // Quota
     QuotaEnable: bool = false,
-    QuotaUserIDs: HashSet<QuotaID> = HashSet::new(),
-    QuotaGroupIDs: HashSet<QuotaID> = HashSet::new(),
     QuotaUpdateInterval: Duration = Duration::from_secs(30),
+
+    QuotaUserSystemIDsMin: Option<QuotaID> = None,
+    QuotaUserIDsFile: Option<PathBuf> = None,
+    QuotaUserIDsRange: Option<RangeInclusive<u32>> = None,
+    QuotaGroupSystemIDsMin: Option<QuotaID> = None,
+    QuotaGroupIDsFile: Option<PathBuf> = None,
+    QuotaGroupIDsRange: Option<RangeInclusive<u32>> = None,
 
     // Capacity pools
     CapPoolMetaLimits: CapPoolLimits = CapPoolLimits {

@@ -15,9 +15,22 @@ node_offline_timeout = "180s"
 client_auto_remove_timeout = "30m"
 
 quota_enable = false
-quota_user_ids = []
-quota_group_ids = []
 quota_update_interval = "30s"
+
+# The following options specify the User/Group IDs to be fetched from storage services for quota
+# checking. Uncomment them to enable them. They can be mixed. If only the start of the range is
+# given, only this single ID is checked
+# As in old management, the file must only contain numeric IDs separated by spaces and/or newlines.
+
+quota_user_system_ids_min = 1000
+# quota_user_ids_file = ""
+# quota_user_ids_range_start = 1000
+# quota_user_ids_range_end = 1000
+
+quota_group_system_ids_min = 1000
+# quota_group_ids_file = ""
+# quota_group_ids_range_start = 1000
+# quota_group_ids_range_end = 1000
 
 [cap_pool_meta_limits]
 inodes_low = "10M"

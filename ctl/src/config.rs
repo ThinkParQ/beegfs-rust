@@ -38,26 +38,6 @@ pub enum Commands {
 pub enum Quota {
     Enable,
     Disable,
-    /// Add system user ID to check for quota
-    AddUserID {
-        #[clap(value_parser)]
-        id: u32,
-    },
-    /// Add system group ID to check for quota
-    AddGroupID {
-        #[clap(value_parser)]
-        id: u32,
-    },
-    /// Remove system user ID from quota check
-    RemoveUserID {
-        #[clap(value_parser)]
-        id: u32,
-    },
-    /// Remove system group ID from quota check
-    RemoveGroupID {
-        #[clap(value_parser)]
-        id: u32,
-    },
     /// Sets the exceeded quota updatew interval
     SetUpdateInterval {
         #[clap(value_parser)]

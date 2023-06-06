@@ -1,5 +1,7 @@
 use super::*;
 use serde::{Deserialize, Serialize};
+use std::num::ParseIntError;
+use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaIDType {
@@ -69,6 +71,14 @@ impl From<QuotaID> for u32 {
 impl AsRef<u32> for QuotaID {
     fn as_ref(&self) -> &u32 {
         &self.0
+    }
+}
+
+impl FromStr for QuotaID {
+    type Err = ParseIntError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(u32::from_str(s)?))
     }
 }
 

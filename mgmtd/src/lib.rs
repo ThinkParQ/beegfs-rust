@@ -8,6 +8,7 @@ pub mod config;
 pub mod db;
 mod msg;
 mod notification;
+mod quota;
 mod timer;
 
 use crate::component_handles::ComponentHandles;

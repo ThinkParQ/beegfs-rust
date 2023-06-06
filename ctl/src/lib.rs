@@ -68,26 +68,6 @@ impl CommandExecutor {
                 match cmd {
                     Enable => self.set_config::<QuotaEnable>(true).await,
                     Disable => self.set_config::<QuotaEnable>(false).await,
-                    AddUserID { id } => {
-                        let mut ids = self.config.get::<QuotaUserIDs>();
-                        ids.insert((*id).into());
-                        self.set_config::<QuotaUserIDs>(ids).await
-                    }
-                    AddGroupID { id } => {
-                        let mut ids = self.config.get::<QuotaGroupIDs>();
-                        ids.insert((*id).into());
-                        self.set_config::<QuotaGroupIDs>(ids).await
-                    }
-                    RemoveUserID { id } => {
-                        let mut ids = self.config.get::<QuotaUserIDs>();
-                        ids.retain(|e| e.as_ref() != id);
-                        self.set_config::<QuotaUserIDs>(ids).await
-                    }
-                    RemoveGroupID { id } => {
-                        let mut ids = self.config.get::<QuotaGroupIDs>();
-                        ids.retain(|e| e.as_ref() != id);
-                        self.set_config::<QuotaGroupIDs>(ids).await
-                    }
                     SetUpdateInterval { interval_secs } => {
                         self.set_config::<QuotaUpdateInterval>(std::time::Duration::from_secs(
                             *interval_secs,
