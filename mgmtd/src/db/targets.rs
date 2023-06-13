@@ -268,7 +268,7 @@ mod test {
     use crate::db::test::*;
 
     #[test]
-    fn insert_meta() {
+    fn set_get_meta() {
         with_test_data(|tx| {
             super::insert_meta(tx, 1.into(), &"existing_meta_target".into()).unwrap_err();
             super::insert_meta(tx, 99.into(), &"new_meta_target".into()).unwrap();
@@ -282,7 +282,7 @@ mod test {
     }
 
     #[test]
-    fn insert_storage_and_map() {
+    fn set_get_storage_and_map() {
         with_test_data(|tx| {
             let new_target_id =
                 super::insert_or_ignore_storage(tx, None, &"new_storage_target".into()).unwrap();

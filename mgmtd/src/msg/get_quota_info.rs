@@ -12,12 +12,12 @@ pub(super) async fn handle(
         .execute_db(move |tx| {
             let limits = match msg.query_type {
                 QuotaQueryType::None => return Ok(vec![]),
-                QuotaQueryType::Single => vec![db::quota_limits::with_quota_id(
+                QuotaQueryType::Single => db::quota_limits::with_quota_id_range(
                     tx,
-                    msg.id_range_start,
+                    msg.id_range_start..=msg.id_range_start,
                     msg.pool_id,
                     msg.id_type,
-                )?],
+                )?,
                 QuotaQueryType::Range => db::quota_limits::with_quota_id_range(
                     tx,
                     msg.id_range_start..=msg.id_range_end,

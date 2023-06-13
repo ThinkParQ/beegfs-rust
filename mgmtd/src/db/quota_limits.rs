@@ -1,6 +1,6 @@
 use super::*;
 use itertools::Itertools;
-use rusqlite::{OptionalExtension, ToSql};
+use rusqlite::ToSql;
 use std::ops::RangeInclusive;
 
 #[derive(Clone, Debug)]
@@ -9,33 +9,6 @@ pub struct SpaceAndInodeLimits {
     pub quota_id: QuotaID,
     pub space: Option<u64>,
     pub inodes: Option<u64>,
-}
-
-pub fn with_quota_id(
-    tx: &mut Transaction,
-    quota_id: QuotaID,
-    pool_id: StoragePoolID,
-    id_type: QuotaIDType,
-) -> Result<SpaceAndInodeLimits> {
-    let mut stmt = tx.prepare_cached(
-        r#"
-        SELECT space_value, inodes_value FROM quota_limits_combined_v
-        WHERE quota_id = ?1 AND pool_id == ?2 AND id_type = ?3
-        "#,
-    )?;
-
-    let (space, inodes) = stmt
-        .query_row(params![quota_id, pool_id, id_type], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
-        .optional()?
-        .unwrap_or_default();
-
-    Ok(SpaceAndInodeLimits {
-        quota_id,
-        space,
-        inodes,
-    })
 }
 
 pub fn with_quota_id_range(
@@ -47,7 +20,7 @@ pub fn with_quota_id_range(
     fetch(
         tx,
         r#"
-        SELECT space_value, inodes_value, quota_id FROM quota_limits_combined_v
+        SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
         WHERE quota_id >= ?1 AND quota_id <= ?2 AND pool_id == ?3 AND id_type = ?4
         "#,
         params![
@@ -69,10 +42,10 @@ pub fn with_quota_id_list(
         tx,
         &format!(
             r#"
-        SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-        WHERE pool_id == ?1 AND id_type = ?2
-        AND quota_id IN ({})
-        "#,
+            SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
+            WHERE pool_id == ?1 AND id_type = ?2
+            AND quota_id IN ({})
+            "#,
             quota_ids.into_iter().join(",")
         ),
         params![pool_id, id_type],
@@ -156,7 +129,94 @@ mod test {
     use super::*;
     use crate::db::test::*;
 
-    const QUOTA_ID_NUM: u32 = 1000;
+    #[test]
+    fn set_get() {
+        with_test_data(|tx| {
+            assert_eq!(0, all(tx, 1.into(), QuotaIDType::User).unwrap().len());
+
+            update(
+                tx,
+                [
+                    (
+                        QuotaIDType::User,
+                        1.into(),
+                        SpaceAndInodeLimits {
+                            quota_id: 1000.into(),
+                            space: Some(2000),
+                            inodes: None,
+                        },
+                    ),
+                    (
+                        QuotaIDType::User,
+                        1.into(),
+                        SpaceAndInodeLimits {
+                            quota_id: 1001.into(),
+                            space: None,
+                            inodes: Some(2000),
+                        },
+                    ),
+                    (
+                        QuotaIDType::User,
+                        1.into(),
+                        SpaceAndInodeLimits {
+                            quota_id: 1002.into(),
+                            space: Some(2000),
+                            inodes: Some(2000),
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+
+            assert_eq!(3, all(tx, 1.into(), QuotaIDType::User).unwrap().len());
+            assert_eq!(
+                2,
+                with_quota_id_range(tx, 900.into()..=1001.into(), 1.into(), QuotaIDType::User)
+                    .unwrap()
+                    .len()
+            );
+            assert_eq!(
+                2,
+                with_quota_id_list(
+                    tx,
+                    [900.into(), 1000.into(), 1002.into()],
+                    1.into(),
+                    QuotaIDType::User
+                )
+                .unwrap()
+                .len()
+            );
+
+            update(
+                tx,
+                [
+                    (
+                        QuotaIDType::User,
+                        1.into(),
+                        SpaceAndInodeLimits {
+                            quota_id: 1000.into(),
+                            space: Some(2000),
+                            inodes: Some(2000),
+                        },
+                    ),
+                    (
+                        QuotaIDType::User,
+                        1.into(),
+                        SpaceAndInodeLimits {
+                            quota_id: 1001.into(),
+                            space: None,
+                            inodes: None,
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+
+            assert_eq!(2, all(tx, 1.into(), QuotaIDType::User).unwrap().len());
+        })
+    }
+
+    const BENCH_QUOTA_ID_NUM: u32 = 1000;
 
     #[bench]
     fn bench_quota_limits_read(b: &mut Bencher) {
@@ -166,7 +226,7 @@ mod test {
         transaction(&mut conn, |tx| {
             update(
                 tx,
-                (1..=QUOTA_ID_NUM).map(|e| {
+                (1..=BENCH_QUOTA_ID_NUM).map(|e| {
                     (
                         QuotaIDType::User,
                         1.into(),
@@ -185,7 +245,7 @@ mod test {
             transaction(&mut conn, |tx| {
                 quota_limits::with_quota_id_list(
                     tx,
-                    (1..=QUOTA_ID_NUM).map(|e| e.into()),
+                    (1..=BENCH_QUOTA_ID_NUM).map(|e| e.into()),
                     1.into(),
                     QuotaIDType::User,
                 )
@@ -205,7 +265,7 @@ mod test {
             transaction(&mut conn, |tx| {
                 update(
                     tx,
-                    (1..=QUOTA_ID_NUM).map(|e| {
+                    (1..=BENCH_QUOTA_ID_NUM).map(|e| {
                         (
                             QuotaIDType::User,
                             1.into(),

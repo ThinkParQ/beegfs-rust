@@ -1,7 +1,6 @@
 use super::*;
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct StoragePool {
     pub pool_id: StoragePoolID,
     pub alias: EntityAlias,
@@ -65,7 +64,10 @@ pub fn update_alias(
 ) -> Result<()> {
     let affected = tx.execute(
         r#"
-        UPDATE storage_pools SET alias = ?1 WHERE pool_id = ?2
+        UPDATE entities SET alias = ?1
+        WHERE uid = (
+            SELECT pool_uid FROM storage_pools WHERE pool_id = ?2
+        )
         "#,
         params![new_alias, pool_id],
     )?;
@@ -94,4 +96,27 @@ pub fn delete(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<()> {
     ensure_rows_modified!(affected, pool_id);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::db::test::with_test_data;
+
+    #[test]
+    fn set_get() {
+        with_test_data(|tx| {
+            assert_eq!(4, super::all(tx).unwrap().len());
+            super::insert(tx, None, &"new_pool".into()).unwrap();
+            assert_eq!(5, super::all(tx).unwrap().len());
+            super::insert(tx, None, &"new_pool".into()).unwrap_err();
+            super::insert(tx, Some(1.into()), &"new_pool2".into()).unwrap_err();
+
+            super::update_alias(tx, 2.into(), &"new_pool".into()).unwrap_err();
+            super::update_alias(tx, 2.into(), &"new_pool3".into()).unwrap();
+
+            super::delete(tx, 2.into()).unwrap();
+            super::delete(tx, 2.into()).unwrap_err();
+            assert_eq!(4, super::all(tx).unwrap().len());
+        })
+    }
 }
