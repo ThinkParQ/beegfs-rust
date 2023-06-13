@@ -8,7 +8,7 @@ CREATE TABLE entities (
         CHECK(LENGTH(alias) > 0),
 
     UNIQUE(uid, entity_type)
-);
+) STRICT;
 
 CREATE TABLE nodes (
     node_uid INTEGER PRIMARY KEY,
@@ -23,7 +23,7 @@ CREATE TABLE nodes (
 
     UNIQUE(node_uid, node_type),
     FOREIGN KEY (node_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete entity after node delete" AFTER DELETE ON nodes
 FOR EACH ROW
@@ -39,7 +39,7 @@ CREATE TABLE meta_nodes (
     node_type TEXT GENERATED ALWAYS AS ("meta"),
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete node after meta delete" AFTER DELETE ON meta_nodes
 FOR EACH ROW
@@ -55,7 +55,7 @@ CREATE TABLE storage_nodes (
     node_type TEXT GENERATED ALWAYS AS ("storage"),
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete node after storage delete" AFTER DELETE ON storage_nodes
 FOR EACH ROW
@@ -71,7 +71,7 @@ CREATE TABLE client_nodes (
     node_type TEXT GENERATED ALWAYS AS ("client"),
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete node after client delete" AFTER DELETE ON client_nodes
 FOR EACH ROW
@@ -88,7 +88,7 @@ CREATE TABLE node_nics (
     addr BLOB NOT NULL
         CHECK(LENGTH(addr) = 4),
     name TEXT NOT NULL
-);
+) STRICT;
 
 CREATE TABLE targets (
     target_uid INTEGER PRIMARY KEY,
@@ -110,7 +110,7 @@ CREATE TABLE targets (
 
     UNIQUE(target_uid, node_type),
     FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete entity after target delete" AFTER DELETE ON targets
 FOR EACH ROW
@@ -133,7 +133,7 @@ CREATE TABLE meta_targets (
     node_type TEXT GENERATED ALWAYS AS ("meta"),
 
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete target after meta delete" AFTER DELETE ON meta_targets
 FOR EACH ROW
@@ -155,7 +155,7 @@ CREATE TABLE storage_targets (
     node_type TEXT GENERATED ALWAYS AS ("storage"),
 
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete target after storage delete" AFTER DELETE ON storage_targets
 FOR EACH ROW
@@ -171,7 +171,7 @@ CREATE TABLE storage_pools (
     entity_type TEXT GENERATED ALWAYS AS ("storage_pool"),
 
     FOREIGN KEY (pool_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete entity after pool delete" AFTER DELETE ON storage_pools
 FOR EACH ROW
@@ -199,7 +199,7 @@ CREATE TABLE buddy_groups (
 
     UNIQUE(buddy_group_uid, node_type),
     FOREIGN KEY (buddy_group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete entity after buddy group delete" AFTER DELETE ON buddy_groups
 FOR EACH ROW
@@ -222,7 +222,7 @@ CREATE TABLE meta_buddy_groups (
     node_type TEXT GENERATED ALWAYS AS ("meta"),
 
     FOREIGN KEY (buddy_group_uid, node_type) REFERENCES buddy_groups (buddy_group_uid, node_type)
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete buddy group after meta delete" AFTER DELETE ON meta_buddy_groups
 FOR EACH ROW
@@ -248,7 +248,7 @@ CREATE TABLE storage_buddy_groups (
     node_type TEXT GENERATED ALWAYS AS ("storage"),
 
     FOREIGN KEY (buddy_group_uid, node_type) REFERENCES buddy_groups (buddy_group_uid, node_type)
-);
+) STRICT;
 
 CREATE TRIGGER "Auto delete buddy group after storage delete" AFTER DELETE ON storage_buddy_groups
 FOR EACH ROW
@@ -268,7 +268,7 @@ CREATE TABLE root_inode (
     -- Ensure that one and only one of target_id or buddy_group_id is set
     CHECK (target_id IS NOT NULL OR buddy_group_id IS NOT NULL),
     CHECK (target_id IS NULL OR buddy_group_id IS NULL)
-);
+) STRICT;
 
 CREATE TABLE quota_default_limits (
     id_type TEXT NOT NULL
@@ -280,7 +280,7 @@ CREATE TABLE quota_default_limits (
     value INTEGER NOT NULL,
 
     PRIMARY KEY (id_type, quota_type, pool_id)
-);
+) STRICT;
 
 CREATE TABLE quota_limits (
     quota_id INTEGER NOT NULL,
@@ -293,7 +293,7 @@ CREATE TABLE quota_limits (
     value INTEGER NOT NULL,
 
     PRIMARY KEY (quota_id, id_type, quota_type, pool_id)
-);
+) STRICT;
 
 CREATE TABLE quota_entries (
     quota_id INTEGER NOT NULL,
@@ -306,9 +306,9 @@ CREATE TABLE quota_entries (
     value INTEGER NOT NULL,
 
     PRIMARY KEY (quota_id, id_type, quota_type, target_id)
-);
+) STRICT;
 
 CREATE TABLE config (
     key TEXT PRIMARY KEY NOT NULL,
     value TEXT NOT NULL
-) WITHOUT ROWID;
+) STRICT, WITHOUT ROWID;
