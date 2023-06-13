@@ -148,7 +148,7 @@ pub(crate) async fn update_and_distribute(
     // calculate exceeded quota information and send to daemons
     let mut msges: Vec<msg::SetExceededQuota> = vec![];
     for e in db
-        .execute(db::quota_entries::exceeded_quota_entries)
+        .execute(db::quota_entries::all_exceeded_quota_entries)
         .await?
     {
         if let Some(last) = msges.last_mut() {

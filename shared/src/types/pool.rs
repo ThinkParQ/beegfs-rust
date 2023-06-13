@@ -54,6 +54,8 @@ impl CapacityPool {
 
 impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
 
+impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapPoolLimits {
     #[serde(with = "integer_with_generic_unit")]

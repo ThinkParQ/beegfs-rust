@@ -104,11 +104,7 @@ fn select(
                     entity_id: row.get(0)?,
                     node_id: row.get(1)?,
                     pool_id: row.get(2)?,
-                    cap_pool: match row.get_ref(3)?.as_str()? {
-                        "normal" => CapacityPool::Normal,
-                        "low" => CapacityPool::Low,
-                        _ => CapacityPool::Emergency,
-                    },
+                    cap_pool: row.get(3)?,
                 })
             },
         )?
@@ -118,9 +114,178 @@ fn select(
 }
 
 #[cfg(test)]
-mod bench {
+mod test {
     use super::*;
     use crate::db::test::*;
+
+    const FIXED_LIMITS: &[(CapPoolLimits, CapacityPool)] = &[
+        (
+            CapPoolLimits {
+                inodes_low: 800000,
+                inodes_emergency: 600000,
+                space_low: 200000,
+                space_emergency: 100000,
+            },
+            CapacityPool::Emergency,
+        ),
+        (
+            CapPoolLimits {
+                inodes_low: 100000,
+                inodes_emergency: 200000,
+                space_low: 800000,
+                space_emergency: 600000,
+            },
+            CapacityPool::Emergency,
+        ),
+        (
+            CapPoolLimits {
+                inodes_low: 100000,
+                inodes_emergency: 200000,
+                space_low: 800000,
+                space_emergency: 400000,
+            },
+            CapacityPool::Low,
+        ),
+        (
+            CapPoolLimits {
+                inodes_low: 200000,
+                inodes_emergency: 100000,
+                space_low: 200000,
+                space_emergency: 100000,
+            },
+            CapacityPool::Normal,
+        ),
+    ];
+
+    #[test]
+    fn fixed_limits_for_meta_targets() {
+        with_test_data(|tx| {
+            for (i, set) in FIXED_LIMITS.iter().enumerate() {
+                let pools = for_meta_targets(tx, set.0.clone(), None).unwrap();
+                assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
+            }
+        })
+    }
+
+    #[test]
+    fn fixed_limits_for_meta_buddy_groups() {
+        with_test_data(|tx| {
+            for (i, set) in FIXED_LIMITS.iter().enumerate() {
+                let pools = for_meta_buddy_groups(tx, set.0.clone(), None).unwrap();
+                assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
+            }
+        })
+    }
+
+    #[test]
+    fn fixed_limits_for_storage_targets() {
+        with_test_data(|tx| {
+            for (i, set) in FIXED_LIMITS.iter().enumerate() {
+                let pools = for_storage_targets(tx, set.0.clone(), None).unwrap();
+                assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
+            }
+        })
+    }
+
+    #[test]
+    fn fixed_limits_for_storage_buddy_groups() {
+        with_test_data(|tx| {
+            for (i, set) in FIXED_LIMITS.iter().enumerate() {
+                let pools = for_storage_buddy_groups(tx, set.0.clone(), None).unwrap();
+                assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
+            }
+        })
+    }
+
+    const DYNAMIC_LIMITS: &[(CapPoolLimits, CapPoolDynamicLimits, CapacityPool)] = &[
+        // All test targets in Normal pool, dynamic limits raise inode low limit
+        // => all targets in Low pool
+        (
+            CapPoolLimits {
+                inodes_low: 200000,
+                inodes_emergency: 100000,
+                space_low: 200000,
+                space_emergency: 100000,
+            },
+            CapPoolDynamicLimits {
+                inodes_normal_threshold: 50000,
+                inodes_low_threshold: 999999,
+                space_normal_threshold: 999999,
+                space_low_threshold: 999999,
+                inodes_low: 600000,
+                inodes_emergency: 100000,
+                space_low: 200000,
+                space_emergency: 100000,
+            },
+            CapacityPool::Low,
+        ),
+        // All test targets in Low pool (due to space), dynamic limits raise space emergency limit
+        // => all targets in Emergency pool
+        (
+            CapPoolLimits {
+                inodes_low: 200000,
+                inodes_emergency: 100000,
+                space_low: 800000,
+                space_emergency: 100000,
+            },
+            CapPoolDynamicLimits {
+                inodes_normal_threshold: 999999,
+                inodes_low_threshold: 999999,
+                space_normal_threshold: 999999,
+                space_low_threshold: 50000,
+                inodes_low: 200000,
+                inodes_emergency: 100000,
+                space_low: 800000,
+                space_emergency: 600000,
+            },
+            CapacityPool::Emergency,
+        ),
+    ];
+
+    #[test]
+    fn dynamic_limits_for_meta_targets() {
+        with_test_data(|tx| {
+            for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
+                let pools = for_meta_targets(tx, set.0.clone(), Some(set.1.clone())).unwrap();
+                assert!(pools.into_iter().all(|e| e.cap_pool == set.2), "Case #{i}");
+            }
+        })
+    }
+
+    #[test]
+    fn dynamic_limits_for_storage_targets() {
+        with_test_data(|tx| {
+            for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
+                let pools = for_storage_targets(tx, set.0.clone(), Some(set.1.clone())).unwrap();
+                assert!(
+                    pools
+                        .into_iter()
+                        // Only members of storage pool 1 have a spread in the test data
+                        .filter(|e| e.pool_id == 1.into())
+                        .all(|e| e.cap_pool == set.2),
+                    "Case #{i}"
+                );
+            }
+        })
+    }
+
+    #[test]
+    fn dynamic_limits_for_storage_buddy_groups() {
+        with_test_data(|tx| {
+            for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
+                let pools =
+                    for_storage_buddy_groups(tx, set.0.clone(), Some(set.1.clone())).unwrap();
+                assert!(
+                    pools
+                        .into_iter()
+                        // Only members of storage pool 1 have a spread in the test data
+                        .filter(|e| e.pool_id == 1.into())
+                        .all(|e| e.cap_pool == set.2),
+                    "Case #{i}"
+                );
+            }
+        })
+    }
 
     #[bench]
     fn bench_get_all_cap_pools(b: &mut Bencher) {

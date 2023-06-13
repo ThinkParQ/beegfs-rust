@@ -129,24 +129,24 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
 
 INSERT INTO targets (target_uid, node_type, total_space, total_inodes, free_space, free_inodes,
     consistency) VALUES
-    (201001, "meta", 1000000, 1000000, 500000, 500000, "good"),
-    (201002, "meta", 1000000, 1000000, 500000, 500000, "good"),
-    (201003, "meta", 1000000, 1000000, 500000, 500000, "good"),
-    (201004, "meta", 1000000, 1000000, 500000, 500000, "good"),
+    (201001, "meta", 1000000, 1000000, 450000, 450000, "good"),
+    (201002, "meta", 1000000, 1000000, 550000, 550000, "good"),
+    (201003, "meta", 1000000, 1000000, 550000, 550000, "good"),
+    (201004, "meta", 1000000, 1000000, 450000, 450000, "good"),
 
-    (202001, "storage", 1000000, 1000000, 500000, 500000, "good"),
+    (202001, "storage", 1000000, 1000000, 450000, 450000, "good"),
     (202002, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202003, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202004, "storage", 1000000, 1000000, 500000, 500000, "good"),
-    (202005, "storage", 1000000, 1000000, 500000, 500000, "good"),
+    (202005, "storage", 1000000, 1000000, 450000, 450000, "good"),
     (202006, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202007, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202008, "storage", 1000000, 1000000, 500000, 500000, "good"),
-    (202009, "storage", 1000000, 1000000, 500000, 500000, "good"),
+    (202009, "storage", 1000000, 1000000, 550000, 550000, "good"),
     (202010, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202011, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202012, "storage", 1000000, 1000000, 500000, 500000, "good"),
-    (202013, "storage", 1000000, 1000000, 500000, 500000, "good"),
+    (202013, "storage", 1000000, 1000000, 550000, 550000, "good"),
     (202014, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202015, "storage", 1000000, 1000000, 500000, 500000, "good"),
     (202016, "storage", 1000000, 1000000, 500000, 500000, "good"),
@@ -214,19 +214,6 @@ INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value) VALUES
     ("user", "inodes", 1, 1000),
     ("group", "space", 1, 1000),
     ("group", "inodes", 1, 1000)
-;
-
-INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value) VALUES
-    (1000, "user", "space", 1, 500),
-    (1001, "user", "space", 1, 1500),
-    (1001, "user", "inodes", 1, 1500)
-;
-
-INSERT INTO quota_entries (quota_id, id_type, quota_type, target_id, value) VALUES
-    (1000, "user", "space", 1, 750),
-    (1001, "user", "space", 1, 1250),
-    (1000, "user", "inodes", 1, 750),
-    (1001, "user", "inodes", 1, 1250)
 ;
 
 INSERT INTO config (key, value) VALUES

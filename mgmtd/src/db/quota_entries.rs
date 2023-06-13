@@ -47,7 +47,7 @@ pub struct ExceededQuotaEntry {
     pub pool_id: StoragePoolID,
 }
 
-pub fn exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
+pub fn all_exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT quota_id, id_type, quota_type, pool_id
@@ -117,15 +117,92 @@ pub fn upsert(
                 delete_stmt
                     .execute(params![d.quota_id, d.id_type, QuotaType::Inodes, target_id,])?
             }
-            _ => delete_stmt.execute(params![
+            _ => insert_stmt.execute(params![
                 d.quota_id,
                 d.id_type,
                 QuotaType::Inodes,
                 target_id,
-                d.space
+                d.inodes
             ])?,
         };
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::db::test::with_test_data;
+
+    #[test]
+    fn upsert_and_get() {
+        with_test_data(|tx| {
+            upsert(
+                tx,
+                1.into(),
+                [
+                    QuotaData {
+                        quota_id: 1000.into(),
+                        id_type: QuotaIDType::User,
+                        space: 2000,
+                        inodes: 0,
+                    },
+                    QuotaData {
+                        quota_id: 1001.into(),
+                        id_type: QuotaIDType::User,
+                        space: 2000,
+                        inodes: 2000,
+                    },
+                    QuotaData {
+                        quota_id: 1002.into(),
+                        id_type: QuotaIDType::User,
+                        space: 0,
+                        inodes: 2000,
+                    },
+                ],
+            )
+            .unwrap();
+
+            assert_eq!(
+                2,
+                exceeded_quota_ids(
+                    tx,
+                    PoolOrTargetID::PoolID(1.into()),
+                    QuotaIDType::User,
+                    QuotaType::Space,
+                )
+                .unwrap()
+                .len()
+            );
+
+            assert_eq!(
+                2,
+                exceeded_quota_ids(
+                    tx,
+                    PoolOrTargetID::PoolID(1.into()),
+                    QuotaIDType::User,
+                    QuotaType::Inodes,
+                )
+                .unwrap()
+                .len()
+            );
+
+            assert_eq!(4, all_exceeded_quota_entries(tx,).unwrap().len());
+
+            upsert(
+                tx,
+                1.into(),
+                [QuotaData {
+                    quota_id: 1001.into(),
+                    id_type: QuotaIDType::User,
+                    space: 0,
+                    inodes: 500,
+                }],
+            )
+            .unwrap();
+
+            assert_eq!(2, all_exceeded_quota_entries(tx,).unwrap().len());
+        })
+    }
 }
