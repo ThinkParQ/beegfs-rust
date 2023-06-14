@@ -1,4 +1,4 @@
-use crate::db::quota_entries::QuotaData;
+use crate::db::quota_entry::QuotaData;
 use crate::notification::request_tcp_by_type;
 use crate::{db, MgmtdPool};
 use ::config::Cache;
@@ -18,14 +18,14 @@ fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<(
 }
 
 pub(crate) async fn update_and_distribute(
-    db: &db::Handle,
+    db: &db::Connection,
     conn_pool: &MgmtdPool,
     config: &Cache<BeeConfig>,
 ) -> Result<()> {
     // Fetch quota data from storage daemons
 
     let targets = db
-        .execute(move |tx| db::targets::with_type(tx, NodeTypeServer::Storage))
+        .execute(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await?;
 
     if !targets.is_empty() {
@@ -105,7 +105,7 @@ pub(crate) async fn update_and_distribute(
         match resp {
             Ok(r) => {
                 db.execute(move |tx| {
-                    db::quota_entries::upsert(
+                    db::quota_entry::upsert(
                         tx,
                         target_id,
                         r.quota_entry.into_iter().map(|e| QuotaData {
@@ -119,7 +119,11 @@ pub(crate) async fn update_and_distribute(
                 .await?;
             }
             Err(err) => {
-                log::error!("Getting quota info for storage target {target_id:?} failed:\n{err:?}");
+                log_error_chain!(
+                    err,
+                    "Getting quota info for storage target {:?} failed",
+                    target_id
+                );
             }
         }
     }
@@ -127,7 +131,7 @@ pub(crate) async fn update_and_distribute(
     // calculate exceeded quota information and send to daemons
     let mut msges: Vec<msg::SetExceededQuota> = vec![];
     for e in db
-        .execute(db::quota_entries::all_exceeded_quota_entries)
+        .execute(db::quota_entry::all_exceeded_quota_entries)
         .await?
     {
         if let Some(last) = msges.last_mut() {
@@ -174,6 +178,7 @@ pub(crate) async fn update_and_distribute(
     Ok(())
 }
 
+/// Contains functionality to query the systems user and group database.
 mod system_ids {
     use shared::QuotaID;
     use std::sync::OnceLock;
@@ -182,17 +187,25 @@ mod system_ids {
     // SAFETY (applies to both user and group id iterators)
     //
     // * The global mutex assures that no more than one iterator object exists and therefore
-    // undefined results by concurrent access are prevented (this doesn't prevent from reusing
+    // undefined results by concurrent access are prevented (it obviously doesn't prevent reusing
     // libc::setpwent() elsewhere, don't do this!)
     // * getpwent() / getgrent() return the next entry or a nullptr in case EOF is reached or an
     // error occurs. Both cases are covered.
 
     static MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
+    /// Iterator over system user IDs
     pub struct UserIDIter<'a> {
         _lock: MutexGuard<'a, ()>,
     }
 
+    /// Retrieves system user IDs.
+    ///
+    /// Uses `getpwent()` libc call family.
+    ///
+    /// # Return value
+    /// An iterator iterating over the systems user IDs. This function will block all other tasks
+    /// until the iterator is dropped.
     pub async fn user_ids<'a>() -> UserIDIter<'a> {
         let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
 
@@ -226,10 +239,18 @@ mod system_ids {
         }
     }
 
+    /// Iterator over system group IDs
     pub struct GroupIDIter<'a> {
         _lock: MutexGuard<'a, ()>,
     }
 
+    /// Retrieves system group IDs.
+    ///
+    /// Uses `getgrent()` libc call.
+    ///
+    /// # Return value
+    /// An iterator iterating over the systems group IDs. This function will block all other tasks
+    /// until the iterator is dropped.
     pub async fn group_ids<'a>() -> GroupIDIter<'a> {
         let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
 

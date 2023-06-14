@@ -3,9 +3,9 @@ use shared::msg::types::CapacityPoolQueryType;
 
 pub(super) async fn handle(
     msg: msg::GetNodeCapacityPools,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::GetNodeCapacityPoolsResp {
     let pools = match async move {
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
         // either a NodeNUmID, TargetNumID or BuddyGroupID
@@ -17,7 +17,7 @@ pub(super) async fn handle(
 
                 let res = ci
                     .execute_db(move |tx| {
-                        db::cap_pools::for_meta_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
+                        db::cap_pool::for_meta_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
                     })
                     .await?;
 
@@ -35,7 +35,7 @@ pub(super) async fn handle(
 
                 let res = ci
                     .execute_db(move |tx| {
-                        db::cap_pools::for_storage_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
+                        db::cap_pool::for_storage_targets(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
                     })
                     .await?;
 
@@ -59,7 +59,7 @@ pub(super) async fn handle(
 
                 let res = ci
                     .execute_db(move |tx| {
-                        db::cap_pools::for_meta_buddy_groups(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
+                        db::cap_pool::for_meta_buddy_groups(tx, cap_pool_cfg, cap_pool_dynamic_cfg)
                     })
                     .await?;
 
@@ -77,7 +77,7 @@ pub(super) async fn handle(
 
                 let res = ci
                     .execute_db(move |tx| {
-                        db::cap_pools::for_storage_buddy_groups(
+                        db::cap_pool::for_storage_buddy_groups(
                             tx,
                             cap_pool_cfg,
                             cap_pool_dynamic_cfg,
@@ -100,20 +100,21 @@ pub(super) async fn handle(
             }
         };
 
-        Ok(result) as Result<_>
+        Ok(result) as DbResult<_>
     }
     .await
     {
         Ok(pools) => pools,
         Err(err) => {
-            log::error!(
-                "Getting node capacity pools with query type {:?} failed:\n{:?}",
-                msg.query_type,
-                err
+            log_error_chain!(
+                err,
+                "Getting node capacity pools with query type {:?} failed",
+                msg.query_type
             );
+
             HashMap::new()
         }
     };
 
-    rcc.respond(&msg::GetNodeCapacityPoolsResp { pools }).await
+    msg::GetNodeCapacityPoolsResp { pools }
 }

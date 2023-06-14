@@ -2,9 +2,9 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetConfig,
-    rcc: impl RequestConnectionController,
     mut ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::SetConfigResp {
     let entries = msg.entries.clone();
 
     match ci
@@ -22,23 +22,17 @@ pub(super) async fn handle(
                 )
             }
 
-            rcc.respond(&msg::SetConfigResp {
+            msg::SetConfigResp {
                 result: OpsErr::SUCCESS,
-            })
-            .await
+            }
         }
 
         Err(err) => {
-            log::error!(
-                "Setting {} config entries failed:\n{:?}",
-                entries.len(),
-                err
-            );
+            log_error_chain!(err, "Setting {} config entries failed", entries.len());
 
-            rcc.respond(&msg::SetConfigResp {
+            msg::SetConfigResp {
                 result: OpsErr::INTERNAL,
-            })
-            .await
+            }
         }
     }
 }

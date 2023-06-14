@@ -2,9 +2,9 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::AuthenticateChannel,
-    mut rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    rcc: &mut impl RequestConnectionController,
+) {
     if let Some(ref secret) = ci.get_static_info().auth_secret {
         if secret == &msg.auth_secret {
             rcc.authenticate();
@@ -16,10 +16,8 @@ pub(super) async fn handle(
         }
     } else {
         log::debug!(
-            "Peer {:?} tried to authenticate stream, but authentication is not rccuired",
+            "Peer {:?} tried to authenticate stream, but authentication is not required",
             rcc.peer()
         );
     }
-
-    Ok(())
 }

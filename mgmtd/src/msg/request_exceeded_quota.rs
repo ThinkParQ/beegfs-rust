@@ -1,14 +1,14 @@
 use super::*;
-use crate::db::quota_entries::PoolOrTargetID;
+use crate::db::quota_entry::PoolOrTargetID;
 
 pub(super) async fn handle(
     msg: msg::RequestExceededQuota,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::RequestExceededQuotaResp {
     match ci
         .execute_db(move |tx| {
-            let exceeded_ids = db::quota_entries::exceeded_quota_ids(
+            let exceeded_ids = db::quota_entry::exceeded_quota_ids(
                 tx,
                 if msg.pool_id != StoragePoolID::ZERO {
                     PoolOrTargetID::PoolID(msg.pool_id)
@@ -28,24 +28,21 @@ pub(super) async fn handle(
         })
         .await
     {
-        Ok(inner) => {
-            rcc.respond(&msg::RequestExceededQuotaResp {
-                result: OpsErr::SUCCESS,
-                inner,
-            })
-            .await
-        }
+        Ok(inner) => msg::RequestExceededQuotaResp {
+            result: OpsErr::SUCCESS,
+            inner,
+        },
         Err(err) => {
-            log::error!(
-                "Fetching exceeded quota IDs for storage pool {} or target {} failed:\n{err:?}",
+            log_error_chain!(
+                err,
+                "Fetching exceeded quota IDs for storage pool {} or target {} failed",
                 msg.pool_id,
                 msg.target_id
             );
-            rcc.respond(&msg::RequestExceededQuotaResp {
+            msg::RequestExceededQuotaResp {
                 result: OpsErr::INTERNAL,
                 inner: msg::SetExceededQuota::default(),
-            })
-            .await
+            }
         }
     }
 }

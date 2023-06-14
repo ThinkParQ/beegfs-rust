@@ -1,6 +1,7 @@
+//! Miscellaneous functions for database interaction and other business logic.
+
 use super::*;
 use rusqlite::types::FromSql;
-use rusqlite::OptionalExtension;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
@@ -14,21 +15,28 @@ pub fn calc_reachability_state(age: Duration, timeout: Duration) -> TargetReacha
     }
 }
 
-/// Finds unused ID for specified table in the given range. It tries by the
-/// following order:
+/// Finds a new unused ID from a specified table within a given range.
+///
+/// `table` is the SQL table name and `field` the ID field that should be queried. `range` limits
+/// the squery to a given numerical range.
+///
+/// It tries by the following order:
 /// 1. The biggest unused id within the allowed range
 /// 2. The smallest unused id within the allowed range
 /// 3. The minimum value if unused (this happens when the table is empty)
 ///
-/// If all of these fail, the range is full and an empty result is returned
+/// # Return value
+/// Returns an unused and available ID using the given contraints. If there is none available, an
+/// error is returned.
 ///
-/// Vulnerable to sql injection, do not call with user supplied input
+/// # Warning
+/// Vulnerable to sql injection, do not call with user supplied input!
 pub fn find_new_id<T: FromSql + std::fmt::Display>(
     tx: &mut Transaction,
     table: &str,
     field: &str,
     range: RangeInclusive<T>,
-) -> Result<T> {
+) -> DbResult<T> {
     let min = range.start();
     let max = range.end();
 
@@ -59,17 +67,21 @@ pub fn find_new_id<T: FromSql + std::fmt::Display>(
     Ok(id)
 }
 
+/// Information about the meta root of the BeeGFS installation.
+///
+/// Contains info on which type of meta root there is and on which node or buddy group it is stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetaRoot {
     Unknown,
-    Normal(TargetUID, NodeID, NodeUID),
+    Normal(NodeID, NodeUID),
     Mirrored(BuddyGroupID),
 }
 
-pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
+/// Retrieved the meta root information of the BeeGFS system.
+pub fn get_meta_root(tx: &mut Transaction) -> DbResult<MetaRoot> {
     let mut stmt = tx.prepare_cached(
         r#"
-        SELECT mt.target_uid, mt.node_id, mn.node_uid, ri.buddy_group_id
+        SELECT mt.node_id, mn.node_uid, ri.buddy_group_id
         FROM root_inode AS ri
         LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
         LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
@@ -79,9 +91,9 @@ pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
     Ok(
         match stmt
             .query_row([], |row| {
-                Ok(match row.get::<_, Option<TargetUID>>(0)? {
-                    Some(target_uid) => MetaRoot::Normal(target_uid, row.get(1)?, row.get(2)?),
-                    None => MetaRoot::Mirrored(row.get(3)?),
+                Ok(match row.get::<_, Option<NodeID>>(0)? {
+                    Some(node_id) => MetaRoot::Normal(node_id, row.get(1)?),
+                    None => MetaRoot::Mirrored(row.get(2)?),
                 })
             })
             .optional()?
@@ -92,8 +104,12 @@ pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
     )
 }
 
-pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
-    let affected = tx.execute(
+/// Switch the system over to use a buddy mirror group as meta root.
+///
+/// Gets the meta target with the root inode and moves the root inode to the buddy group which
+/// contains that target as primary target. Then a resync for the secondary target is triggered.
+pub fn enable_metadata_mirroring(tx: &mut Transaction) -> DbResult<()> {
+    tx.execute_checked(
         r#"
         UPDATE root_inode
         SET target_id = NULL, buddy_group_id = (
@@ -103,11 +119,10 @@ pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
         )
         "#,
         [],
+        1..=1,
     )?;
 
-    ensure_rows_modified!(affected, ());
-
-    let affected = tx.execute(
+    tx.execute_checked(
         r#"
         UPDATE targets SET consistency = "needs_resync"
         WHERE target_uid = (
@@ -118,9 +133,8 @@ pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
         )
         "#,
         [],
+        1..=1,
     )?;
-
-    ensure_rows_modified!(affected, ());
 
     Ok(())
 }
@@ -128,7 +142,6 @@ pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::test::*;
 
     #[test]
     fn find_new_id() {
@@ -152,10 +165,7 @@ mod test {
     fn meta_root() {
         with_test_data(|tx| {
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(
-                MetaRoot::Normal(201001.into(), 1.into(), 101001.into()),
-                meta_root
-            );
+            assert_eq!(MetaRoot::Normal(1.into(), 101001.into()), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap();
 

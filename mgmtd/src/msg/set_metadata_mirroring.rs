@@ -1,15 +1,14 @@
 use super::*;
-use anyhow::bail;
 use db::misc::MetaRoot;
 
 pub(super) async fn handle(
     msg: msg::SetMetadataMirroring,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::SetMetadataMirroringResp {
     match async {
         match ci.execute_db(db::misc::get_meta_root).await? {
-            MetaRoot::Normal(_, _, node_uid) => {
+            MetaRoot::Normal(_, node_uid) => {
                 let _: msg::SetMetadataMirroringResp =
                     ci.request(PeerID::Node(node_uid), &msg).await?;
 
@@ -26,18 +25,16 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Enabled metadata mirroring");
 
-            rcc.respond(&msg::SetMetadataMirroringResp {
+            msg::SetMetadataMirroringResp {
                 result: OpsErr::SUCCESS,
-            })
-            .await
+            }
         }
         Err(err) => {
-            log::error!("Enabling metadata mirroring failed:\n{:?}", err);
+            log_error_chain!(err, "Enabling metadata mirroring failed");
 
-            rcc.respond(&msg::SetMetadataMirroringResp {
+            msg::SetMetadataMirroringResp {
                 result: OpsErr::INTERNAL,
-            })
-            .await
+            }
         }
     }
 }

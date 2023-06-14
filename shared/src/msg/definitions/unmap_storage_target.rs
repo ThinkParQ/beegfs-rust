@@ -1,19 +1,19 @@
 use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct UnmapStorageTarget {
+pub struct UnmapTarget {
     pub target_id: TargetID,
 }
 
-impl Msg for UnmapStorageTarget {
+impl Msg for UnmapTarget {
     const ID: MsgID = MsgID(1027);
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct UnmapStorageTargetResp {
+pub struct UnmapTargetResp {
     pub result: OpsErr,
 }
 
-impl Msg for UnmapStorageTargetResp {
+impl Msg for UnmapTargetResp {
     const ID: MsgID = MsgID(1028);
 }

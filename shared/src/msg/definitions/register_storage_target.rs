@@ -4,7 +4,7 @@ use super::*;
 pub struct RegisterStorageTarget {
     #[bee_serde(as = CStr<0>)]
     pub alias: EntityAlias,
-    pub id: TargetID,
+    pub target_id: TargetID,
 }
 
 impl Msg for RegisterStorageTarget {

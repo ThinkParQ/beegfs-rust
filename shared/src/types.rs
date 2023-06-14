@@ -82,7 +82,7 @@ macro_rules! impl_enum_to_int {
 
 #[macro_export]
 macro_rules! impl_enum_to_sql_str {
-    ($type:ty, $($variant:ident => $text:literal),+) => {
+    ($type:ty, $($variant:ident => $text:literal),+ $(,)?) => {
 
         impl $type {
             pub fn as_sql_str(&self) -> &'static str {
@@ -172,9 +172,11 @@ impl OpsErr {
     pub const INTERNAL: Self = Self(1);
     pub const UNKNOWN_NODE: Self = Self(5);
     pub const EXISTS: Self = Self(7);
+    pub const NOTEMPTY: Self = Self(13);
     pub const UNKNOWN_TARGET: Self = Self(15);
     pub const INVAL: Self = Self(20);
     pub const AGAIN: Self = Self(22);
+    pub const UNKNOWN_POOL: Self = Self(30);
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]

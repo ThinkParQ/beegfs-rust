@@ -5,7 +5,7 @@ pub struct RemoveNode {
     #[bee_serde(as = Int<i16>)]
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
-    pub num_id: NodeID,
+    pub node_id: NodeID,
     pub ack_id: AckID,
 }
 

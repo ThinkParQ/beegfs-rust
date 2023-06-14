@@ -10,7 +10,7 @@ pub fn exceeded_quota_ids(
     pool_or_target_id: PoolOrTargetID,
     id_type: QuotaIDType,
     quota_type: QuotaType,
-) -> Result<Vec<QuotaID>> {
+) -> DbResult<Vec<QuotaID>> {
     let pool_id = match pool_or_target_id {
         PoolOrTargetID::PoolID(pool_id) => pool_id,
         PoolOrTargetID::TargetID(target_id) => {
@@ -47,7 +47,7 @@ pub struct ExceededQuotaEntry {
     pub pool_id: StoragePoolID,
 }
 
-pub fn all_exceeded_quota_entries(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
+pub fn all_exceeded_quota_entries(tx: &mut Transaction) -> DbResult<Vec<ExceededQuotaEntry>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT quota_id, id_type, quota_type, pool_id
@@ -81,7 +81,7 @@ pub fn upsert(
     tx: &mut Transaction,
     target_id: TargetID,
     data: impl IntoIterator<Item = QuotaData>,
-) -> Result<()> {
+) -> DbResult<()> {
     let mut insert_stmt = tx.prepare_cached(
         r#"
         INSERT INTO quota_entries (quota_id, id_type, quota_type, target_id, value)
@@ -133,7 +133,6 @@ pub fn upsert(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::test::with_test_data;
 
     #[test]
     fn upsert_and_get() {

@@ -1,14 +1,19 @@
 use super::*;
-use crate::db::quota_limits::SpaceAndInodeLimits;
+use crate::db::quota_limit::SpaceAndInodeLimits;
 
 pub(super) async fn handle(
     msg: msg::SetQuota,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::SetQuotaResp {
     match ci
         .execute_db(move |tx| {
-            db::quota_limits::update(
+            // Check pool ID exists
+            if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {
+                return Err(DbError::value_not_found("storage pool ID", msg.pool_id));
+            }
+
+            db::quota_limit::update(
                 tx,
                 msg.quota_entry.into_iter().map(|e| {
                     (
@@ -33,16 +38,14 @@ pub(super) async fn handle(
     {
         Ok(_) => {
             log::info!("Set quota for storage pool {}", msg.pool_id,);
-            rcc.respond(&msg::SetQuotaResp { result: true }).await
+            msg::SetQuotaResp { result: true }
         }
 
         Err(err) => {
-            log::error!(
-                "Setting quota for storage pool {} failed:\n{:?}",
-                msg.pool_id,
-                err
-            );
-            rcc.respond(&msg::SetQuotaResp { result: false }).await
+            err.as_ref();
+            log_error_chain!(err, "Setting quota for storage pool {} failed", msg.pool_id);
+
+            msg::SetQuotaResp { result: false }
         }
     }
 }

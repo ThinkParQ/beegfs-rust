@@ -243,7 +243,7 @@ pub struct RuntimeConfig {
 }
 
 impl RuntimeConfig {
-    pub async fn apply_to_db(&self, db: &db::Handle) -> anyhow::Result<()> {
+    pub async fn apply_to_db(&self, db: &db::Connection) -> anyhow::Result<()> {
         let quota_user_ids_range = self
             .quota_user_ids_range_start
             .map(|start| start..=self.quota_user_ids_range_end.unwrap_or(start));
@@ -318,7 +318,7 @@ impl RuntimeConfig {
         ]
         .into();
 
-        db.execute(|tx| db::config::set(tx, entries)).await
+        Ok(db.execute(|tx| db::config::set(tx, entries)).await?)
     }
 }
 

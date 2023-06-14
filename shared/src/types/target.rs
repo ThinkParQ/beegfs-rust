@@ -1,17 +1,6 @@
 use super::*;
 use std::fmt::{Debug, Display};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TargetUID(i64);
-
-impl_newtype_to_sql!(TargetUID => i64);
-
-impl From<i64> for TargetUID {
-    fn from(value: i64) -> Self {
-        Self(value)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, BeeSerde)]
 pub struct TargetID(u16);
 

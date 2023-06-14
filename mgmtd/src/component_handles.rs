@@ -1,3 +1,4 @@
+use crate::db::DbResult;
 use crate::msg::{dispatch_request, ComponentInteractor};
 use crate::notification::{notify_nodes, Notification};
 use crate::{db, MgmtdPool};
@@ -15,7 +16,7 @@ use shared::msg::Msg;
 #[derive(Clone, Debug)]
 pub(crate) struct ComponentHandles {
     pub conn: MgmtdPool,
-    pub db: db::Handle,
+    pub db: db::Connection,
     pub static_config: &'static crate::StaticInfo,
     pub config_input: ::config::CacheInput<BeeConfig>,
     pub config: ::config::Cache<BeeConfig>,
@@ -24,25 +25,33 @@ pub(crate) struct ComponentHandles {
 #[async_trait]
 impl ComponentInteractor for ComponentHandles {
     async fn execute_db<
-        T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>,
+        T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
         R: Send + 'static,
     >(
         &self,
         op: T,
-    ) -> Result<R> {
+    ) -> DbResult<R> {
         self.db.execute(op).await
     }
 
     async fn request<M: Msg, R: Msg>(&self, dest: PeerID, msg: &M) -> Result<R, anyhow::Error> {
-        MgmtdPool::request(&self.conn, dest, msg).await
+        log::debug!(target: "mgmtd::msg", "REQUEST to {:?}: {:?}", dest, msg);
+        let response = MgmtdPool::request(&self.conn, dest, msg).await?;
+        log::debug!(target: "mgmtd::msg", "RESPONSE RECEIVED from {:?}: {:?}", dest, msg);
+        Ok(response)
     }
 
     async fn send<M: Msg + BeeSerde>(&self, dest: PeerID, msg: &M) -> Result<(), anyhow::Error> {
-        MgmtdPool::send(&self.conn, dest, msg).await
+        log::debug!(target: "mgmtd::msg", "SEND to {:?}: {:?}", dest, msg);
+        MgmtdPool::send(&self.conn, dest, msg).await?;
+        Ok(())
     }
 
     async fn notify_nodes<M: Notification<'static> + Send>(&self, msg: &M) {
-        notify_nodes(&self.conn, &self.db, msg).await
+        log::debug!(target: "mgmtd::msg", "NOTIFICATION to {:?}: {:?}",
+            msg.notification_node_types(), msg);
+
+        notify_nodes(&self.conn, &self.db, msg).await;
     }
 
     fn get_config<K: Field<BelongsTo = BeeConfig>>(&self) -> K::Value {

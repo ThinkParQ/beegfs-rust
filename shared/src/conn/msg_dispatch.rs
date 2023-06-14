@@ -18,9 +18,33 @@ pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
     ) -> Result<()>;
 }
 
+/// Enables a type to issue a response message (or not).
+///
+/// This allows to take different actions when sending a response based on the (msg) type.
+#[async_trait]
+pub trait ResponseMsg {
+    async fn respond(rcc: impl RequestConnectionController, msg: &Self) -> Result<()>;
+}
+
+/// Do nothing response when the type is ()
+#[async_trait]
+impl ResponseMsg for () {
+    async fn respond(_rcc: impl RequestConnectionController, _msg: &Self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Forward to the Controllers response call for all Msg based types
+#[async_trait]
+impl<M: Msg> ResponseMsg for M {
+    async fn respond(rcc: impl RequestConnectionController, msg: &Self) -> Result<()> {
+        rcc.respond(msg).await
+    }
+}
+
 #[async_trait]
 pub trait RequestConnectionController: Send + Sync {
-    async fn respond(mut self, msg: &impl Msg) -> Result<()>;
+    async fn respond(self, msg: &impl Msg) -> Result<()>;
     fn authenticate(&mut self);
     fn peer(&self) -> PeerID;
 }

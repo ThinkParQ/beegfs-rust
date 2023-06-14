@@ -6,12 +6,12 @@ use shared::*;
 
 pub(crate) async fn request_tcp_by_type<M: Msg, R: Msg>(
     conn_pool: &MgmtdPool,
-    db: &db::Handle,
+    db: &db::Connection,
     node_type: NodeTypeServer,
     msg: M,
 ) -> Result<Vec<R>> {
     let nodes = db
-        .execute(move |tx| db::nodes::with_type(tx, node_type.into()))
+        .execute(move |tx| db::node::get_with_type(tx, node_type.into()))
         .await?;
 
     let mut responses = vec![];
@@ -31,12 +31,14 @@ pub(crate) async fn request_tcp_by_type<M: Msg, R: Msg>(
 
 pub(crate) async fn notify_nodes<M: Notification<'static> + Sync>(
     conn_pool: &MgmtdPool,
-    db: &db::Handle,
+    db: &db::Connection,
     msg: &M,
 ) {
     let res: Result<()> = try {
         for t in msg.notification_node_types() {
-            let nodes = db.execute(move |tx| db::nodes::with_type(tx, *t)).await?;
+            let nodes = db
+                .execute(move |tx| db::node::get_with_type(tx, *t))
+                .await?;
 
             conn_pool
                 .broadcast(nodes.into_iter().map(|e| PeerID::Node(e.uid)), msg)
@@ -45,10 +47,10 @@ pub(crate) async fn notify_nodes<M: Notification<'static> + Sync>(
     };
 
     if let Err(err) = res {
-        log::error!(
-            "Could not broadcast notification of type {} to all nodes: {}",
+        log_error_chain!(
+            err,
+            "Could not broadcast notification of type {} to all nodes",
             std::any::type_name::<M>(),
-            err
         )
     }
 }

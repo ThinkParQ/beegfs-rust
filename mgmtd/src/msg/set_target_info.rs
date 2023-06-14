@@ -1,16 +1,15 @@
 use super::*;
-use crate::db::targets::TargetCapacities;
-use crate::db::NonexistingKey;
+use crate::db::target::TargetCapacities;
 
 pub(super) async fn handle(
     msg: msg::SetTargetInfo,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::SetTargetInfoResp {
     let node_type = msg.node_type;
     match ci
         .execute_db(move |tx| {
-            db::targets::get_and_update_capacities(
+            db::target::get_and_update_capacities(
                 tx,
                 msg.info.into_iter().map(|e| {
                     (
@@ -35,21 +34,16 @@ pub(super) async fn handle(
             // changed I consider this being to expensive to check here and just don't
             // do it. Nodes refresh their cap pool every two minutes (by default) anyway
 
-            rcc.respond(&msg::SetTargetInfoResp {
+            msg::SetTargetInfoResp {
                 result: OpsErr::SUCCESS,
-            })
-            .await
+            }
         }
 
         Err(err) => {
-            log::error!("Updating {} target info failed:\n{:?}", node_type, err);
-            rcc.respond(&msg::SetTargetInfoResp {
-                result: match err.downcast_ref() {
-                    Some(NonexistingKey(_)) => OpsErr::INVAL,
-                    None => OpsErr::INTERNAL,
-                },
-            })
-            .await
+            log_error_chain!(err, "Updating {} target info failed", node_type);
+            msg::SetTargetInfoResp {
+                result: OpsErr::INTERNAL,
+            }
         }
     }
 }

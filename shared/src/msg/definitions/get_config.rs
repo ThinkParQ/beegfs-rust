@@ -8,12 +8,11 @@ impl Msg for GetConfig {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct GetAllConfigResp {
+pub struct GetConfigResp {
     #[bee_serde(as = Map<false, _, _>)]
     pub entries: config::ConfigMap,
 }
 
-impl Msg for GetAllConfigResp {
+impl Msg for GetConfigResp {
     const ID: MsgID = MsgID(10003);
 }
-

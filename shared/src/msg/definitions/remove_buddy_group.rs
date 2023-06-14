@@ -4,7 +4,7 @@ use super::*;
 pub struct RemoveBuddyGroup {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeTypeServer,
-    pub group_id: BuddyGroupID,
+    pub buddy_group_id: BuddyGroupID,
     #[bee_serde(as = BoolAsInt<u8>)]
     pub check_only: bool,
     #[bee_serde(as = BoolAsInt<u8>)]

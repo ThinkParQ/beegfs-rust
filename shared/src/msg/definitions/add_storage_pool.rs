@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct AddStoragePool {
-    pub id: StoragePoolID,
+    pub pool_id: StoragePoolID,
     #[bee_serde(as = CStr<0>)]
     pub alias: EntityAlias,
     #[bee_serde(as = Seq<true, _>)]

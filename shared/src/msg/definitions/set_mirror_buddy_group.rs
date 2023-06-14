@@ -4,8 +4,8 @@ use super::*;
 pub struct SetMirrorBuddyGroup {
     #[bee_serde(as = Int<u32>)]
     pub node_type: NodeTypeServer,
-    pub primary_target: TargetID,
-    pub secondary_target: TargetID,
+    pub primary_target_id: TargetID,
+    pub secondary_target_id: TargetID,
     pub buddy_group_id: BuddyGroupID,
     #[bee_serde(as = BoolAsInt<u8>)]
     pub allow_update: bool,

@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     _msg: msg::HeartbeatRequest,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
-    rcc.respond(&msg::Heartbeat {
+    _rcc: &impl RequestConnectionController,
+) -> msg::Heartbeat {
+    msg::Heartbeat {
         instance_version: 0,
         nic_list_version: 0,
         node_type: NodeType::Management,
@@ -17,6 +17,5 @@ pub(super) async fn handle(
         port: ci.get_static_info().static_config.port,
         port_tcp_unused: ci.get_static_info().static_config.port,
         nic_list: ci.get_static_info().network_interfaces.to_vec(),
-    })
-    .await
+    }
 }

@@ -5,7 +5,7 @@ pub struct SetTargetConsistencyStates {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeTypeServer,
     #[bee_serde(as = Seq<true, _>)]
-    pub targets: Vec<TargetID>,
+    pub target_ids: Vec<TargetID>,
     #[bee_serde(as = Seq<true, _>)]
     pub states: Vec<TargetConsistencyState>,
     pub ack_id: AckID,

@@ -21,7 +21,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
 
-pub(crate) type MgmtdPool = ConnPool<db::Handle>;
+pub(crate) type MgmtdPool = ConnPool<db::Connection>;
 
 #[derive(Debug)]
 pub struct StaticInfo {
@@ -46,7 +46,7 @@ pub async fn start(
         network_interfaces,
     }));
 
-    let db = db::Handle::open(static_info.static_config.db_file.as_path()).await?;
+    let db = db::Connection::open(static_info.static_config.db_file.as_path()).await?;
 
     if let Some(c) = &runtime_config {
         c.apply_to_db(&db).await?;

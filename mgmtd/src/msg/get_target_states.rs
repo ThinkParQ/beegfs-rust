@@ -3,11 +3,11 @@ use shared::config::NodeOfflineTimeout;
 
 pub(super) async fn handle(
     msg: msg::GetTargetStates,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::GetTargetStatesResp {
     match ci
-        .execute_db(move |tx| db::targets::with_type(tx, msg.node_type))
+        .execute_db(move |tx| db::target::get_with_type(tx, msg.node_type))
         .await
     {
         Ok(res) => {
@@ -24,25 +24,24 @@ pub(super) async fn handle(
                 consistency_states.push(e.consistency);
             }
 
-            rcc.respond(&msg::GetTargetStatesResp {
+            msg::GetTargetStatesResp {
                 targets,
                 reachability_states,
                 consistency_states,
-            })
-            .await
+            }
         }
         Err(err) => {
-            log::error!(
-                "Getting target states for {} nodes failed:\n{:?}",
+            log_error_chain!(
+                err,
+                "Getting target states for {} nodes failed",
                 msg.node_type,
-                err
             );
-            rcc.respond(&msg::GetTargetStatesResp {
+
+            msg::GetTargetStatesResp {
                 targets: vec![],
                 reachability_states: vec![],
                 consistency_states: vec![],
-            })
-            .await
+            }
         }
     }
 }

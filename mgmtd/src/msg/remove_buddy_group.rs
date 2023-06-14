@@ -4,16 +4,24 @@ use shared::msg::RemoveBuddyGroupResp;
 
 pub(super) async fn handle(
     msg: msg::RemoveBuddyGroup,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::RemoveBuddyGroupResp {
     match async {
         if msg.node_type != NodeTypeServer::Storage {
             bail!("Can only remove storage buddy groups");
         }
 
         let node_ids = ci
-            .execute_db(move |tx| db::buddy_groups::prepare_storage_deletion(tx, msg.group_id))
+            .execute_db(move |tx| {
+                db::buddy_group::check_existence(
+                    tx,
+                    &[msg.buddy_group_id],
+                    NodeTypeServer::Storage,
+                )?;
+
+                db::buddy_group::prepare_storage_deletion(tx, msg.buddy_group_id)
+            })
             .await?;
 
         let res_primary: RemoveBuddyGroupResp = ci.request(PeerID::Node(node_ids.0), &msg).await?;
@@ -29,31 +37,30 @@ pub(super) async fn handle(
             );
         }
 
-        ci.execute_db(move |tx| db::buddy_groups::delete_storage(tx, msg.group_id))
+        ci.execute_db(move |tx| db::buddy_group::delete_storage(tx, msg.buddy_group_id))
             .await?;
 
-        Ok(()) as Result<()>
+        Ok(())
     }
     .await
     {
-        Ok(_) => {
-            rcc.respond(&msg::RemoveBuddyGroupResp {
-                result: OpsErr::SUCCESS,
-            })
-            .await
-        }
+        Ok(_) => msg::RemoveBuddyGroupResp {
+            result: OpsErr::SUCCESS,
+        },
         Err(err) => {
-            log::error!(
-                "Removing {} buddy group {} failed:\n{:?}",
+            log_error_chain!(
+                err,
+                "Removing {} buddy group {} failed",
                 msg.node_type,
-                msg.group_id,
-                err
+                msg.buddy_group_id
             );
 
-            rcc.respond(&msg::RemoveBuddyGroupResp {
-                result: OpsErr::INTERNAL,
-            })
-            .await
+            msg::RemoveBuddyGroupResp {
+                result: match err.downcast_ref::<DbError>() {
+                    Some(DbError::ValueNotFound { .. }) => OpsErr::UNKNOWN_TARGET,
+                    Some(_) | None => OpsErr::INTERNAL,
+                },
+            }
         }
     }
 }

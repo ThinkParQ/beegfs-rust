@@ -1,10 +1,16 @@
+//! Functions for target management
+
+use super::entity::{EntityType, EntityUID};
 use super::*;
+use itertools::Itertools;
+use std::cmp::Ordering;
 use std::time::Duration;
 
+/// Represents a target entry.
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct Target {
-    pub target_uid: TargetUID,
+    pub target_uid: EntityUID,
     pub target_id: TargetID,
     pub node_type: NodeTypeServer,
     pub node_uid: NodeUID,
@@ -16,7 +22,8 @@ pub struct Target {
     pub last_contact: Duration,
 }
 
-pub fn with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<Target>> {
+/// Retrieve a list of targets filtered by node type.
+pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> DbResult<Vec<Target>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT target_uid, target_id, node_type, node_uid, node_id, pool_id,
@@ -46,7 +53,62 @@ pub fn with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<
     Ok(res)
 }
 
-pub fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &EntityAlias) -> Result<()> {
+/// Retrieve the global UID for the given target ID and type.
+///
+/// # Return value
+/// Returns `None` if the entry doesn't exist.
+pub fn get_uid(
+    tx: &mut Transaction,
+    target_id: TargetID,
+    node_type: NodeTypeServer,
+) -> DbResult<Option<EntityUID>> {
+    let res: Option<EntityUID> = tx
+        .query_row_cached(
+            "SELECT target_uid FROM all_targets_v WHERE node_id = ?1 AND node_type = ?2",
+            params![target_id, node_type],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    Ok(res)
+}
+
+/// Ensures that the list of given targets actually exists and returns an appropriate error if not.
+pub fn check_existence(
+    tx: &mut Transaction,
+    target_ids: &[TargetID],
+    node_type: NodeTypeServer,
+) -> DbResult<()> {
+    let count: usize = tx.query_row_cached(
+        &format!(
+            "SELECT COUNT(*) FROM {}_targets WHERE target_id IN ({}) ",
+            node_type.as_sql_str(),
+            target_ids.iter().join(",")
+        ),
+        [],
+        |row| row.get(0),
+    )?;
+
+    match count.cmp(&target_ids.len()) {
+        Ordering::Less => Err(DbError::value_not_found(
+            "target ID",
+            target_ids.iter().join(", "),
+        )),
+        Ordering::Greater => Err(DbError::other(format!(
+            "Target IDs have multiple matches: {} provided, {} selected",
+            target_ids.len(),
+            count
+        ))),
+        Ordering::Equal => Ok(()),
+    }
+}
+
+/// Inserts a new meta target.
+///
+/// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
+/// meta target per meta node with their IDs being the same. Due to that restriction, the type
+/// `NodeID` is expected.
+pub fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &EntityAlias) -> DbResult<()> {
     insert(
         tx,
         u16::from(node_id).into(),
@@ -66,11 +128,17 @@ pub fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &EntityAlias) -
     Ok(())
 }
 
+/// Inserts a new storage target if it doesn't exist yet.
+///
+/// Providing `None` for `target_id` chooses the ID automatically.
+///
+/// # Return value
+/// Returns the ID of the new target.
 pub fn insert_or_ignore_storage(
     tx: &mut Transaction,
     target_id: Option<TargetID>,
     alias: &EntityAlias,
-) -> Result<TargetID> {
+) -> DbResult<TargetID> {
     let target_id = if let Some(target_id) = target_id {
         let mut stmt = tx.prepare_cached(
             r#"
@@ -102,17 +170,8 @@ fn insert(
     node_type: NodeTypeServer,
     node_id: Option<NodeID>,
     alias: &EntityAlias,
-) -> Result<()> {
-    println!("AAA insert");
-    let mut stmt = tx.prepare_cached(
-        r#"
-        INSERT INTO entities (entity_type, alias) VALUES ("target", ?1)
-        "#,
-    )?;
-
-    stmt.execute(params![alias])?;
-
-    let new_uid: TargetUID = tx.last_insert_rowid().into();
+) -> DbResult<()> {
+    let new_uid = entity::insert(tx, EntityType::Target, alias)?;
 
     tx.execute(
         r#"
@@ -135,11 +194,15 @@ fn insert(
     Ok(())
 }
 
+/// Changes the consistency state for the given targets to new individual values.
+///
+/// # Return value
+/// Returns the number of affected entries.
 pub fn update_consistency_states(
     tx: &mut Transaction,
     changes: impl IntoIterator<Item = (TargetID, TargetConsistencyState)>,
     node_type: NodeTypeServer,
-) -> Result<usize> {
+) -> DbResult<usize> {
     let mut update = tx.prepare_cached(
         r#"
         UPDATE targets SET consistency = ?3
@@ -149,49 +212,76 @@ pub fn update_consistency_states(
         "#,
     )?;
 
-    let mut affected = 0;
+    let mut updated = 0;
     for e in changes {
-        affected += update.execute(params![e.0, node_type, e.1])?;
+        updated += update.execute(params![e.0, node_type, e.1])?;
     }
 
-    Ok(affected)
+    Ok(updated)
 }
 
+/// Change the storage pool of the given targets IDs to a new one.
 pub fn update_storage_pools(
     tx: &mut Transaction,
     new_pool_id: StoragePoolID,
-    move_ids: impl IntoIterator<Item = TargetID>,
-) -> Result<()> {
-    let mut stmt = tx.prepare_cached(
-        r#"
-        UPDATE storage_targets SET pool_id = ?1 WHERE target_id = ?2
-        "#,
+    target_ids: &[TargetID],
+) -> DbResult<()> {
+    let updated = tx.execute(
+        &format!(
+            "UPDATE storage_targets SET pool_id = ?1 WHERE target_id IN ({})",
+            target_ids.iter().join(",")
+        ),
+        [new_pool_id],
     )?;
 
-    for t in move_ids {
-        stmt.execute(params![new_pool_id, t])?;
+    if updated != target_ids.len() {
+        return Err(DbError::other(format!(
+            "At least one of the given storage target IDs ({}) doesn't exist",
+            target_ids.iter().join(",")
+        )));
     }
 
     Ok(())
 }
 
-pub fn update_storage_node_mapping(
-    tx: &mut Transaction,
-    target_id: TargetID,
-    new_node_id: NodeID,
-) -> Result<()> {
-    let mut stmt = tx.prepare_cached(
-        r#"
-        UPDATE storage_targets SET node_id = ?1 WHERE target_id = ?2
-        "#,
-    )?;
-
-    let affected = stmt.execute(params![new_node_id, target_id])?;
-
-    ensure_rows_modified!(affected, target_id);
-    Ok(())
+/// Reset all storage targets belonging to the given storage pool to the default pool.
+pub fn reset_storage_pool(tx: &mut Transaction, pool_id: StoragePoolID) -> rusqlite::Result<usize> {
+    tx.execute_cached(
+        "UPDATE storage_targets SET pool_id = 1 WHERE pool_id = ?",
+        [pool_id],
+    )
 }
 
+/// Assigns the given storage targets to a new node.
+///
+/// # Return value
+/// Returns the number of affected entries
+pub fn update_storage_node_mappings(
+    tx: &mut Transaction,
+    target_ids: &[TargetID],
+    new_node_id: NodeID,
+) -> DbResult<usize> {
+    let mut stmt =
+        tx.prepare_cached("UPDATE storage_targets SET node_id = ?1 WHERE target_id = ?2")?;
+
+    let mut updated = 0;
+    for target_id in target_ids {
+        updated += stmt.execute(params![new_node_id, target_id])?;
+    }
+
+    if updated != target_ids.len() {
+        return Err(DbError::other(format!(
+            "Tried to map {} targets but only {updated} entries were updated",
+            target_ids.len()
+        )));
+    }
+
+    Ok(updated)
+}
+
+/// Represents the storage capacities of a storage target.
+///
+/// Values are `None` if there is no information available.
 pub struct TargetCapacities {
     pub total_space: Option<u64>,
     pub total_inodes: Option<u64>,
@@ -199,11 +289,15 @@ pub struct TargetCapacities {
     pub free_inodes: Option<u64>,
 }
 
+/// Retrieves the storage capacities for the given target IDs and updates them with new values.
+///
+/// # Return value
+/// Vector of tuples containing the target ID and the pre-update capacity info.
 pub fn get_and_update_capacities(
     tx: &mut Transaction,
     items: impl IntoIterator<Item = (TargetID, TargetCapacities)>,
     node_type: NodeTypeServer,
-) -> Result<Vec<(TargetID, TargetCapacities)>> {
+) -> DbResult<Vec<(TargetID, TargetCapacities)>> {
     let mut select = tx.prepare_cached(
         r#"
         SELECT total_space, total_inodes, free_space, free_inodes
@@ -250,14 +344,15 @@ pub fn get_and_update_capacities(
     Ok(old_values)
 }
 
-pub fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
-    let affected = tx.execute(
+/// Deletes a storage target.
+pub fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> DbResult<()> {
+    tx.execute_checked_cached(
         r#"
         DELETE FROM storage_targets WHERE target_id = ?1
         "#,
         params![target_id],
+        1..=1,
     )?;
-    ensure_rows_modified!(affected, target_id);
 
     Ok(())
 }
@@ -265,7 +360,6 @@ pub fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::test::*;
 
     #[test]
     fn set_get_meta() {
@@ -275,7 +369,7 @@ mod test {
             // existing alias
             super::insert_meta(tx, 99.into(), &"new_meta_target".into()).unwrap_err();
 
-            let targets = super::with_type(tx, NodeTypeServer::Meta).unwrap();
+            let targets = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
 
             assert_eq!(5, targets.len());
         })
@@ -292,13 +386,13 @@ mod test {
             // existing alias
             super::insert_or_ignore_storage(tx, None, &"new_storage_target".into()).unwrap_err();
 
-            super::update_storage_node_mapping(tx, new_target_id, 1.into()).unwrap();
-            super::update_storage_node_mapping(tx, 1000.into(), 1.into()).unwrap();
+            super::update_storage_node_mappings(tx, &[new_target_id, 1000.into()], 1.into())
+                .unwrap();
 
-            super::update_storage_node_mapping(tx, 9999.into(), 1.into()).unwrap_err();
-            super::update_storage_node_mapping(tx, 1.into(), 9999.into()).unwrap_err();
+            super::update_storage_node_mappings(tx, &[9999.into(), 1.into()], 1.into())
+                .unwrap_err();
 
-            let targets = super::with_type(tx, NodeTypeServer::Storage).unwrap();
+            let targets = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
             assert_eq!(18, targets.len());
 

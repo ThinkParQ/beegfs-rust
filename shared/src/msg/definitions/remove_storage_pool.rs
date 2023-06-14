@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveStoragePool {
-    pub id: StoragePoolID,
+    pub pool_id: StoragePoolID,
 }
 
 impl Msg for RemoveStoragePool {

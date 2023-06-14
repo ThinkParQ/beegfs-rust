@@ -1,0 +1,209 @@
+//! Functions for node management
+
+use super::*;
+use itertools::Itertools;
+use rusqlite::OptionalExtension;
+use std::time::Duration;
+
+/// Represents a node entry.
+#[derive(Clone, Debug)]
+pub struct Node {
+    pub uid: NodeUID,
+    pub id: NodeID,
+    pub node_type: NodeType,
+    pub alias: EntityAlias,
+    pub port: Port,
+}
+
+/// Retrieve a list of nodes filtered by node type.
+pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Vec<Node>> {
+    let mut stmt = tx.prepare_cached(
+        r#"
+        SELECT node_uid, node_id, node_type, alias, port
+        FROM all_nodes_v
+        WHERE node_type = ?1
+        "#,
+    )?;
+
+    let res = stmt
+        .query_map([node_type], |row| {
+            Ok(Node {
+                uid: row.get(0)?,
+                id: row.get(1)?,
+                node_type: row.get(2)?,
+                alias: row.get(3)?,
+                port: row.get(4)?,
+            })
+        })?
+        .try_collect()?;
+
+    Ok(res)
+}
+
+/// Retrieve the global UID for the given node ID and type.
+///
+/// # Return value
+/// Returns `None` if the entry doesn't exist.
+pub fn get_uid(
+    tx: &mut Transaction,
+    node_id: NodeID,
+    node_type: NodeType,
+) -> DbResult<Option<EntityUID>> {
+    let res: Option<EntityUID> = tx
+        .query_row_cached(
+            "SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2",
+            params![node_id, node_type],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    Ok(res)
+}
+
+/// Delete client nodes with a last contact time bigger than `timeout`.
+///
+/// # Return value
+/// Returns the number of deleted clients.
+pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> DbResult<usize> {
+    let affected = {
+        let mut stmt = tx.prepare_cached(
+            r#"
+            DELETE FROM nodes
+            WHERE
+                DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
+                AND node_uid IN (SELECT node_uid FROM client_nodes)
+            "#,
+        )?;
+        stmt.execute(params![timeout.as_secs()])?
+    };
+
+    Ok(affected)
+}
+
+/// Inserts a node into the database.
+pub fn insert(
+    tx: &mut Transaction,
+    node_id: NodeID,
+    node_uid: EntityUID,
+    node_type: NodeType,
+    new_port: Port,
+) -> DbResult<()> {
+    tx.execute_cached(
+        r#"
+        INSERT INTO nodes (node_uid, node_type, port, last_contact)
+        VALUES (?1, ?2, ?3, DATETIME('now'))
+        "#,
+        params![node_uid, node_type, new_port],
+    )?;
+
+    tx.execute_cached(
+        &format!(
+            "INSERT INTO {}_nodes (node_id, node_uid) VALUES (?1, ?2)",
+            node_type.as_sql_str(),
+        ),
+        params![node_id, node_uid],
+    )?;
+
+    Ok(())
+}
+
+/// Updates a node in the database.
+pub fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> DbResult<()> {
+    tx.execute_checked_cached(
+        "UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2",
+        params![new_port, node_uid],
+        1..=1,
+    )?;
+
+    Ok(())
+}
+
+/// Updates the `last_contact` time for all the nodes belonging to the passed targets.
+///
+/// BeeGFS considers contact times belonging to targets and only provides target ids in the messages
+/// that are used to update these. This doesn't make sense (a node is the entity that can be
+/// unreachable, not a target), but since there is currently no way to know from which node these
+/// messages come, the nodes to update are determined using target IDs.
+pub fn update_last_contact_for_targets(
+    tx: &mut Transaction,
+    target_ids: &[TargetID],
+    node_type: NodeTypeServer,
+) -> rusqlite::Result<usize> {
+    tx.execute_cached(
+        &format!(
+            r#"
+            UPDATE nodes AS n SET last_contact = DATETIME('now')
+            WHERE n.node_uid IN (
+                SELECT DISTINCT node_uid FROM all_targets_v WHERE target_id IN ({}) AND node_type = ?1
+            )
+            "#,
+            target_ids.iter().join(",")
+        ),
+        [node_type],
+    )
+}
+
+/// Delete a node from the database.
+pub fn delete(tx: &mut Transaction, node_uid: EntityUID) -> rusqlite::Result<usize> {
+    tx.execute_checked_cached(
+        "DELETE FROM nodes WHERE node_uid = ?1",
+        params![node_uid],
+        1..=1,
+    )
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use entity::EntityType;
+
+    #[test]
+    fn insert_get_delete() {
+        with_test_data(|tx| {
+            assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
+            let node_uid = entity::insert(tx, EntityType::Node, &"new_node".into()).unwrap();
+            let node_uid2 = entity::insert(tx, EntityType::Node, &"new_node2".into()).unwrap();
+
+            insert(tx, 1234.into(), node_uid, NodeType::Meta, 10000.into()).unwrap();
+            insert(tx, 1234.into(), node_uid2, NodeType::Meta, 10000.into()).unwrap_err();
+            insert(tx, 1235.into(), node_uid, NodeType::Meta, 10000.into()).unwrap_err();
+            assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
+
+            delete(tx, node_uid).unwrap();
+            delete(tx, node_uid).unwrap_err();
+            assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
+        });
+    }
+
+    #[test]
+    fn delete_stale_clients() {
+        with_test_data(|tx| {
+            let deleted = super::delete_stale_clients(tx, Duration::from_secs(99999)).unwrap();
+            assert_eq!(0, deleted);
+
+            tx.execute(
+                r#"
+                UPDATE nodes
+                SET last_contact = DATETIME("now", "-1 hour")
+                WHERE node_uid IN (103001, 103002)
+                "#,
+                [],
+            )
+            .unwrap();
+
+            let deleted = super::delete_stale_clients(tx, Duration::from_secs(100)).unwrap();
+            assert_eq!(2, deleted);
+
+            let clients = node::get_with_type(tx, NodeType::Client).unwrap();
+            assert_eq!(2, clients.len());
+        })
+    }
+
+    #[test]
+    fn update_last_contact_for_targets() {
+        with_test_data(|tx| {
+            super::update_last_contact_for_targets(tx, &[1.into(), 2.into()], NodeTypeServer::Meta)
+                .unwrap();
+        })
+    }
+}

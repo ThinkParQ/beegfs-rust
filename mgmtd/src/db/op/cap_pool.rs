@@ -1,6 +1,20 @@
+//! Functions for calculating targets and buddy groups capacity pools.
+//!
+//! Pools are calculated based on the behavior in old management.
+//!
+//! All of the functions expect the pool limit configuration to be put in from the caller. The
+//! `dynamic_limits` are optional and will be ignored if not given (e.g. when disabled by config).
+//!
+//! # Return value
+//! The functions return a Vec with the [EntityWithCapPool] result struct, mapping targets / buddy
+//! groups to capacity pools. When retrieving meta capacity pools, `pool_id` is always `0`.
+
 use super::*;
 use rusqlite::named_params;
 
+/// The result entry, assigning a target to a capacity pool.
+///
+/// Also contains additional information which is useful for the caller.
 #[derive(Clone, Debug)]
 pub struct EntityWithCapPool {
     pub entity_id: u16,
@@ -13,10 +27,10 @@ pub fn for_meta_targets(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> Result<Vec<EntityWithCapPool>> {
+) -> DbResult<Vec<EntityWithCapPool>> {
     select(
         tx,
-        include_str!("cap_pools/select_meta_targets.sql"),
+        include_str!("cap_pool/select_meta_targets.sql"),
         limits,
         dynamic_limits,
     )
@@ -26,10 +40,10 @@ pub fn for_storage_targets(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> Result<Vec<EntityWithCapPool>> {
+) -> DbResult<Vec<EntityWithCapPool>> {
     select(
         tx,
-        include_str!("cap_pools/select_storage_targets.sql"),
+        include_str!("cap_pool/select_storage_targets.sql"),
         limits,
         dynamic_limits,
     )
@@ -39,10 +53,10 @@ pub fn for_meta_buddy_groups(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> Result<Vec<EntityWithCapPool>> {
+) -> DbResult<Vec<EntityWithCapPool>> {
     select(
         tx,
-        include_str!("cap_pools/select_meta_buddy_groups.sql"),
+        include_str!("cap_pool/select_meta_buddy_groups.sql"),
         limits,
         dynamic_limits,
     )
@@ -52,10 +66,10 @@ pub fn for_storage_buddy_groups(
     tx: &mut Transaction,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> Result<Vec<EntityWithCapPool>> {
+) -> DbResult<Vec<EntityWithCapPool>> {
     select(
         tx,
-        include_str!("cap_pools/select_storage_buddy_groups.sql"),
+        include_str!("cap_pool/select_storage_buddy_groups.sql"),
         limits,
         dynamic_limits,
     )
@@ -66,7 +80,7 @@ fn select(
     select_entities: &str,
     limits: CapPoolLimits,
     dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> Result<Vec<EntityWithCapPool>> {
+) -> DbResult<Vec<EntityWithCapPool>> {
     let dynamic_limits = dynamic_limits.unwrap_or(CapPoolDynamicLimits {
         inodes_normal_threshold: 0,
         inodes_low_threshold: 0,
@@ -79,7 +93,7 @@ fn select(
     });
 
     let mut stmt = tx.prepare_cached(&format!(
-        include_str!("cap_pools/select.sql"),
+        include_str!("cap_pool/select.sql"),
         select_entities = select_entities
     ))?;
 
@@ -116,7 +130,6 @@ fn select(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::test::*;
 
     const FIXED_LIMITS: &[(CapPoolLimits, CapacityPool)] = &[
         (

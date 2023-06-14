@@ -1,17 +1,6 @@
 use super::*;
 use std::fmt::Display;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct BuddyGroupUID(i64);
-
-impl_newtype_to_sql!(BuddyGroupUID => i64);
-
-impl From<i64> for BuddyGroupUID {
-    fn from(value: i64) -> Self {
-        Self(value)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct BuddyGroupID(u16);
 

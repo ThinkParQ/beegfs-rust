@@ -9,13 +9,16 @@ pub struct DefaultLimits {
     pub group_inodes_limit: Option<u64>,
 }
 
-pub fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
+pub fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> DbResult<DefaultLimits> {
+    storage_pool::get_uid(tx, pool_id)?
+        .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
+
     let mut stmt = tx.prepare_cached(
         r#"
-            SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
-            FROM quota_default_limits_combined_v
-            WHERE pool_id = ?1
-            "#,
+        SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
+        FROM quota_default_limits_combined_v
+        WHERE pool_id = ?1
+        "#,
     )?;
 
     let limits = stmt
@@ -38,7 +41,10 @@ pub fn update(
     id_type: QuotaIDType,
     quota_type: QuotaType,
     value: u64,
-) -> Result<()> {
+) -> DbResult<()> {
+    storage_pool::get_uid(tx, pool_id)?
+        .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
+
     let mut stmt = tx.prepare_cached(
         r#"
         INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value)
@@ -59,7 +65,10 @@ pub fn delete(
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
     quota_type: QuotaType,
-) -> Result<()> {
+) -> DbResult<()> {
+    storage_pool::get_uid(tx, pool_id)?
+        .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
+
     let mut stmt = tx.prepare_cached(
         r#"
         DELETE FROM quota_default_limits
@@ -75,7 +84,6 @@ pub fn delete(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::test::*;
 
     #[test]
     fn set_get() {

@@ -4,20 +4,20 @@ use shared::msg::types::{BuddyGroupCapacityPools, TargetCapacityPools};
 
 pub(super) async fn handle(
     _msg: msg::GetStoragePools,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::GetStoragePoolsResp {
     let pools = match async move {
         let limits = ci.get_config::<CapPoolStorageLimits>();
         let dynamic_limits = ci.get_config::<CapPoolDynamicStorageLimits>();
 
         let (targets, pools, buddy_groups) = ci
             .execute_db(move |tx| {
-                let pools = db::storage_pools::all(tx)?;
+                let pools = db::storage_pool::get_all(tx)?;
                 let targets =
-                    db::cap_pools::for_storage_targets(tx, limits.clone(), dynamic_limits.clone())?;
+                    db::cap_pool::for_storage_targets(tx, limits.clone(), dynamic_limits.clone())?;
                 let buddy_groups =
-                    db::cap_pools::for_storage_buddy_groups(tx, limits, dynamic_limits)?;
+                    db::cap_pool::for_storage_buddy_groups(tx, limits, dynamic_limits)?;
 
                 Ok((targets, pools, buddy_groups))
             })
@@ -81,16 +81,16 @@ pub(super) async fn handle(
                     },
                 })
             })
-            .try_collect::<Vec<msg::types::StoragePool>>() as Result<_>
+            .try_collect::<Vec<msg::types::StoragePool>>() as DbResult<_>
     }
     .await
     {
         Ok(pools) => pools,
         Err(err) => {
-            log::error!("Getting storage pools failed:\n{err:?}");
+            log_error_chain!(err, "Getting storage pools failed");
             vec![]
         }
     };
 
-    rcc.respond(&msg::GetStoragePoolsResp { pools }).await
+    msg::GetStoragePoolsResp { pools }
 }

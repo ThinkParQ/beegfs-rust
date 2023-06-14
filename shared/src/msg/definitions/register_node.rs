@@ -7,11 +7,11 @@ pub struct RegisterNode {
     #[bee_serde(as = CStr<0>)]
     pub node_alias: EntityAlias,
     #[bee_serde(as = Seq<false, _>)]
-    pub nic_list: Vec<Nic>,
+    pub nics: Vec<Nic>,
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
-    pub node_num_id: NodeID,
+    pub node_id: NodeID,
     pub root_num_id: u32,
     #[bee_serde(as = BoolAsInt<u8>)]
     pub is_root_mirrored: bool,

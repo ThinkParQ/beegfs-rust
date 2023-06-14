@@ -26,7 +26,7 @@ impl<Res: AddrResolver> Source for ManagementSource<Res> {
     async fn get(&self) -> Result<ConfigMap, BoxedError> {
         Ok(self
             .conn
-            .request::<_, msg::GetAllConfigResp>(self.management_addr, &msg::GetConfig {})
+            .request::<_, msg::GetConfigResp>(self.management_addr, &msg::GetConfig {})
             .await?
             .entries)
     }

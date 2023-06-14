@@ -2,61 +2,57 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::MapTargets,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
-    let mut results = HashMap::with_capacity(msg.targets.len());
+    _rcc: &impl RequestConnectionController,
+) -> msg::MapTargetsResp {
+    let target_ids = msg.target_ids.keys().copied().collect::<Vec<_>>();
 
-    for (target_id, _) in msg.targets.clone() {
-        let res = ci
-            .execute_db(move |tx| {
-                db::targets::update_storage_node_mapping(tx, target_id, msg.node_num_id)
+    match ci
+        .execute_db(move |tx| {
+            // Check node ID exists
+            if db::node::get_uid(tx, msg.node_id, NodeType::Storage)?.is_none() {
+                return Err(DbError::value_not_found("node ID", msg.node_id));
+            }
+
+            // Check all target IDs exist
+            db::target::check_existence(tx, &target_ids, NodeTypeServer::Storage)?;
+
+            let updated = db::target::update_storage_node_mappings(tx, &target_ids, msg.node_id)?;
+
+            Ok(updated)
+        })
+        .await
+    {
+        Ok(updated) => {
+            log::info!("Mapped {} storage targets to node {}", updated, msg.node_id);
+
+            // TODO only do it with successful ones
+            ci.notify_nodes(&msg::MapTargets {
+                target_ids: msg.target_ids.clone(),
+                node_id: msg.node_id,
+                ack_id: "".into(),
             })
             .await;
 
-        results.insert(
-            target_id,
-            match res {
-                Ok(_) => OpsErr::SUCCESS,
-                Err(err) => {
-                    log::error!(
-                        "Mapping storage target {} to node {} failed:\n{:?}",
-                        target_id,
-                        msg.node_num_id,
-                        err
-                    );
-                    // TODO correct result code
-                    OpsErr::INTERNAL
-                }
-            },
-        );
+            // Storage server expects a separate status code for each target map requested.
+            // For simplicity we just do an all-or-nothing approach: If all mappings succeed, we
+            // return success. If at least one fails, we fail the whole operation and send back an
+            // empty result (see below). The storage handles this as errors. This mechanism is
+            // supposed to go away later anyway, so this solution is fine.
+            msg::MapTargetsResp {
+                results: msg
+                    .target_ids
+                    .into_iter()
+                    .map(|e| (e.0, OpsErr::SUCCESS))
+                    .collect(),
+            }
+        }
+        Err(err) => {
+            log_error_chain!(err, "Mapping storage targets failed");
+
+            msg::MapTargetsResp {
+                results: HashMap::new(),
+            }
+        }
     }
-
-    let fails = results.iter().filter(|e| *e.1 == OpsErr::INTERNAL).count();
-
-    if fails == 0 {
-        log::info!(
-            "Mapped {} storage targets to node {}",
-            results.len(),
-            msg.node_num_id
-        );
-    } else {
-        log::info!(
-            "Tried to map {} storage targets to node {}, but {} failures occurred",
-            results.len(),
-            msg.node_num_id,
-            fails
-        );
-    };
-
-    // forward to all nodes if
-    // TODO only do it with successful ones
-    ci.notify_nodes(&msg::MapTargets {
-        targets: msg.targets,
-        node_num_id: msg.node_num_id,
-        ack_id: "".into(),
-    })
-    .await;
-
-    rcc.respond(&msg::MapTargetsResp { results }).await
 }

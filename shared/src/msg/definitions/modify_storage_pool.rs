@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModifyStoragePool {
-    pub id: StoragePoolID,
+    pub pool_id: StoragePoolID,
     pub alias: Option<EntityAlias>,
     pub add_target_ids: Vec<TargetID>,
     pub remove_target_ids: Vec<TargetID>,
@@ -47,7 +47,7 @@ impl BeeSerde for ModifyStoragePool {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         let flags = ser.msg_feature_flags;
 
-        self.id.serialize(ser)?;
+        self.pool_id.serialize(ser)?;
 
         if flags & Self::HAS_DESC != 0 {
             if let Some(inner) = self.alias.as_ref() {
@@ -82,7 +82,7 @@ impl BeeSerde for ModifyStoragePool {
         let flags = des.msg_feature_flags;
 
         Ok(Self {
-            id: StoragePoolID::deserialize(des)?,
+            pool_id: StoragePoolID::deserialize(des)?,
             alias: if flags & Self::HAS_DESC != 0 {
                 Some(des.cstr(0)?.try_into()?)
             } else {

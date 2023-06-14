@@ -2,24 +2,23 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetTargetConsistencyStates,
-    rcc: impl RequestConnectionController,
     ci: impl ComponentInteractor,
-) -> Result<()> {
+    _rcc: &impl RequestConnectionController,
+) -> msg::SetTargetConsistencyStatesResp {
     match async {
         let msg = msg.clone();
 
         ci.execute_db(move |tx| {
+            // Check given target IDs exist
+            db::target::check_existence(tx, &msg.target_ids, msg.node_type)?;
+
             if msg.set_online {
-                db::nodes::update_last_contact_for_targets(
-                    tx,
-                    msg.targets.iter().copied(),
-                    msg.node_type.into(),
-                )?;
+                db::node::update_last_contact_for_targets(tx, &msg.target_ids, msg.node_type)?;
             }
 
-            db::targets::update_consistency_states(
+            db::target::update_consistency_states(
                 tx,
-                msg.targets.into_iter().zip(msg.states.into_iter()),
+                msg.target_ids.into_iter().zip(msg.states.into_iter()),
                 msg.node_type,
             )
         })
@@ -28,28 +27,26 @@ pub(super) async fn handle(
         ci.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
             .await;
 
-        Ok(()) as Result<()>
+        Ok(()) as DbResult<()>
     }
     .await
     {
         Ok(_) => {
-            log::info!("Set consistency state for targets {:?}", msg.targets,);
-            rcc.respond(&msg::SetTargetConsistencyStatesResp {
+            log::info!("Set consistency state for targets {:?}", msg.target_ids,);
+            msg::SetTargetConsistencyStatesResp {
                 result: OpsErr::SUCCESS,
-            })
-            .await
+            }
         }
 
         Err(err) => {
-            log::error!(
-                "Setting consistency state for targets {:?} failed:\n{:?}",
-                msg.targets,
-                err
+            log_error_chain!(
+                err,
+                "Setting consistency state for targets {:?} failed",
+                msg.target_ids
             );
-            rcc.respond(&msg::SetTargetConsistencyStatesResp {
+            msg::SetTargetConsistencyStatesResp {
                 result: OpsErr::INTERNAL,
-            })
-            .await
+            }
         }
     }
 }

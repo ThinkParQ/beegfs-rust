@@ -16,7 +16,7 @@ pub fn with_quota_id_range(
     quota_id_range: RangeInclusive<QuotaID>,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-) -> Result<Vec<SpaceAndInodeLimits>> {
+) -> DbResult<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
         r#"
@@ -37,7 +37,7 @@ pub fn with_quota_id_list(
     quota_ids: impl IntoIterator<Item = QuotaID>,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-) -> Result<Vec<SpaceAndInodeLimits>> {
+) -> DbResult<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
         &format!(
@@ -56,7 +56,7 @@ pub fn all(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-) -> Result<Vec<SpaceAndInodeLimits>> {
+) -> DbResult<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
         r#"
@@ -71,7 +71,7 @@ fn fetch(
     tx: &mut Transaction,
     stmt: &str,
     params: &[&dyn ToSql],
-) -> Result<Vec<SpaceAndInodeLimits>> {
+) -> DbResult<Vec<SpaceAndInodeLimits>> {
     let mut stmt = tx.prepare_cached(stmt)?;
 
     let res = stmt
@@ -90,7 +90,7 @@ fn fetch(
 pub fn update(
     tx: &mut Transaction,
     iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
-) -> Result<()> {
+) -> DbResult<()> {
     let mut insert_stmt = tx.prepare_cached(
         r#"
         INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value)
@@ -127,7 +127,6 @@ pub fn update(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::test::*;
 
     #[test]
     fn set_get() {
@@ -243,7 +242,7 @@ mod test {
 
         b.iter(|| {
             transaction(&mut conn, |tx| {
-                quota_limits::with_quota_id_list(
+                quota_limit::with_quota_id_list(
                     tx,
                     (1..=BENCH_QUOTA_ID_NUM).map(|e| e.into()),
                     1.into(),

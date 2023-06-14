@@ -3,9 +3,9 @@ use super::*;
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct MapTargets {
     #[bee_serde(as = Map<false, _, _>)]
-    pub targets: HashMap<TargetID, StoragePoolID>,
+    pub target_ids: HashMap<TargetID, StoragePoolID>,
     #[bee_serde(as = Int<u32>)]
-    pub node_num_id: NodeID,
+    pub node_id: NodeID,
     pub ack_id: AckID,
 }
 

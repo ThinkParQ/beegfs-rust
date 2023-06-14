@@ -1,8 +1,7 @@
 //! BeeGFS compatible network message (de-)serialization
 
 use anyhow::{bail, Result};
-use bytes::BytesMut;
-pub use bytes::{Buf, BufMut};
+use bytes::{Buf, BufMut, BytesMut};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::marker::PhantomData;

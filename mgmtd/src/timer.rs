@@ -6,13 +6,13 @@ use config::Cache;
 use shared::config::{
     BeeConfig, ClientAutoRemoveTimeout, NodeOfflineTimeout, QuotaEnable, QuotaUpdateInterval,
 };
-use shared::msg;
 use shared::shutdown::Shutdown;
+use shared::{log_error_chain, msg};
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
 pub(crate) fn start_tasks(
-    db: db::Handle,
+    db: db::Connection,
     conn_pool: MgmtdPool,
     config: Cache<BeeConfig>,
     shutdown: Shutdown,
@@ -34,12 +34,16 @@ pub(crate) fn start_tasks(
     tokio::spawn(check_for_switchover(db, conn_pool, config, shutdown));
 }
 
-async fn delete_stale_clients(db: db::Handle, config: Cache<BeeConfig>, mut shutdown: Shutdown) {
+async fn delete_stale_clients(
+    db: db::Connection,
+    config: Cache<BeeConfig>,
+    mut shutdown: Shutdown,
+) {
     loop {
         let timeout = config.get::<ClientAutoRemoveTimeout>();
 
         match db
-            .execute(move |tx| db::nodes::delete_stale_clients(tx, timeout))
+            .execute(move |tx| db::node::delete_stale_clients(tx, timeout))
             .await
         {
             Ok(affected) => {
@@ -47,7 +51,7 @@ async fn delete_stale_clients(db: db::Handle, config: Cache<BeeConfig>, mut shut
                     log::info!("Deleted {} stale clients", affected);
                 }
             }
-            Err(err) => log::error!("Deleting stale clients failed:\n{:?}", err),
+            Err(err) => log_error_chain!(err, "Deleting stale clients failed"),
         }
 
         tokio::select! {
@@ -60,7 +64,7 @@ async fn delete_stale_clients(db: db::Handle, config: Cache<BeeConfig>, mut shut
 }
 
 async fn update_quota(
-    db: db::Handle,
+    db: db::Connection,
     conn_pool: MgmtdPool,
     config: Cache<BeeConfig>,
     mut shutdown: Shutdown,
@@ -69,7 +73,7 @@ async fn update_quota(
         if config.get::<QuotaEnable>() {
             match update_and_distribute(&db, &conn_pool, &config).await {
                 Ok(_) => {}
-                Err(err) => log::error!("Updating quota failed:\n{:?}", err),
+                Err(err) => log_error_chain!(err, "Updating quota failed"),
             }
         }
 
@@ -83,7 +87,7 @@ async fn update_quota(
 }
 
 async fn check_for_switchover(
-    db: db::Handle,
+    db: db::Connection,
     conn_pool: MgmtdPool,
     config: Cache<BeeConfig>,
     mut shutdown: Shutdown,
@@ -100,7 +104,7 @@ async fn check_for_switchover(
         let timeout = config.get::<NodeOfflineTimeout>();
 
         match db
-            .execute(move |tx| db::buddy_groups::check_and_swap_buddies(tx, timeout))
+            .execute(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
             .await
         {
             Ok(swapped) => {
@@ -117,7 +121,7 @@ async fn check_for_switchover(
                     .await;
                 }
             }
-            Err(err) => log::error!("Switchover check failed:\n{err}"),
+            Err(err) => log_error_chain!(err, "Switchover check failed"),
         }
     }
 

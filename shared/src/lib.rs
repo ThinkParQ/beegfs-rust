@@ -48,3 +48,22 @@ pub fn network_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<Nic>> {
 
     Ok(filtered_nics)
 }
+
+/// Logs any error that implements `AsRef<&dyn std::error::Error>` with additional context and its
+/// sources.
+#[macro_export]
+macro_rules! log_error_chain {
+    ($err:expr, $fmt:expr $(,$arg:expr)* $(,)?) => {{
+        use std::fmt::Write;
+
+        let mut err_string = String::new();
+
+        let mut current_source: Option<&dyn std::error::Error> = Some($err.as_ref());
+        while let Some(source) = current_source {
+            write!(err_string, ": {}", source).ok();
+            current_source = source.source();
+        }
+
+        log::error!("{}{}", format_args!($fmt, $($arg,)*), err_string);
+    }};
+}
