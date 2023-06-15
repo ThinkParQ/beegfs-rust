@@ -19,6 +19,7 @@ async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 env_logger = { workspace = true }
 itertools = { workspace = true }
+libc = { version = "~0" }
 log = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
 sd-notify = "~0"

@@ -436,6 +436,7 @@ dependencies = [
  "config",
  "env_logger",
  "itertools",
+ "libc",
  "log",
  "rusqlite",
  "sd-notify",

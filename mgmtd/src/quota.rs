@@ -2,36 +2,11 @@ use crate::db::quota_entries::QuotaData;
 use crate::notification::request_tcp_by_type;
 use crate::{db, MgmtdPool};
 use ::config::Cache;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use shared::config::{BeeConfig, *};
 use shared::*;
 use std::collections::HashSet;
 use std::path::Path;
-
-fn try_read_system_ids(file: &str, min: QuotaID, read_into: &mut HashSet<QuotaID>) -> Result<()> {
-    for l in std::fs::read_to_string(file)?.lines() {
-        let id = l
-            .split(':')
-            .nth(2)
-            .ok_or_else(|| anyhow!("Not enough fields in {file}"))?
-            .parse()
-            .with_context(|| anyhow!("Could not parse ID in {file}"))?;
-
-        if id >= min {
-            read_into.insert(id);
-        }
-    }
-
-    Ok(())
-}
-
-fn try_read_system_user_ids(min: QuotaID, read_into: &mut HashSet<QuotaID>) -> Result<()> {
-    try_read_system_ids("/etc/passwd", min, read_into)
-}
-
-fn try_read_system_group_ids(min: QuotaID, read_into: &mut HashSet<QuotaID>) -> Result<()> {
-    try_read_system_ids("/etc/group", min, read_into)
-}
 
 fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<()> {
     let data = std::fs::read_to_string(path)?;
@@ -63,10 +38,20 @@ pub(crate) async fn update_and_distribute(
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
     if let Some(min_id) = config.get::<QuotaUserSystemIDsMin>() {
-        try_read_system_user_ids(min_id, &mut user_ids)?;
+        system_ids::user_ids()
+            .await
+            .filter(|e| e >= &min_id)
+            .for_each(|e| {
+                user_ids.insert(e);
+            });
     }
     if let Some(min_id) = config.get::<QuotaGroupSystemIDsMin>() {
-        try_read_system_group_ids(min_id, &mut group_ids)?;
+        system_ids::group_ids()
+            .await
+            .filter(|e| e >= &min_id)
+            .for_each(|e| {
+                group_ids.insert(e);
+            });
     }
 
     if let Some(ref path) = config.get::<QuotaUserIDsFile>() {
@@ -189,15 +174,128 @@ pub(crate) async fn update_and_distribute(
     Ok(())
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+mod system_ids {
+    use shared::QuotaID;
+    use std::sync::OnceLock;
+    use tokio::sync::{Mutex, MutexGuard};
 
-    #[test]
-    fn users() {
-        let mut output = HashSet::new();
-        try_read_system_user_ids(0.into(), &mut output).unwrap();
+    // SAFETY (applies to both user and group id iterators)
+    //
+    // * The global mutex assures that no more than one iterator object exists and therefore
+    // undefined results by concurrent access are prevented (this doesn't prevent from reusing
+    // libc::setpwent() elsewhere, don't do this!)
+    // * getpwent() / getgrent() return the next entry or a nullptr in case EOF is reached or an
+    // error occurs. Both cases are covered.
 
-        assert!(!output.is_empty());
+    static MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+
+    pub struct UserIDIter<'a> {
+        _lock: MutexGuard<'a, ()>,
+    }
+
+    pub async fn user_ids<'a>() -> UserIDIter<'a> {
+        let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
+
+        unsafe {
+            libc::setpwent();
+        }
+
+        UserIDIter { _lock }
+    }
+
+    impl Drop for UserIDIter<'_> {
+        fn drop(&mut self) {
+            unsafe {
+                libc::endpwent();
+            }
+        }
+    }
+
+    impl Iterator for UserIDIter<'_> {
+        type Item = QuotaID;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            unsafe {
+                let passwd: *mut libc::passwd = libc::getpwent();
+                if passwd.is_null() {
+                    None
+                } else {
+                    Some((*passwd).pw_uid.into())
+                }
+            }
+        }
+    }
+
+    pub struct GroupIDIter<'a> {
+        _lock: MutexGuard<'a, ()>,
+    }
+
+    pub async fn group_ids<'a>() -> GroupIDIter<'a> {
+        let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
+
+        unsafe {
+            libc::setgrent();
+        }
+
+        GroupIDIter { _lock }
+    }
+
+    impl Drop for GroupIDIter<'_> {
+        fn drop(&mut self) {
+            unsafe {
+                libc::endgrent();
+            }
+        }
+    }
+
+    impl Iterator for GroupIDIter<'_> {
+        type Item = QuotaID;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            unsafe {
+                let passwd: *mut libc::group = libc::getgrent();
+                if passwd.is_null() {
+                    None
+                } else {
+                    Some((*passwd).gr_gid.into())
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+        use itertools::Itertools;
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn user_ids_thread_safety() {
+            let tasks: Vec<_> = (0..16)
+                .map(|_| tokio::spawn(async { user_ids().await.collect() }))
+                .collect();
+
+            let mut results = vec![];
+            for t in tasks {
+                let r: Vec<_> = t.await.unwrap();
+                results.push(r);
+            }
+
+            assert!(results.into_iter().all_equal());
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn group_ids_thread_safety() {
+            let tasks: Vec<_> = (0..16)
+                .map(|_| tokio::spawn(async { group_ids().await.collect() }))
+                .collect();
+
+            let mut results = vec![];
+            for t in tasks {
+                let r: Vec<_> = t.await.unwrap();
+                results.push(r);
+            }
+
+            assert!(results.into_iter().all_equal());
+        }
     }
 }
