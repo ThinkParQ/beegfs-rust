@@ -8,28 +8,14 @@ use shared::*;
 use std::collections::HashSet;
 use std::path::Path;
 
-enum SystemFile {
-    Passwd,
-    Group,
-}
-
-fn try_read_system_ids(
-    file: SystemFile,
-    min: QuotaID,
-    read_into: &mut HashSet<QuotaID>,
-) -> Result<()> {
-    let (file, field) = match file {
-        SystemFile::Passwd => ("/etc/passwd", 2),
-        SystemFile::Group => ("/etc/group", 2),
-    };
-
+fn try_read_system_ids(file: &str, min: QuotaID, read_into: &mut HashSet<QuotaID>) -> Result<()> {
     for l in std::fs::read_to_string(file)?.lines() {
         let id = l
             .split(':')
-            .nth(field)
+            .nth(2)
             .ok_or_else(|| anyhow!("Not enough fields in {file}"))?
             .parse()
-            .with_context(|| anyhow!("Invalid value in field {field} in {file}"))?;
+            .with_context(|| anyhow!("Could not parse ID in {file}"))?;
 
         if id >= min {
             read_into.insert(id);
@@ -37,6 +23,14 @@ fn try_read_system_ids(
     }
 
     Ok(())
+}
+
+fn try_read_system_user_ids(min: QuotaID, read_into: &mut HashSet<QuotaID>) -> Result<()> {
+    try_read_system_ids("/etc/passwd", min, read_into)
+}
+
+fn try_read_system_group_ids(min: QuotaID, read_into: &mut HashSet<QuotaID>) -> Result<()> {
+    try_read_system_ids("/etc/group", min, read_into)
 }
 
 fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<()> {
@@ -69,10 +63,10 @@ pub(crate) async fn update_and_distribute(
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
     if let Some(min_id) = config.get::<QuotaUserSystemIDsMin>() {
-        try_read_system_ids(SystemFile::Passwd, min_id, &mut user_ids)?;
+        try_read_system_user_ids(min_id, &mut user_ids)?;
     }
     if let Some(min_id) = config.get::<QuotaGroupSystemIDsMin>() {
-        try_read_system_ids(SystemFile::Group, min_id, &mut group_ids)?;
+        try_read_system_group_ids(min_id, &mut group_ids)?;
     }
 
     if let Some(ref path) = config.get::<QuotaUserIDsFile>() {
@@ -202,7 +196,7 @@ mod test {
     #[test]
     fn users() {
         let mut output = HashSet::new();
-        try_read_system_ids(SystemFile::Passwd, 0.into(), &mut output).unwrap();
+        try_read_system_user_ids(0.into(), &mut output).unwrap();
 
         assert!(!output.is_empty());
     }
