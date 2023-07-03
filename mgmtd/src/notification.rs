@@ -34,7 +34,7 @@ pub(crate) async fn notify_nodes<M: Notification<'static> + Sync>(
     db: &db::Connection,
     msg: &M,
 ) {
-    let res: Result<()> = try {
+    if let Err(err) = async {
         for t in msg.notification_node_types() {
             let nodes = db
                 .execute(move |tx| db::node::get_with_type(tx, *t))
@@ -44,9 +44,11 @@ pub(crate) async fn notify_nodes<M: Notification<'static> + Sync>(
                 .broadcast(nodes.into_iter().map(|e| PeerID::Node(e.uid)), msg)
                 .await?;
         }
-    };
 
-    if let Err(err) = res {
+        Ok(()) as Result<_>
+    }
+    .await
+    {
         log_error_chain!(
             err,
             "Could not broadcast notification of type {} to all nodes",

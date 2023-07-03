@@ -1,7 +1,6 @@
 #![feature(test)]
 #![feature(fs_try_exists)]
 #![feature(iterator_try_collect)]
-#![feature(try_blocks)]
 
 mod component_handles;
 pub mod config;
