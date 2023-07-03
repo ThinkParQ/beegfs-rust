@@ -5,7 +5,7 @@ pub mod config;
 use crate::config::Config::*;
 use crate::config::StaticConfig;
 use ::config::{Cache, GenericConfigValue};
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use shared::config::*;
 use shared::conn::msg_dispatch::*;
 use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig, PeerID, SocketAddrResolver};
@@ -22,7 +22,7 @@ impl DispatchRequest for EmptyMsgHandler {
         &mut self,
         _req: impl RequestConnectionController + DeserializeMsg,
     ) -> Result<()> {
-        unreachable!("Unexpected incoming stream request");
+        Err(anyhow!("Unexpected incoming stream request"))
     }
 }
 

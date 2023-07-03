@@ -19,7 +19,7 @@ pub(super) async fn handle(
 
             let affected = db::target::update_consistency_states(
                 tx,
-                msg.target_ids.into_iter().zip(msg.new_states.into_iter()),
+                msg.target_ids.into_iter().zip(msg.new_states),
                 msg.node_type,
             )?;
 

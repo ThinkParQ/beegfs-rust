@@ -18,7 +18,7 @@ pub(super) async fn handle(
 
             db::target::update_consistency_states(
                 tx,
-                msg.target_ids.into_iter().zip(msg.states.into_iter()),
+                msg.target_ids.into_iter().zip(msg.states),
                 msg.node_type,
             )
         })
