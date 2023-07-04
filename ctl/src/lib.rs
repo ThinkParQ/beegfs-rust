@@ -1,17 +1,16 @@
+// TODO remove
+#![allow(unused)]
 #![feature(test)]
 
 pub mod config;
 
 use crate::config::Config::*;
 use crate::config::StaticConfig;
-use ::config::{Cache, GenericConfigValue};
 use anyhow::{anyhow, Result};
-use shared::config::*;
 use shared::conn::msg_dispatch::*;
 use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig, PeerID, SocketAddrResolver};
-use shared::msg::{self, SetConfigResp};
+use shared::msg::{self};
 use shared::{shutdown, NodeTypeServer};
-use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 struct EmptyMsgHandler {}
@@ -38,16 +37,9 @@ pub async fn run(static_config: StaticConfig) -> Result<()> {
 
     conn_pool_actor.start_tasks(EmptyMsgHandler {}, shutdown);
 
-    let (_, config) = ::config::from_source(ManagementSource::new(
-        PeerID::Addr(static_config.management_addr),
-        conn.clone(),
-    ))
-    .await?;
-
     CommandExecutor {
         conn,
         static_config,
-        config,
     }
     .execute()
     .await
@@ -56,7 +48,6 @@ pub async fn run(static_config: StaticConfig) -> Result<()> {
 struct CommandExecutor {
     conn: ConnPool<SocketAddrResolver>,
     static_config: StaticConfig,
-    config: Cache<BeeConfig>,
 }
 
 impl CommandExecutor {
@@ -66,33 +57,18 @@ impl CommandExecutor {
             Quota(cmd) => {
                 use crate::config::Quota::*;
                 match cmd {
-                    Enable => self.set_config::<QuotaEnable>(true).await,
-                    Disable => self.set_config::<QuotaEnable>(false).await,
+                    Enable => {
+                        unimplemented!()
+                    }
+                    Disable => unimplemented!(),
                     SetUpdateInterval { interval_secs } => {
-                        self.set_config::<QuotaUpdateInterval>(std::time::Duration::from_secs(
-                            *interval_secs,
-                        ))
-                        .await
+                        unimplemented!()
                     }
                 }
             }
             Config(cmd) => match cmd {
                 Get { ref key } => {
-                    let cache_map = self.config.borrow_all();
-
-                    let cache_map: BTreeMap<&String, &Box<dyn GenericConfigValue>> = cache_map
-                        .iter()
-                        .filter(|(k, _)| {
-                            if let Some(key) = key {
-                                k.to_lowercase().contains(&key.to_lowercase())
-                            } else {
-                                true
-                            }
-                        })
-                        .collect();
-
-                    println!("{cache_map:#?}");
-                    Ok(())
+                    unimplemented!()
                 }
             },
             CapPools(cmd) => match cmd {
@@ -103,40 +79,26 @@ impl CommandExecutor {
                     space_low_limit,
                     space_emergency_limit,
                 } => {
-                    let mut limits = match node_type {
-                        NodeTypeServer::Meta => self.config.get::<CapPoolMetaLimits>(),
-                        NodeTypeServer::Storage => self.config.get::<CapPoolStorageLimits>(),
-                    };
+                    // let mut limits = match node_type {
+                    //     NodeTypeServer::Meta => unimplemented!(),
+                    //     NodeTypeServer::Storage => unimplemented!(),
+                    // };
 
-                    limits.inodes_low = inode_low_limit.unwrap_or(limits.inodes_low);
-                    limits.inodes_emergency =
-                        inode_emergency_limit.unwrap_or(limits.inodes_emergency);
-                    limits.space_low = space_low_limit.unwrap_or(limits.space_low);
-                    limits.space_emergency =
-                        space_emergency_limit.unwrap_or(limits.space_emergency);
+                    // limits.inodes_low = inode_low_limit.unwrap_or(limits.inodes_low);
+                    // limits.inodes_emergency =
+                    //     inode_emergency_limit.unwrap_or(limits.inodes_emergency);
+                    // limits.space_low = space_low_limit.unwrap_or(limits.space_low);
+                    // limits.space_emergency =
+                    //     space_emergency_limit.unwrap_or(limits.space_emergency);
 
                     match node_type {
-                        NodeTypeServer::Meta => self.set_config::<CapPoolMetaLimits>(limits).await,
+                        NodeTypeServer::Meta => unimplemented!(),
                         NodeTypeServer::Storage => {
-                            self.set_config::<CapPoolStorageLimits>(limits).await
+                            unimplemented!()
                         }
                     }
                 }
             },
         }
-    }
-
-    async fn set_config<T: ::config::Field>(&self, value: T::Value) -> Result<()> {
-        let _ = self
-            .conn
-            .request::<_, SetConfigResp>(
-                PeerID::Addr(self.static_config.management_addr),
-                &msg::SetConfig {
-                    entries: [(T::KEY.to_string(), T::serialize(&value)?)].into(),
-                },
-            )
-            .await?;
-
-        Ok(())
     }
 }

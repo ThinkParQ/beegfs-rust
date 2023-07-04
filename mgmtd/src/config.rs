@@ -1,16 +1,147 @@
-use crate::db;
-use ::config::Field;
+use crate::db::{self, Connection};
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use shared::parser::integer_with_time_unit;
-use shared::{config, CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
+use shared::{CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
+use std::fmt::Debug;
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 use std::time::Duration;
 
+// DYNAMIC CONFIG
+
+pub(crate) trait Field {
+    type Value: Serialize + for<'a> Deserialize<'a> + Clone + Debug + Send + Sync + 'static;
+    const KEY: &'static str;
+
+    fn default() -> Self::Value;
+}
+
+macro_rules! define_config {
+    { $($key:ident: $type:ty = $default_value:expr,)+ } => {
+        $(
+            #[allow(non_camel_case_types)]
+            pub(crate) struct $key {}
+
+            impl Field for $key {
+                type Value = $type;
+                const KEY: &'static str = stringify!($key);
+
+                fn default() -> Self::Value {
+                    $default_value
+                }
+            }
+        )+
+
+        #[derive(Debug)]
+        pub(crate) struct DynamicConfig {
+            $(
+                pub $key: $type,
+            )+
+        }
+
+        impl Default for DynamicConfig {
+            fn default() -> Self {
+                Self {
+                    $(
+                        $key: $default_value,
+                    )+
+                }
+            }
+        }
+
+        impl DynamicConfig {
+            pub(crate) fn set_by_json_str(&mut self, key: &str, json_value: &str) -> serde_json::Result<()> {
+                match key {
+                    $(
+                        stringify!($key) => self.$key = serde_json::from_str(json_value)?,
+                    )+
+                    _ => {}
+                }
+
+                Ok(())
+            }
+        }
+    }
+}
+
+define_config! {
+    registration_enable: bool = true,
+    node_offline_timeout: Duration = Duration::from_secs(180),
+    client_auto_remove_timeout: Duration = Duration::from_secs(30 * 60),
+
+    // Quota
+    quota_enable: bool = false,
+    quota_update_interval: Duration = Duration::from_secs(30),
+
+    quota_user_system_ids_min: Option<QuotaID> = None,
+    quota_user_ids_file: Option<PathBuf> = None,
+    quota_user_ids_range: Option<RangeInclusive<u32>> = None,
+    quota_group_system_ids_min: Option<QuotaID> = None,
+    quota_group_ids_file: Option<PathBuf> = None,
+    quota_group_ids_range: Option<RangeInclusive<u32>> = None,
+
+    // Capacity pools
+    cap_pool_meta_limits: CapPoolLimits = CapPoolLimits {
+        inodes_low: 10 * 1000 * 1000,
+        inodes_emergency: 1000 * 1000,
+        space_low: 10 * 1024 * 1024 * 1024,
+        space_emergency: 3 * 1024 * 1024 * 1024
+    },
+    cap_pool_storage_limits: CapPoolLimits = CapPoolLimits {
+        inodes_low: 10 * 1000 * 1000,
+        inodes_emergency: 1000 * 1000,
+        space_low: 512 * 1024 * 1024 * 1024,
+        space_emergency: 10 * 1024 * 1024 * 1024
+    },
+
+    // Dynamic capacity pools
+    cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits> = None,
+    cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits> = None,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConfigCache {
+    inner: Arc<RwLock<DynamicConfig>>,
+    db: Connection,
+}
+
+impl ConfigCache {
+    pub(crate) async fn from_db(db: Connection) -> Result<Self> {
+        let config = db.execute(db::config::get_all).await?;
+
+        Ok(Self {
+            inner: Arc::new(RwLock::new(config)),
+            db,
+        })
+    }
+
+    #[allow(unused)]
+    pub(crate) async fn set<T: Field>(&self, value: T::Value) -> Result<()> {
+        self.inner
+            .write()
+            .expect("Lock is poisoned")
+            .set_by_json_str(T::KEY, &serde_json::to_string(&value)?)?;
+
+        self.db
+            .execute(move |tx| db::config::set_one::<T>(tx, &value))
+            .await?;
+
+        Ok(())
+    }
+
+    pub(crate) fn get(&self) -> RwLockReadGuard<DynamicConfig> {
+        self.inner.read().expect("Lock is poisoned")
+    }
+}
+
+// STATIC CONFIG
+
 #[derive(Debug)]
-pub struct Config {
+pub struct StaticConfig {
     pub init: bool,
     pub port: Port,
     pub interfaces: Vec<String>,
@@ -21,7 +152,7 @@ pub struct Config {
     pub log_level: LevelFilter,
 }
 
-impl Default for Config {
+impl Default for StaticConfig {
     fn default() -> Self {
         Self {
             init: false,
@@ -35,6 +166,8 @@ impl Default for Config {
         }
     }
 }
+
+// PARSING AND LOADING
 
 /// BeeGFS mgmtd Rust prototype
 ///
@@ -145,10 +278,10 @@ impl ConfigArgs {
         };
     }
 
-    fn into_config(self) -> Config {
-        let mut config = Config {
+    fn into_config(self) -> StaticConfig {
+        let mut config = StaticConfig {
             init: self.init,
-            ..Config::default()
+            ..StaticConfig::default()
         };
 
         config.port = self.port.unwrap_or(config.port);
@@ -165,61 +298,8 @@ impl ConfigArgs {
     }
 }
 
-pub fn load_and_parse() -> Result<(Config, Option<RuntimeConfig>)> {
-    let mut args = ConfigArgs::parse();
-
-    if let Some(ref file) = args.config_file {
-        match std::fs::read_to_string(file) {
-            Ok(ref toml_config) => {
-                let file_args: ConfigArgs =
-                    toml::from_str(toml_config).with_context(|| "Couldn't parse config file")?;
-
-                println!("Loaded node configuration from {file:?}");
-
-                args.fill_from(file_args);
-            }
-            Err(err) => {
-                if file != Path::new("/etc/beegfs/mgmtd.toml") {
-                    return Err(err)
-                        .with_context(|| format!("Could not open config file at {file:?}"));
-                }
-
-                println!("No config file found at default location, ignoring");
-            }
-        }
-    }
-
-    let tmp_runtime_config = if let Some(ref file) = args.runtime_config_file {
-        match std::fs::read_to_string(file) {
-            Ok(ref toml_config) => {
-                let config_values: RuntimeConfig = toml::from_str(toml_config)
-                    .with_context(|| "Couldn't parse runtime config file")?;
-
-                println!("Loaded runtime configuration from {file:?}");
-
-                Some(config_values)
-            }
-            Err(err) => {
-                if file != Path::new("/etc/beegfs/mgmtd-runtime.toml") {
-                    return Err(err).with_context(|| {
-                        format!("Could not open runtime config file at {file:?}")
-                    });
-                }
-
-                println!("No runtime config file found at default location, ignoring");
-
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    Ok((args.into_config(), tmp_runtime_config))
-}
-
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RuntimeConfig {
+pub struct DynamicConfigArgs {
     registration_enable: bool,
     #[serde(with = "integer_with_time_unit")]
     node_offline_timeout: Duration,
@@ -242,84 +322,98 @@ pub struct RuntimeConfig {
     cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits>,
 }
 
-impl RuntimeConfig {
-    pub async fn apply_to_db(&self, db: &db::Connection) -> anyhow::Result<()> {
-        let quota_user_ids_range = self
-            .quota_user_ids_range_start
-            .map(|start| start..=self.quota_user_ids_range_end.unwrap_or(start));
+impl DynamicConfigArgs {
+    pub async fn apply_to_db(self, db: &db::Connection) -> anyhow::Result<()> {
+        db.execute(move |tx| {
+            use db::config::*;
 
-        let quota_group_ids_range = self
-            .quota_group_ids_range_start
-            .map(|start| start..=self.quota_group_ids_range_end.unwrap_or(start));
+            set_one::<registration_enable>(tx, &self.registration_enable)?;
+            set_one::<node_offline_timeout>(tx, &self.node_offline_timeout)?;
+            set_one::<client_auto_remove_timeout>(tx, &self.client_auto_remove_timeout)?;
+            set_one::<quota_enable>(tx, &self.quota_enable)?;
+            set_one::<quota_update_interval>(tx, &self.quota_update_interval)?;
+            set_one::<quota_user_system_ids_min>(tx, &self.quota_user_system_ids_min)?;
+            set_one::<quota_user_ids_file>(tx, &self.quota_user_ids_file)?;
+            set_one::<quota_user_ids_range>(
+                tx,
+                &self
+                    .quota_user_ids_range_start
+                    .map(|start| start..=self.quota_user_ids_range_end.unwrap_or(start)),
+            )?;
+            set_one::<quota_group_system_ids_min>(tx, &self.quota_group_system_ids_min)?;
+            set_one::<quota_group_ids_file>(tx, &self.quota_group_ids_file)?;
+            set_one::<quota_group_ids_range>(
+                tx,
+                &self
+                    .quota_group_ids_range_start
+                    .map(|start| start..=self.quota_group_ids_range_end.unwrap_or(start)),
+            )?;
+            set_one::<cap_pool_meta_limits>(tx, &self.cap_pool_meta_limits)?;
+            set_one::<cap_pool_storage_limits>(tx, &self.cap_pool_storage_limits)?;
+            set_one::<cap_pool_dynamic_meta_limits>(tx, &self.cap_pool_dynamic_meta_limits)?;
+            set_one::<cap_pool_dynamic_storage_limits>(tx, &self.cap_pool_dynamic_storage_limits)?;
 
-        let entries = [
-            (
-                config::RegistrationEnable::KEY.into(),
-                config::RegistrationEnable::serialize(&self.registration_enable)?,
-            ),
-            (
-                config::NodeOfflineTimeout::KEY.into(),
-                config::NodeOfflineTimeout::serialize(&self.node_offline_timeout)?,
-            ),
-            (
-                config::ClientAutoRemoveTimeout::KEY.into(),
-                config::ClientAutoRemoveTimeout::serialize(&self.client_auto_remove_timeout)?,
-            ),
-            (
-                config::QuotaEnable::KEY.into(),
-                config::QuotaEnable::serialize(&self.quota_enable)?,
-            ),
-            (
-                config::QuotaUpdateInterval::KEY.into(),
-                config::QuotaUpdateInterval::serialize(&self.quota_update_interval)?,
-            ),
-            (
-                config::QuotaUserSystemIDsMin::KEY.into(),
-                config::QuotaUserSystemIDsMin::serialize(&self.quota_user_system_ids_min)?,
-            ),
-            (
-                config::QuotaUserIDsFile::KEY.into(),
-                config::QuotaUserIDsFile::serialize(&self.quota_user_ids_file)?,
-            ),
-            (
-                config::QuotaUserIDsRange::KEY.into(),
-                config::QuotaUserIDsRange::serialize(&quota_user_ids_range)?,
-            ),
-            (
-                config::QuotaGroupSystemIDsMin::KEY.into(),
-                config::QuotaGroupSystemIDsMin::serialize(&self.quota_group_system_ids_min)?,
-            ),
-            (
-                config::QuotaGroupIDsFile::KEY.into(),
-                config::QuotaGroupIDsFile::serialize(&self.quota_group_ids_file)?,
-            ),
-            (
-                config::QuotaGroupIDsRange::KEY.into(),
-                config::QuotaGroupIDsRange::serialize(&quota_group_ids_range)?,
-            ),
-            (
-                config::CapPoolMetaLimits::KEY.into(),
-                config::CapPoolMetaLimits::serialize(&self.cap_pool_meta_limits)?,
-            ),
-            (
-                config::CapPoolStorageLimits::KEY.into(),
-                config::CapPoolStorageLimits::serialize(&self.cap_pool_storage_limits)?,
-            ),
-            (
-                config::CapPoolDynamicMetaLimits::KEY.into(),
-                config::CapPoolDynamicMetaLimits::serialize(&self.cap_pool_dynamic_meta_limits)?,
-            ),
-            (
-                config::CapPoolDynamicStorageLimits::KEY.into(),
-                config::CapPoolDynamicStorageLimits::serialize(
-                    &self.cap_pool_dynamic_storage_limits,
-                )?,
-            ),
-        ]
-        .into();
+            Ok(())
+        })
+        .await?;
 
-        Ok(db.execute(|tx| db::config::set(tx, entries)).await?)
+        Ok(())
     }
+}
+
+pub fn load_and_parse() -> Result<(StaticConfig, Option<DynamicConfigArgs>, Vec<String>)> {
+    let mut info_log = vec![];
+    let mut args = ConfigArgs::parse();
+
+    if let Some(ref file) = args.config_file {
+        match std::fs::read_to_string(file) {
+            Ok(ref toml_config) => {
+                let file_args: ConfigArgs =
+                    toml::from_str(toml_config).with_context(|| "Couldn't parse config file")?;
+
+                info_log.push(format!("Loaded node configuration from {file:?}"));
+
+                args.fill_from(file_args);
+            }
+            Err(err) => {
+                if file != Path::new("/etc/beegfs/mgmtd.toml") {
+                    return Err(err)
+                        .with_context(|| format!("Could not open config file at {file:?}"));
+                }
+
+                info_log.push("No config file found at default location, ignoring".to_string());
+            }
+        }
+    }
+
+    let tmp_runtime_config = if let Some(ref file) = args.runtime_config_file {
+        match std::fs::read_to_string(file) {
+            Ok(ref toml_config) => {
+                let config_values: DynamicConfigArgs = toml::from_str(toml_config)
+                    .with_context(|| "Couldn't parse runtime config file")?;
+
+                info_log.push(format!("Loaded runtime configuration from {file:?}"));
+
+                Some(config_values)
+            }
+            Err(err) => {
+                if file != Path::new("/etc/beegfs/mgmtd-runtime.toml") {
+                    return Err(err).with_context(|| {
+                        format!("Could not open runtime config file at {file:?}")
+                    });
+                }
+
+                info_log
+                    .push("No runtime config file found at default location, ignoring".to_string());
+
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    Ok((args.into_config(), tmp_runtime_config, info_log))
 }
 
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
@@ -331,7 +425,6 @@ pub enum LogTarget {
 // To be able to parse the log level, we need to make our own enum and convert
 // it
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
-#[repr(usize)]
 enum LogLevel {
     Off,
     Error,

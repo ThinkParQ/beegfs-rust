@@ -9,7 +9,6 @@ homepage = "https://www.beegfs.io"
 publish = false
 
 [dependencies]
-config = { path = "../config" }
 shared = { path = "../shared" }
 
 async-trait = { workspace = true }

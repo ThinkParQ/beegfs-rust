@@ -1,5 +1,4 @@
 use super::*;
-use shared::config::NodeOfflineTimeout;
 
 pub(super) async fn handle(
     msg: msg::GetStatesAndBuddyGroups,
@@ -24,7 +23,7 @@ pub(super) async fn handle(
                         msg::types::CombinedTargetState {
                             reachability: db::misc::calc_reachability_state(
                                 e.last_contact,
-                                ci.get_config::<NodeOfflineTimeout>(),
+                                ci.get_config().node_offline_timeout,
                             ),
                             consistency: e.consistency,
                         },

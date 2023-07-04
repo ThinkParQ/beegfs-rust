@@ -1,25 +1,24 @@
+use crate::config::{ConfigCache, DynamicConfig};
 use crate::db::DbResult;
 use crate::msg::{dispatch_request, ComponentInteractor};
 use crate::notification::{notify_nodes, Notification};
 use crate::{db, MgmtdPool};
-use ::config::{ConfigError, ConfigMap, Field};
 use anyhow::Result;
 use async_trait::async_trait;
 use rusqlite::Transaction;
 use shared::bee_serde::BeeSerde;
-use shared::config::BeeConfig;
 use shared::conn::msg_dispatch::*;
 use shared::conn::PeerID;
 use shared::msg::Msg;
+use std::sync::RwLockReadGuard;
 
 // TODO find a better name
 #[derive(Clone, Debug)]
 pub(crate) struct ComponentHandles {
     pub conn: MgmtdPool,
     pub db: db::Connection,
-    pub static_config: &'static crate::StaticInfo,
-    pub config_input: ::config::CacheInput<BeeConfig>,
-    pub config: ::config::Cache<BeeConfig>,
+    pub static_info: &'static crate::StaticInfo,
+    pub config_cache: ConfigCache,
 }
 
 #[async_trait]
@@ -54,23 +53,12 @@ impl ComponentInteractor for ComponentHandles {
         notify_nodes(&self.conn, &self.db, msg).await;
     }
 
-    fn get_config<K: Field<BelongsTo = BeeConfig>>(&self) -> K::Value {
-        self.config.get::<K>()
-    }
-
-    async fn set_raw_config(&mut self, entries: ConfigMap) -> Result<(), ConfigError> {
-        self.config_input.set_raw(entries).await
+    fn get_config(&self) -> RwLockReadGuard<DynamicConfig> {
+        self.config_cache.get()
     }
 
     fn get_static_info(&self) -> &'static crate::StaticInfo {
-        self.static_config
-    }
-}
-
-#[async_trait]
-impl ::config::Source for ComponentHandles {
-    async fn get(&self) -> Result<ConfigMap, ::config::BoxedError> {
-        self.db.get().await
+        self.static_info
     }
 }
 

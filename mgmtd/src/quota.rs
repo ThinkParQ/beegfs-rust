@@ -1,9 +1,8 @@
+use crate::config::ConfigCache;
 use crate::db::quota_entry::QuotaData;
 use crate::notification::request_tcp_by_type;
 use crate::{db, MgmtdPool};
-use ::config::Cache;
 use anyhow::{Context, Result};
-use shared::config::{BeeConfig, *};
 use shared::*;
 use std::collections::HashSet;
 use std::path::Path;
@@ -20,7 +19,7 @@ fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<(
 pub(crate) async fn update_and_distribute(
     db: &db::Connection,
     conn_pool: &MgmtdPool,
-    config: &Cache<BeeConfig>,
+    config: &ConfigCache,
 ) -> Result<()> {
     // Fetch quota data from storage daemons
 
@@ -37,34 +36,37 @@ pub(crate) async fn update_and_distribute(
 
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
-    if let Some(min_id) = config.get::<QuotaUserSystemIDsMin>() {
+    let user_ids_min = config.get().quota_user_system_ids_min;
+    if let Some(user_ids_min) = user_ids_min {
         system_ids::user_ids()
             .await
-            .filter(|e| e >= &min_id)
+            .filter(|e| e >= &user_ids_min)
             .for_each(|e| {
                 user_ids.insert(e);
             });
     }
-    if let Some(min_id) = config.get::<QuotaGroupSystemIDsMin>() {
+
+    let group_ids_min = config.get().quota_group_system_ids_min;
+    if let Some(group_ids_min) = group_ids_min {
         system_ids::group_ids()
             .await
-            .filter(|e| e >= &min_id)
+            .filter(|e| e >= &group_ids_min)
             .for_each(|e| {
                 group_ids.insert(e);
             });
     }
 
-    if let Some(ref path) = config.get::<QuotaUserIDsFile>() {
+    if let Some(ref path) = config.get().quota_user_ids_file {
         try_read_quota_ids(path, &mut user_ids)?;
     }
-    if let Some(ref path) = config.get::<QuotaGroupIDsFile>() {
+    if let Some(ref path) = config.get().quota_group_ids_file {
         try_read_quota_ids(path, &mut group_ids)?;
     }
 
-    if let Some(range) = config.get::<QuotaUserIDsRange>() {
+    if let Some(range) = config.get().quota_user_ids_range.clone() {
         user_ids.extend(range.into_iter().map(QuotaID::from));
     }
-    if let Some(range) = config.get::<QuotaGroupIDsRange>() {
+    if let Some(range) = config.get().quota_group_ids_range.clone() {
         group_ids.extend(range.into_iter().map(QuotaID::from));
     }
 

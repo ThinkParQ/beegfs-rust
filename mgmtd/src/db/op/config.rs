@@ -1,34 +1,51 @@
 use super::*;
-use ::config::ConfigMap;
+pub use crate::config::*;
 
-pub fn set(tx: &mut Transaction, entries: ConfigMap) -> DbResult<()> {
-    let mut stmt = tx.prepare_cached(
+pub(crate) fn set_one<T: Field>(tx: &mut Transaction, value: &T::Value) -> DbResult<()> {
+    let json = serde_json::to_string(&value)?;
+
+    tx.execute_cached(
         r#"
         INSERT INTO config (key, value) VALUES (?1, ?2)
         ON CONFLICT (key) DO
         UPDATE SET value = ?2
         "#,
+        [T::KEY, &json],
     )?;
-
-    for e in entries {
-        stmt.execute(params![e.0, e.1,])?;
-    }
 
     Ok(())
 }
 
-pub fn get(tx: &mut Transaction) -> DbResult<ConfigMap> {
-    let mut stmt = tx.prepare_cached(
-        r#"
-        SELECT key, value FROM config
-        "#,
-    )?;
+pub(crate) fn get_one<T: Field>(tx: &mut Transaction) -> DbResult<T::Value> {
+    let json: Option<String> = tx
+        .query_row_cached("SELECT value FROM config WHERE key = ?", [T::KEY], |row| {
+            row.get(0)
+        })
+        .optional()?;
 
-    let map: ConfigMap = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-        .try_collect()?;
+    let value = match json {
+        Some(json) => serde_json::from_str(&json).unwrap(),
+        None => T::default(),
+    };
 
-    Ok(map)
+    Ok(value)
+}
+
+pub(crate) fn get_all(tx: &mut Transaction) -> DbResult<DynamicConfig> {
+    let mut stmt = tx.prepare_cached("SELECT key, value FROM config")?;
+    let mut rows = stmt.query([])?;
+
+    let mut config = DynamicConfig::default();
+
+    while let Some(row) = rows.next()? {
+        // TODO proper error
+        let key = row.get_ref(0)?.as_str().map_err(DbError::other)?;
+        let ser_value = row.get_ref(1)?.as_str().map_err(DbError::other)?;
+
+        config.set_by_json_str(key, ser_value)?;
+    }
+
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -38,30 +55,21 @@ mod test {
     #[test]
     fn set_get() {
         with_test_data(|tx| {
-            super::set(
-                tx,
-                [("test_key_1".to_string(), "test_value_1".to_string())]
-                    .into_iter()
-                    .collect(),
-            )
-            .unwrap();
+            super::set_one::<quota_enable>(tx, &true).unwrap();
 
-            let map = super::get(tx).unwrap();
+            let value = super::get_one::<quota_enable>(tx).unwrap();
+            assert!(value);
 
-            assert_eq!(5, map.len());
-            assert_eq!("test_value_1", map["test_key_1"]);
+            let config = super::get_all(tx).unwrap();
+            assert!(config.quota_enable);
 
-            super::set(
-                tx,
-                [("test_key_1".to_string(), "test_value_2".to_string())]
-                    .into_iter()
-                    .collect(),
-            )
-            .unwrap();
+            super::set_one::<quota_enable>(tx, &false).unwrap();
 
-            let map = super::get(tx).unwrap();
+            let value = super::get_one::<quota_enable>(tx).unwrap();
+            assert!(!value);
 
-            assert_eq!("test_value_2", map["test_key_1"]);
+            let config = super::get_all(tx).unwrap();
+            assert!(!config.quota_enable);
         })
     }
 }

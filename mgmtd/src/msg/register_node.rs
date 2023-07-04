@@ -1,7 +1,6 @@
 use super::*;
 use db::entity::EntityType;
 use db::misc::MetaRoot;
-use shared::config::RegistrationEnable;
 
 pub(super) async fn handle(
     msg: msg::RegisterNode,
@@ -18,7 +17,7 @@ pub(super) async fn handle(
 /// Processes incoming node information. Registeres new nodes if config allows it
 pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor) -> NodeID {
     let msg2 = msg.clone();
-    let enable_registration = ci.get_config::<RegistrationEnable>();
+    let registration_enable = ci.get_config().registration_enable;
 
     match ci
         .execute_db(move |tx| {
@@ -30,7 +29,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor)
                 // If the node is new, do additional checks and insert the prerequisites
 
                 // TODO overhaul the config system and get this directly from the DB
-                if !enable_registration {
+                if !registration_enable {
                     return Err(DbError::other("Registration of new nodes is not allowed"));
                 }
 

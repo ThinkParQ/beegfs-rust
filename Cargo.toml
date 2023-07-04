@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["shared", "mgmtd", "ctl", "config", "hsieh"]
+members = ["shared", "mgmtd", "ctl", "hsieh"]
 
 [workspace.dependencies]
 anyhow = "~1"

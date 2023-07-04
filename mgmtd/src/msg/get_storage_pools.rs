@@ -1,5 +1,4 @@
 use super::*;
-use shared::config::{CapPoolDynamicStorageLimits, CapPoolStorageLimits};
 use shared::msg::types::{BuddyGroupCapacityPools, TargetCapacityPools};
 
 pub(super) async fn handle(
@@ -8,16 +7,11 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::GetStoragePoolsResp {
     let pools = match async move {
-        let limits = ci.get_config::<CapPoolStorageLimits>();
-        let dynamic_limits = ci.get_config::<CapPoolDynamicStorageLimits>();
-
         let (targets, pools, buddy_groups) = ci
             .execute_db(move |tx| {
                 let pools = db::storage_pool::get_all(tx)?;
-                let targets =
-                    db::cap_pool::for_storage_targets(tx, limits.clone(), dynamic_limits.clone())?;
-                let buddy_groups =
-                    db::cap_pool::for_storage_buddy_groups(tx, limits, dynamic_limits)?;
+                let targets = db::cap_pool::for_storage_targets(tx)?;
+                let buddy_groups = db::cap_pool::for_storage_buddy_groups(tx)?;
 
                 Ok((targets, pools, buddy_groups))
             })

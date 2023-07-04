@@ -8,7 +8,6 @@ homepage = "https://www.beegfs.io"
 publish = false
 
 [dependencies]
-config = { path = "../config" }
 derive_bee_serde = { path = "../derive_bee_serde" }
 hsieh = { path = "../hsieh" }
 

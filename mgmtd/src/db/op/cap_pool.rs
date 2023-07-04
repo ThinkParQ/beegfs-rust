@@ -23,11 +23,10 @@ pub struct EntityWithCapPool {
     pub cap_pool: CapacityPool,
 }
 
-pub fn for_meta_targets(
-    tx: &mut Transaction,
-    limits: CapPoolLimits,
-    dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+pub fn for_meta_targets(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
+    let limits = config::get_one::<config::cap_pool_meta_limits>(tx)?;
+    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_meta_limits>(tx)?;
+
     select(
         tx,
         include_str!("cap_pool/select_meta_targets.sql"),
@@ -36,11 +35,10 @@ pub fn for_meta_targets(
     )
 }
 
-pub fn for_storage_targets(
-    tx: &mut Transaction,
-    limits: CapPoolLimits,
-    dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+pub fn for_storage_targets(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
+    let limits = config::get_one::<config::cap_pool_storage_limits>(tx)?;
+    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_storage_limits>(tx)?;
+
     select(
         tx,
         include_str!("cap_pool/select_storage_targets.sql"),
@@ -49,11 +47,10 @@ pub fn for_storage_targets(
     )
 }
 
-pub fn for_meta_buddy_groups(
-    tx: &mut Transaction,
-    limits: CapPoolLimits,
-    dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+pub fn for_meta_buddy_groups(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
+    let limits = config::get_one::<config::cap_pool_meta_limits>(tx)?;
+    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_meta_limits>(tx)?;
+
     select(
         tx,
         include_str!("cap_pool/select_meta_buddy_groups.sql"),
@@ -62,11 +59,10 @@ pub fn for_meta_buddy_groups(
     )
 }
 
-pub fn for_storage_buddy_groups(
-    tx: &mut Transaction,
-    limits: CapPoolLimits,
-    dynamic_limits: Option<CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+pub fn for_storage_buddy_groups(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
+    let limits = config::get_one::<config::cap_pool_storage_limits>(tx)?;
+    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_storage_limits>(tx)?;
+
     select(
         tx,
         include_str!("cap_pool/select_storage_buddy_groups.sql"),
@@ -174,7 +170,9 @@ mod test {
     fn fixed_limits_for_meta_targets() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                let pools = for_meta_targets(tx, set.0.clone(), None).unwrap();
+                config::set_one::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
+
+                let pools = for_meta_targets(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
             }
         })
@@ -184,7 +182,9 @@ mod test {
     fn fixed_limits_for_meta_buddy_groups() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                let pools = for_meta_buddy_groups(tx, set.0.clone(), None).unwrap();
+                config::set_one::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
+
+                let pools = for_meta_buddy_groups(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
             }
         })
@@ -194,7 +194,9 @@ mod test {
     fn fixed_limits_for_storage_targets() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                let pools = for_storage_targets(tx, set.0.clone(), None).unwrap();
+                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+
+                let pools = for_storage_targets(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
             }
         })
@@ -204,13 +206,15 @@ mod test {
     fn fixed_limits_for_storage_buddy_groups() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                let pools = for_storage_buddy_groups(tx, set.0.clone(), None).unwrap();
+                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+
+                let pools = for_storage_buddy_groups(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
             }
         })
     }
 
-    const DYNAMIC_LIMITS: &[(CapPoolLimits, CapPoolDynamicLimits, CapacityPool)] = &[
+    const DYNAMIC_LIMITS: &[(CapPoolLimits, Option<CapPoolDynamicLimits>, CapacityPool)] = &[
         // All test targets in Normal pool, dynamic limits raise inode low limit
         // => all targets in Low pool
         (
@@ -220,7 +224,7 @@ mod test {
                 space_low: 200000,
                 space_emergency: 100000,
             },
-            CapPoolDynamicLimits {
+            Some(CapPoolDynamicLimits {
                 inodes_normal_threshold: 50000,
                 inodes_low_threshold: 999999,
                 space_normal_threshold: 999999,
@@ -229,7 +233,7 @@ mod test {
                 inodes_emergency: 100000,
                 space_low: 200000,
                 space_emergency: 100000,
-            },
+            }),
             CapacityPool::Low,
         ),
         // All test targets in Low pool (due to space), dynamic limits raise space emergency limit
@@ -241,7 +245,7 @@ mod test {
                 space_low: 800000,
                 space_emergency: 100000,
             },
-            CapPoolDynamicLimits {
+            Some(CapPoolDynamicLimits {
                 inodes_normal_threshold: 999999,
                 inodes_low_threshold: 999999,
                 space_normal_threshold: 999999,
@@ -250,7 +254,7 @@ mod test {
                 inodes_emergency: 100000,
                 space_low: 800000,
                 space_emergency: 600000,
-            },
+            }),
             CapacityPool::Emergency,
         ),
     ];
@@ -259,7 +263,10 @@ mod test {
     fn dynamic_limits_for_meta_targets() {
         with_test_data(|tx| {
             for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
-                let pools = for_meta_targets(tx, set.0.clone(), Some(set.1.clone())).unwrap();
+                config::set_one::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
+                config::set_one::<config::cap_pool_dynamic_meta_limits>(tx, &set.1).unwrap();
+
+                let pools = for_meta_targets(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.2), "Case #{i}");
             }
         })
@@ -269,7 +276,10 @@ mod test {
     fn dynamic_limits_for_storage_targets() {
         with_test_data(|tx| {
             for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
-                let pools = for_storage_targets(tx, set.0.clone(), Some(set.1.clone())).unwrap();
+                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+                config::set_one::<config::cap_pool_dynamic_storage_limits>(tx, &set.1).unwrap();
+
+                let pools = for_storage_targets(tx).unwrap();
                 assert!(
                     pools
                         .into_iter()
@@ -286,8 +296,10 @@ mod test {
     fn dynamic_limits_for_storage_buddy_groups() {
         with_test_data(|tx| {
             for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
-                let pools =
-                    for_storage_buddy_groups(tx, set.0.clone(), Some(set.1.clone())).unwrap();
+                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+                config::set_one::<config::cap_pool_dynamic_storage_limits>(tx, &set.1).unwrap();
+
+                let pools = for_storage_buddy_groups(tx).unwrap();
                 assert!(
                     pools
                         .into_iter()
@@ -306,27 +318,20 @@ mod test {
         let mut counter = 0;
 
         b.iter(|| {
-            let limits = CapPoolLimits {
-                inodes_low: counter * 20000,
-                inodes_emergency: counter * 10000,
-                space_low: counter * 20000,
-                space_emergency: counter * 10000,
-            };
-
             transaction(&mut conn, |tx| {
-                for_storage_targets(tx, limits.clone(), None).unwrap();
+                for_storage_targets(tx).unwrap();
             });
 
             transaction(&mut conn, |tx| {
-                for_meta_targets(tx, limits.clone(), None).unwrap();
+                for_meta_targets(tx).unwrap();
             });
 
             transaction(&mut conn, |tx| {
-                for_storage_buddy_groups(tx, limits.clone(), None).unwrap();
+                for_storage_buddy_groups(tx).unwrap();
             });
 
             transaction(&mut conn, |tx| {
-                for_meta_buddy_groups(tx, limits.clone(), None).unwrap();
+                for_meta_buddy_groups(tx).unwrap();
             });
 
             counter += 1;

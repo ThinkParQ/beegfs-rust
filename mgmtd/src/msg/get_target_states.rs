@@ -1,5 +1,4 @@
 use super::*;
-use shared::config::NodeOfflineTimeout;
 
 pub(super) async fn handle(
     msg: msg::GetTargetStates,
@@ -19,7 +18,7 @@ pub(super) async fn handle(
                 targets.push(e.target_id);
                 reachability_states.push(db::misc::calc_reachability_state(
                     e.last_contact,
-                    ci.get_config::<NodeOfflineTimeout>(),
+                    ci.get_config().node_offline_timeout,
                 ));
                 consistency_states.push(e.consistency);
             }

@@ -4,7 +4,6 @@
 //! from, the [serializer](serialization) and [connection](conn) handling.
 
 pub mod bee_serde;
-pub mod config;
 pub mod conn;
 pub mod journald_logger;
 pub mod msg;

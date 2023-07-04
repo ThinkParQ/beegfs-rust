@@ -208,17 +208,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
-name = "config"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
-]
-
-[[package]]
 name = "crossbeam-channel"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -244,7 +233,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
- "config",
  "env_logger",
  "log",
  "shared",
@@ -453,7 +441,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
- "config",
  "env_logger",
  "itertools",
  "libc",
@@ -461,6 +448,7 @@ dependencies = [
  "rusqlite",
  "sd-notify",
  "serde",
+ "serde_json",
  "shared",
  "thiserror",
  "tokio",
@@ -690,7 +678,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
- "config",
  "derive_bee_serde",
  "hsieh",
  "log",

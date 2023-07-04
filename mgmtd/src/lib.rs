@@ -11,8 +11,9 @@ mod quota;
 mod timer;
 
 use crate::component_handles::ComponentHandles;
-use crate::config::{Config, RuntimeConfig};
+use crate::config::{DynamicConfigArgs, StaticConfig};
 use anyhow::Result;
+use config::ConfigCache;
 use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig};
 use shared::shutdown::Shutdown;
 use shared::{AuthenticationSecret, Nic};
@@ -24,14 +25,14 @@ pub(crate) type MgmtdPool = ConnPool<db::Connection>;
 
 #[derive(Debug)]
 pub struct StaticInfo {
-    pub static_config: Config,
+    pub static_config: StaticConfig,
     pub auth_secret: Option<AuthenticationSecret>,
     pub network_interfaces: Vec<Nic>,
 }
 
 pub async fn start(
-    static_config: Config,
-    runtime_config: Option<RuntimeConfig>,
+    static_config: StaticConfig,
+    runtime_config: Option<DynamicConfigArgs>,
     auth_secret: Option<AuthenticationSecret>,
     shutdown: Shutdown,
 ) -> Result<()> {
@@ -47,13 +48,13 @@ pub async fn start(
 
     let db = db::Connection::open(static_info.static_config.db_file.as_path()).await?;
 
-    if let Some(c) = &runtime_config {
+    if let Some(c) = runtime_config {
         c.apply_to_db(&db).await?;
 
         log::info!("Set system configuration from supplied data")
     }
 
-    let (config_input, config) = ::config::from_source(db.clone()).await?;
+    let config_cache = ConfigCache::from_db(db.clone()).await?;
 
     let (conn_pool_actor, conn) = ConnPoolActor::new(ConnPoolConfig {
         stream_auth_secret: static_info.auth_secret,
@@ -80,14 +81,13 @@ pub async fn start(
         ComponentHandles {
             conn: conn.clone(),
             db: db.clone(),
-            static_config: static_info,
-            config_input,
-            config: config.clone(),
+            config_cache: config_cache.clone(),
+            static_info,
         },
         shutdown.clone(),
     );
 
-    timer::start_tasks(db, conn, config, shutdown);
+    timer::start_tasks(db, conn, config_cache, shutdown);
 
     Ok(())
 }

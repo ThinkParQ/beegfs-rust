@@ -2,20 +2,21 @@ use anyhow::Context;
 use mgmtd::config::LogTarget;
 use mgmtd::start;
 use shared::{journald_logger, shutdown, AuthenticationSecret};
+use std::backtrace::Backtrace;
+use std::panic;
 use tokio::signal::ctrl_c;
 
 fn main() -> Result<(), i32> {
-    match inner_main() {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            eprintln!("{err:#}");
-            Err(1)
-        }
-    }
+    inner_main().map_err(|err| {
+        eprintln!("{err:#}");
+        1
+    })?;
+
+    Ok(())
 }
 
 fn inner_main() -> anyhow::Result<()> {
-    let (static_config, runtime_config) = mgmtd::config::load_and_parse()?;
+    let (static_config, dynamic_config_args, info_log) = mgmtd::config::load_and_parse()?;
 
     match static_config.log_target {
         LogTarget::Std => Ok(env_logger::Builder::from_env(
@@ -25,6 +26,11 @@ fn inner_main() -> anyhow::Result<()> {
         LogTarget::Journald => journald_logger::init(static_config.log_level),
     }
     .expect("Logger initialization failed");
+
+    // log info from load_and_parse
+    for l in info_log {
+        log::info!(target: "mgmtd::config", "{l}");
+    }
 
     match static_config.init {
         true => {
@@ -53,8 +59,15 @@ fn inner_main() -> anyhow::Result<()> {
                 .thread_stack_size(16 * 1024 * 1024)
                 .build()?;
 
+            // Ensure the program ends if a task panics
+            panic::set_hook(Box::new(|info| {
+                let backtrace = Backtrace::capture();
+                eprintln!("PANIC occured: {info}\n\nBACKTRACE:\n{backtrace}");
+                std::process::exit(1);
+            }));
+
             rt.block_on(async move {
-                start(static_config, runtime_config, auth_secret, shutdown).await?;
+                start(static_config, dynamic_config_args, auth_secret, shutdown).await?;
 
                 // notify systemd manager that the process is ready
                 let _ = sd_notify::notify(true, &[sd_notify::NotifyState::Ready]);

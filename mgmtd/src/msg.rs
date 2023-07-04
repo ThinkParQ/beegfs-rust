@@ -1,22 +1,21 @@
+use crate::config::DynamicConfig;
 use crate::db;
 use crate::db::{DbError, DbResult};
 use crate::notification::Notification;
-use ::config::{ConfigError, ConfigMap, Field};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use rusqlite::Transaction;
-use shared::config::BeeConfig;
 use shared::conn::msg_dispatch::*;
 use shared::conn::PeerID;
 use shared::msg::{self, GenericResponse, Msg};
 use shared::*;
 use std::collections::HashMap;
+use std::sync::RwLockReadGuard;
 
 mod ack;
 mod add_storage_pool;
 mod authenticate_channel;
 mod change_target_consistency_states;
-mod get_config;
 mod get_default_quota;
 mod get_mirror_buddy_groups;
 mod get_node_capacity_pools;
@@ -41,7 +40,6 @@ mod remove_node_resp;
 mod remove_storage_pool;
 mod request_exceeded_quota;
 mod set_channel_direct;
-mod set_config;
 mod set_default_quota;
 mod set_metadata_mirroring;
 mod set_mirror_buddy_group;
@@ -53,7 +51,7 @@ mod unmap_target;
 
 // TODO put the config source requirement into the trait
 #[async_trait]
-pub(crate) trait ComponentInteractor: ::config::Source + Clone {
+pub(crate) trait ComponentInteractor: Clone {
     async fn execute_db<
         T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
         R: Send + 'static,
@@ -66,9 +64,7 @@ pub(crate) trait ComponentInteractor: ::config::Source + Clone {
     async fn send<M: Msg>(&self, dest: PeerID, msg: &M) -> Result<(), anyhow::Error>;
     async fn notify_nodes<M: Notification<'static>>(&self, msg: &M);
 
-    fn get_config<K: Field<BelongsTo = BeeConfig>>(&self) -> K::Value;
-    async fn set_raw_config(&mut self, entries: ConfigMap) -> Result<(), ConfigError>;
-
+    fn get_config(&self) -> RwLockReadGuard<DynamicConfig>;
     fn get_static_info(&self) -> &'static crate::StaticInfo;
 }
 
@@ -133,8 +129,8 @@ pub(crate) async fn dispatch_request(
         msg::SetQuota => set_quota,
         msg::GetQuotaInfo => get_quota_info,
         msg::AuthenticateChannel => authenticate_channel,
-        msg::SetConfig => set_config,
-        msg::GetConfig => get_config,
+        // msg::SetConfig => set_config,
+        // msg::GetConfig => get_config,
         msg::SetMirrorBuddyGroup => set_mirror_buddy_group,
         msg::RemoveBuddyGroup => remove_buddy_group,
         msg::SetMetadataMirroring => set_metadata_mirroring,

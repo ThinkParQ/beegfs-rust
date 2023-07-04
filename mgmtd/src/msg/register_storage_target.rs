@@ -1,5 +1,4 @@
 use super::*;
-use shared::config::RegistrationEnable;
 
 pub(super) async fn handle(
     msg: msg::RegisterStorageTarget,
@@ -7,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::RegisterStorageTargetResp {
     match async move {
-        if !ci.get_config::<RegistrationEnable>() {
+        if !ci.get_config().registration_enable {
             bail!("Registration of new targets is not allowed");
         }
 
