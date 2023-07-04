@@ -13,7 +13,7 @@ pub(super) async fn handle(
         }
 
         let node_ids = ci
-            .execute_db(move |tx| {
+            .db_op(move |tx| {
                 db::buddy_group::check_existence(
                     tx,
                     &[msg.buddy_group_id],
@@ -37,7 +37,7 @@ pub(super) async fn handle(
             );
         }
 
-        ci.execute_db(move |tx| db::buddy_group::delete_storage(tx, msg.buddy_group_id))
+        ci.db_op(move |tx| db::buddy_group::delete_storage(tx, msg.buddy_group_id))
             .await?;
 
         Ok(())

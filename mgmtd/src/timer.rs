@@ -36,7 +36,7 @@ async fn delete_stale_clients(db: db::Connection, config: ConfigCache, mut shutd
         let timeout = config.get().client_auto_remove_timeout;
 
         match db
-            .execute(move |tx| db::node::delete_stale_clients(tx, timeout))
+            .op(move |tx| db::node::delete_stale_clients(tx, timeout))
             .await
         {
             Ok(affected) => {
@@ -97,7 +97,7 @@ async fn check_for_switchover(
         let timeout = config.get().node_offline_timeout;
 
         match db
-            .execute(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
+            .op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
             .await
         {
             Ok(swapped) => {

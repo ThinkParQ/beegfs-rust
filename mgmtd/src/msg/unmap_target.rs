@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::UnmapTargetResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             // Check given target ID exists
             db::target::get_uid(tx, msg.target_id, NodeTypeServer::Storage)?
                 .ok_or_else(|| DbError::value_not_found("target ID", msg.target_id))?;

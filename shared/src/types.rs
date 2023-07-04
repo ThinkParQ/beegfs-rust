@@ -3,8 +3,8 @@
 mod buddy_group;
 pub use buddy_group::*;
 mod nic;
-use derive_bee_serde::BeeSerde;
 pub use nic::*;
+use bee_macro::BeeSerde;
 mod node;
 pub use node::*;
 mod pool;

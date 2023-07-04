@@ -24,7 +24,7 @@ pub(crate) async fn update_and_distribute(
     // Fetch quota data from storage daemons
 
     let targets = db
-        .execute(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+        .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await?;
 
     if !targets.is_empty() {
@@ -106,7 +106,7 @@ pub(crate) async fn update_and_distribute(
         let (target_id, resp) = t.await?;
         match resp {
             Ok(r) => {
-                db.execute(move |tx| {
+                db.op(move |tx| {
                     db::quota_entry::upsert(
                         tx,
                         target_id,
@@ -132,10 +132,7 @@ pub(crate) async fn update_and_distribute(
 
     // calculate exceeded quota information and send to daemons
     let mut msges: Vec<msg::SetExceededQuota> = vec![];
-    for e in db
-        .execute(db::quota_entry::all_exceeded_quota_entries)
-        .await?
-    {
+    for e in db.op(db::quota_entry::all_exceeded_quota_entries).await? {
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
                 && e.id_type == last.id_type

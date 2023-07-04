@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::SetMirrorBuddyGroupResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             // Check buddy group doesn't exist
             if db::buddy_group::get_uid(tx, msg.buddy_group_id, msg.node_type)?.is_some() {
                 return Err(DbError::value_exists("buddy group ID", msg.buddy_group_id));

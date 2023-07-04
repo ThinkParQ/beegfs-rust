@@ -4,7 +4,7 @@ use crate::bee_serde;
 use crate::bee_serde::*;
 use crate::types::*;
 use anyhow::Result;
-use derive_bee_serde::BeeSerde;
+use bee_macro::BeeSerde;
 use std::collections::{HashMap, HashSet};
 
 pub mod types;

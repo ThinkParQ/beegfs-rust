@@ -23,14 +23,14 @@ pub(crate) struct ComponentHandles {
 
 #[async_trait]
 impl ComponentInteractor for ComponentHandles {
-    async fn execute_db<
+    async fn db_op<
         T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
         R: Send + 'static,
     >(
         &self,
         op: T,
     ) -> DbResult<R> {
-        self.db.execute(op).await
+        self.db.op(op).await
     }
 
     async fn request<M: Msg, R: Msg>(&self, dest: PeerID, msg: &M) -> Result<R, anyhow::Error> {

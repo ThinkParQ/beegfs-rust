@@ -55,7 +55,7 @@ impl Connection {
         Ok(Self { conn })
     }
 
-    pub async fn execute<
+    pub async fn op<
         T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
         R: Send + 'static,
     >(
@@ -82,7 +82,7 @@ impl AddrResolver for Connection {
                 vec![addr]
             }
             PeerID::Node(uid) => self
-                .execute(move |tx| node_nic::get_with_node_uid(tx, uid))
+                .op(move |tx| node_nic::get_with_node_uid(tx, uid))
                 .await?
                 .into_iter()
                 .map(|e| SocketAddr::new(e.addr.into(), e.port.into()))

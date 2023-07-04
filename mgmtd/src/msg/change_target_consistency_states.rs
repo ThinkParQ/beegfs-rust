@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::ChangeTargetConsistencyStatesResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             // TODO This is where old mgmtd updates the "last_seen" time
             // (as this msg comes in every 30 seconds)
             // We adapt this for now, but actually want to do this independent from the msg

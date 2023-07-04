@@ -1,7 +1,8 @@
-//! # Overview
-//! This library provides functionality to communicate with BeeGFS nodes.
+//! This library provides shared code that can be reused by BeeGFS Rust projects.
+//!
 //! It contains the network [message definitions](msg), [types] to build them
-//! from, the [serializer](serialization) and [connection](conn) handling.
+//! from, the [serializer](bee_serde), [connection](conn) handling and other utilities and
+//! definitions.
 
 pub mod bee_serde;
 pub mod conn;

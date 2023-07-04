@@ -8,7 +8,7 @@ pub(super) async fn handle(
     match async {
         let msg = msg.clone();
 
-        ci.execute_db(move |tx| {
+        ci.db_op(move |tx| {
             // Check given target IDs exist
             db::target::check_existence(tx, &msg.target_ids, msg.node_type)?;
 

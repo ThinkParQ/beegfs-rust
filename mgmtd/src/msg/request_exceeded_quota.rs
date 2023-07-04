@@ -7,7 +7,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::RequestExceededQuotaResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             let exceeded_ids = db::quota_entry::exceeded_quota_ids(
                 tx,
                 if msg.pool_id != StoragePoolID::ZERO {

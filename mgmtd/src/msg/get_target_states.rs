@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::GetTargetStatesResp {
     match ci
-        .execute_db(move |tx| db::target::get_with_type(tx, msg.node_type))
+        .db_op(move |tx| db::target::get_with_type(tx, msg.node_type))
         .await
     {
         Ok(res) => {

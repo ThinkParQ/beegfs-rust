@@ -7,7 +7,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::SetQuotaResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             // Check pool ID exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {
                 return Err(DbError::value_not_found("storage pool ID", msg.pool_id));

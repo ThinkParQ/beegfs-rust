@@ -8,7 +8,7 @@ pub(super) async fn handle(
 ) -> msg::SetTargetInfoResp {
     let node_type = msg.node_type;
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             db::target::get_and_update_capacities(
                 tx,
                 msg.info.into_iter().map(|e| {

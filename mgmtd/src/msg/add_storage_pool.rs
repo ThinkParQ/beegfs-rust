@@ -7,7 +7,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::AddStoragePoolResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             // Check alias is free
             if db::entity::get_uid(tx, &msg.alias)?.is_some() {
                 return Err(DbError::value_exists("Alias", &msg.alias));

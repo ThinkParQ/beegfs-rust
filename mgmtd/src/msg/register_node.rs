@@ -20,7 +20,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor)
     let registration_enable = ci.get_config().registration_enable;
 
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             let mut node_id = msg.node_id;
             let mut node_uid = db::node::get_uid(tx, msg.node_id, msg.node_type)?;
             let is_new_node = msg.node_id == NodeID::ZERO || node_uid.is_none();

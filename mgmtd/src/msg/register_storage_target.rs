@@ -11,7 +11,7 @@ pub(super) async fn handle(
         }
 
         Ok(ci
-            .execute_db(move |tx| {
+            .db_op(move |tx| {
                 // TODO add checks for the alias?
                 // if db::targets::get_uid_optional(tx, msg.target_id,
                 // NodeTypeServer::Storage)?.is_some()

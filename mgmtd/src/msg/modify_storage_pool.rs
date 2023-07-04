@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::ModifyStoragePoolResp {
     match async {
-        ci.execute_db(move |tx| {
+        ci.db_op(move |tx| {
             // Check ID exists
             let uid = db::storage_pool::get_uid(tx, msg.pool_id)?
                 .ok_or_else(|| DbError::value_not_found("storage pool ID", msg.pool_id))?;

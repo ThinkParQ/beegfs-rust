@@ -52,10 +52,7 @@ mod unmap_target;
 // TODO put the config source requirement into the trait
 #[async_trait]
 pub(crate) trait ComponentInteractor: Clone {
-    async fn execute_db<
-        T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
-        R: Send + 'static,
-    >(
+    async fn db_op<T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>, R: Send + 'static>(
         &self,
         op: T,
     ) -> DbResult<R>;

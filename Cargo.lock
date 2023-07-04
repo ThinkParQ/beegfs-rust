@@ -131,6 +131,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bee_macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -238,15 +247,6 @@ dependencies = [
  "shared",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "derive_bee_serde"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -677,8 +677,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bee_macro",
  "bytes",
- "derive_bee_serde",
  "hsieh",
  "log",
  "pnet_datalink",

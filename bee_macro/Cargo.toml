@@ -1,5 +1,5 @@
 [package]
-name = "derive_bee_serde"
+name = "bee_macro"
 version = "0.1.0"
 edition = "2021"
 authors = ["ThinkParQ GmbH"]

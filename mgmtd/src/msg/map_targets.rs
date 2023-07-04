@@ -8,7 +8,7 @@ pub(super) async fn handle(
     let target_ids = msg.target_ids.keys().copied().collect::<Vec<_>>();
 
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             // Check node ID exists
             if db::node::get_uid(tx, msg.node_id, NodeType::Storage)?.is_none() {
                 return Err(DbError::value_not_found("node ID", msg.node_id));

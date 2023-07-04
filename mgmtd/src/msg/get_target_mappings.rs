@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::GetTargetMappingsResp {
     match ci
-        .execute_db(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+        .db_op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await
     {
         Ok(res) => msg::GetTargetMappingsResp {

@@ -111,7 +111,7 @@ pub(crate) struct ConfigCache {
 
 impl ConfigCache {
     pub(crate) async fn from_db(db: Connection) -> Result<Self> {
-        let config = db.execute(db::config::get_all).await?;
+        let config = db.op(db::config::get_all).await?;
 
         Ok(Self {
             inner: Arc::new(RwLock::new(config)),
@@ -127,7 +127,7 @@ impl ConfigCache {
             .set_by_json_str(T::KEY, &serde_json::to_string(&value)?)?;
 
         self.db
-            .execute(move |tx| db::config::set_one::<T>(tx, &value))
+            .op(move |tx| db::config::set_one::<T>(tx, &value))
             .await?;
 
         Ok(())
@@ -214,7 +214,7 @@ struct ConfigArgs {
     /// setting the RUST_LOG environment variable. This overwrites this
     /// setting. See the env_logger documentation for more details:
     ///
-    /// https://docs.rs/env_logger/latest/env_logger/#enabling-logging
+    /// <https://docs.rs/env_logger/latest/env_logger/#enabling-logging>
     #[arg(long)]
     log_level: Option<LogLevel>,
 
@@ -232,7 +232,7 @@ struct ConfigArgs {
     )]
     #[serde(skip)]
     config_file: Option<PathBuf>,
-    /// [TEMPORARY] Runtime config file location [default:
+    /// TEMPORARY Runtime config file location [default:
     /// /etc/beegfs/mgmtd-runtime.toml]
     ///
     /// This option will be replaced with the new ctl tool when it is done.
@@ -324,7 +324,7 @@ pub struct DynamicConfigArgs {
 
 impl DynamicConfigArgs {
     pub async fn apply_to_db(self, db: &db::Connection) -> anyhow::Result<()> {
-        db.execute(move |tx| {
+        db.op(move |tx| {
             use db::config::*;
 
             set_one::<registration_enable>(tx, &self.registration_enable)?;

@@ -1,7 +1,30 @@
+//! Proc macro definitions for BeeGFS Rust
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Field, Index, Type};
 
+/// Auto implement BeeGFS msg serialization and deserialization for a struct.
+///
+/// Raw integers are serialized automatically as themselves, other types like bool, String, Vec and
+/// Map need a hint. A hint is provided by annotating a struct member with `#[bee_serde(as =
+/// HINT)]`. See `shared::bee_serde` for available options.
+///
+/// The order of the struct members determines the order of (de-)serialization.
+///
+/// # Example
+/// ```ignore
+/// #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+/// pub struct AddStoragePool {
+///     pub pool_id: StoragePoolID,
+///     #[bee_serde(as = CStr<0>)]
+///     pub alias: EntityAlias,
+///     #[bee_serde(as = Seq<true, _>)]
+///     pub move_target_ids: Vec<TargetID>,
+///     #[bee_serde(as = Seq<true, _>)]
+///     pub move_buddy_group_ids: Vec<BuddyGroupID>,
+/// }
+/// ```
 #[proc_macro_derive(BeeSerde, attributes(bee_serde))]
 pub fn derive_bee_serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -9,7 +32,8 @@ pub fn derive_bee_serialize(input: proc_macro::TokenStream) -> proc_macro::Token
     let name = input.ident;
     let (ser, des) = process_data(&input.data);
 
-    let expanded = quote! {
+    // Create and output the actual impl block
+    quote! {
         impl bee_serde::BeeSerde for #name {
             fn serialize(&self, ser: &mut bee_serde::Serializer<'_>) -> anyhow::Result<()> {
                 #ser
@@ -20,13 +44,13 @@ pub fn derive_bee_serialize(input: proc_macro::TokenStream) -> proc_macro::Token
                 #des
             }
         }
-    };
-
-    expanded.into()
+    }
+    .into()
 }
 
+/// Takes a struct body and forwards named or unnamed fields to [`iterate_fields()`]
 fn process_data(data: &Data) -> (TokenStream, TokenStream) {
-    match *data {
+    match data {
         Data::Struct(ref data) => match data.fields {
             syn::Fields::Named(ref fields) => {
                 let (ser, des) = iterate_fields(fields.named.iter());
@@ -54,13 +78,14 @@ fn process_data(data: &Data) -> (TokenStream, TokenStream) {
                     },
                 )
             }
-            syn::Fields::Unit => unimplemented!(),
+            syn::Fields::Unit => unimplemented!("Unit structs are not supported"),
         },
-        Data::Enum(_) => unimplemented!(),
-        Data::Union(_) => unimplemented!(),
+        Data::Enum(_) => unimplemented!("Enums are not supported"),
+        Data::Union(_) => unimplemented!("Unions are not supported"),
     }
 }
 
+/// Iterate over all struct fields and calls [`build_field_actions()`] on them
 fn iterate_fields<'a>(
     fields: impl IntoIterator<Item = &'a Field>,
 ) -> (Vec<TokenStream>, Vec<TokenStream>) {
@@ -77,11 +102,13 @@ fn iterate_fields<'a>(
     (ser, des)
 }
 
+/// Generate (de-)serialization action for a single struct field
 fn build_field_actions(field: &Field, index: usize) -> (TokenStream, TokenStream) {
     let mut serde_as: Option<Type> = None;
     let target_type = field.ty.clone();
     let name = &field.ident;
 
+    // Find the `#[bee_serde(as = AS)]` annotation, if given
     for a in &field.attrs {
         if a.path().is_ident("bee_serde") {
             a.parse_nested_meta(|meta| {
@@ -95,6 +122,7 @@ fn build_field_actions(field: &Field, index: usize) -> (TokenStream, TokenStream
         }
     }
 
+    // Named and unnamed structs are accessed differently by name or index
     let field = if let Some(name) = name {
         quote! {
             self.#name
@@ -107,6 +135,8 @@ fn build_field_actions(field: &Field, index: usize) -> (TokenStream, TokenStream
         }
     };
 
+    // If `#[bee_serde(as = AS)]` is given, use the provided serialization helper to (de-)serialize
+    // the field
     let (ser, des) = if let Some(serde_as) = serde_as {
         (
             quote! {
@@ -116,6 +146,7 @@ fn build_field_actions(field: &Field, index: usize) -> (TokenStream, TokenStream
                 <#serde_as>::deserialize_as(des)?,
             },
         )
+    // If not, call serialize directly using the fields type
     } else {
         (
             quote! {
@@ -127,6 +158,8 @@ fn build_field_actions(field: &Field, index: usize) -> (TokenStream, TokenStream
         )
     };
 
+    // Create the actual line calling some `serialize()` with the struct field or filling the struct
+    // field using some `deserialize()`. Again, named and unnamed struct need different handling.
     if let Some(name) = name {
         (
             quote! {

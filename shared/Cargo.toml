@@ -3,12 +3,12 @@ name = "shared"
 version = "0.1.0"
 edition = "2021"
 authors = ["ThinkParQ GmbH"]
-description = "Contains tools to connect and talk to BeeGFS nodes, as well as useful types for other crates."
+description = "Provides shared code that can be reused by BeeGFS Rust projects"
 homepage = "https://www.beegfs.io"
 publish = false
 
 [dependencies]
-derive_bee_serde = { path = "../derive_bee_serde" }
+bee_macro = { path = "../bee_macro" }
 hsieh = { path = "../hsieh" }
 
 anyhow = { workspace = true }

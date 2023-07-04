@@ -7,7 +7,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::GetNodesResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             let res = (
                 db::node::get_with_type(tx, msg.node_type)?,
                 db::node_nic::get_with_type(tx, msg.node_type)?,

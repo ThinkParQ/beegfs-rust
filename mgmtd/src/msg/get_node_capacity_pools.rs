@@ -12,7 +12,7 @@ pub(super) async fn handle(
 
         let result: HashMap<StoragePoolID, Vec<Vec<u16>>> = match msg.query_type {
             CapacityPoolQueryType::Meta => {
-                let res = ci.execute_db(db::cap_pool::for_meta_targets).await?;
+                let res = ci.db_op(db::cap_pool::for_meta_targets).await?;
 
                 let mut target_cap_pools = vec![Vec::<u16>::new(), vec![], vec![]];
 
@@ -23,7 +23,7 @@ pub(super) async fn handle(
                 [(StoragePoolID::ZERO, target_cap_pools)].into()
             }
             CapacityPoolQueryType::Storage => {
-                let res = ci.execute_db(db::cap_pool::for_storage_targets).await?;
+                let res = ci.db_op(db::cap_pool::for_storage_targets).await?;
 
                 let mut group_cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
                 for t in res {
@@ -40,7 +40,7 @@ pub(super) async fn handle(
             }
 
             CapacityPoolQueryType::MetaMirrored => {
-                let res = ci.execute_db(db::cap_pool::for_meta_buddy_groups).await?;
+                let res = ci.db_op(db::cap_pool::for_meta_buddy_groups).await?;
 
                 let mut group_cap_pools = vec![Vec::<u16>::new(), vec![], vec![]];
                 for g in res {
@@ -51,9 +51,7 @@ pub(super) async fn handle(
             }
 
             CapacityPoolQueryType::StorageMirrored => {
-                let res = ci
-                    .execute_db(db::cap_pool::for_storage_buddy_groups)
-                    .await?;
+                let res = ci.db_op(db::cap_pool::for_storage_buddy_groups).await?;
 
                 let mut group_cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
                 for g in res {

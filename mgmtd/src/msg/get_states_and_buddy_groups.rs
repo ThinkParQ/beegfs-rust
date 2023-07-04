@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::GetStatesAndBuddyGroupsResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             let targets = db::target::get_with_type(tx, msg.node_type)?;
             let groups = db::buddy_group::get_with_type(tx, msg.node_type)?;
 

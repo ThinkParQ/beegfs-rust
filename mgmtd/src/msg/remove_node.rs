@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _rcc: &impl RequestConnectionController,
 ) -> msg::RemoveNodeResp {
     match ci
-        .execute_db(move |tx| {
+        .db_op(move |tx| {
             let node_uid = db::node::get_uid(tx, msg.node_id, msg.node_type)?
                 .ok_or_else(|| DbError::value_not_found("node ID", msg.node_id))?;
 

@@ -11,7 +11,7 @@ pub(crate) async fn request_tcp_by_type<M: Msg, R: Msg>(
     msg: M,
 ) -> Result<Vec<R>> {
     let nodes = db
-        .execute(move |tx| db::node::get_with_type(tx, node_type.into()))
+        .op(move |tx| db::node::get_with_type(tx, node_type.into()))
         .await?;
 
     let mut responses = vec![];
@@ -36,9 +36,7 @@ pub(crate) async fn notify_nodes<M: Notification<'static> + Sync>(
 ) {
     if let Err(err) = async {
         for t in msg.notification_node_types() {
-            let nodes = db
-                .execute(move |tx| db::node::get_with_type(tx, *t))
-                .await?;
+            let nodes = db.op(move |tx| db::node::get_with_type(tx, *t)).await?;
 
             conn_pool
                 .broadcast(nodes.into_iter().map(|e| PeerID::Node(e.uid)), msg)

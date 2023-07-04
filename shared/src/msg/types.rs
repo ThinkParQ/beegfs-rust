@@ -2,7 +2,7 @@ use crate::bee_serde::{self, *};
 use crate::impl_enum_to_int;
 use crate::types::*;
 use anyhow::Result;
-use derive_bee_serde::BeeSerde;
+use bee_macro::BeeSerde;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
