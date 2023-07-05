@@ -295,7 +295,7 @@ CREATE TABLE quota_limits (
     PRIMARY KEY (quota_id, id_type, quota_type, pool_id)
 ) STRICT;
 
-CREATE TABLE quota_entries (
+CREATE TABLE quota_usage (
     quota_id INTEGER NOT NULL,
     id_type TEXT NOT NULL
         CHECK(id_type IN ("user", "group")),

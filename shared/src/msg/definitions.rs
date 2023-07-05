@@ -34,7 +34,7 @@ msg_modules! {
     refresh_storage_pools,
     refresh_target_states,
     register_node,
-    register_storage_target,
+    register_target,
     remove_buddy_group,
     remove_node,
     remove_storage_pool,
@@ -46,6 +46,6 @@ msg_modules! {
     set_mirror_buddy_group,
     set_quota,
     set_target_consistency_states,
-    set_target_info,
-    unmap_storage_target,
+    set_storage_target_info,
+    unmap_target,
 }

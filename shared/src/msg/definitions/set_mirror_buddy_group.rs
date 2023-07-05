@@ -1,5 +1,6 @@
 use super::*;
 
+/// Adds a new buddy group or notifies the nodes via UDP that there is a new buddy group
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetMirrorBuddyGroup {
     #[bee_serde(as = Int<u32>)]
@@ -8,6 +9,7 @@ pub struct SetMirrorBuddyGroup {
     pub secondary_target_id: TargetID,
     pub buddy_group_id: BuddyGroupID,
     #[bee_serde(as = BoolAsInt<u8>)]
+    /// This probably shall allow a group to be updated
     pub allow_update: bool,
     pub ack_id: AckID,
 }

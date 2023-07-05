@@ -7,7 +7,7 @@ static REGEX: OnceLock<Regex> = OnceLock::new();
 
 fn parse(input: &str) -> Result<u64, ()> {
     let regex = REGEX.get_or_init(|| {
-        Regex::new(r"^(\d+) *([kMGTPE]?i?)[[:alpha:]]*$").expect("Failed to compile Regex")
+        Regex::new(r"^(\d+) *([kMGTPE]?i?)[[:alpha:]]*$").expect("Regex must be valid")
     });
     let captures = regex.captures(input.trim()).ok_or(())?;
     let number = captures.get(1).ok_or(())?;
@@ -15,25 +15,23 @@ fn parse(input: &str) -> Result<u64, ()> {
 
     let number: u64 = number.as_str().parse().map_err(|_| ())?;
 
-    // TODO handle possible overflow
-    let number = number
-        * match suffix.as_str() {
-            "" => 1,
-            "k" => 10u64.pow(3),
-            "M" => 10u64.pow(6),
-            "G" => 10u64.pow(9),
-            "T" => 10u64.pow(12),
-            "P" => 10u64.pow(15),
-            "E" => 10u64.pow(18),
+    let number = number.saturating_mul(match suffix.as_str() {
+        "" => 1,
+        "k" => 10u64.pow(3),
+        "M" => 10u64.pow(6),
+        "G" => 10u64.pow(9),
+        "T" => 10u64.pow(12),
+        "P" => 10u64.pow(15),
+        "E" => 10u64.pow(18),
 
-            "ki" => 2u64.pow(10), // 1024
-            "Mi" => 2u64.pow(20), // 1024^2
-            "Gi" => 2u64.pow(30),
-            "Ti" => 2u64.pow(40),
-            "Pi" => 2u64.pow(50),
-            "Ei" => 2u64.pow(60),
-            _ => return Err(()),
-        };
+        "ki" => 2u64.pow(10), // 1024
+        "Mi" => 2u64.pow(20), // 1024^2
+        "Gi" => 2u64.pow(30),
+        "Ti" => 2u64.pow(40),
+        "Pi" => 2u64.pow(50),
+        "Ei" => 2u64.pow(60),
+        _ => return Err(()),
+    });
 
     Ok(number)
 }

@@ -8,7 +8,7 @@ use shared::{CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
 // DYNAMIC CONFIG
@@ -103,9 +103,9 @@ define_config! {
     cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits> = None,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct ConfigCache {
-    inner: Arc<RwLock<DynamicConfig>>,
+    inner: RwLock<DynamicConfig>,
     db: Connection,
 }
 
@@ -114,7 +114,7 @@ impl ConfigCache {
         let config = db.op(db::config::get_all).await?;
 
         Ok(Self {
-            inner: Arc::new(RwLock::new(config)),
+            inner: RwLock::new(config),
             db,
         })
     }
@@ -123,18 +123,18 @@ impl ConfigCache {
     pub(crate) async fn set<T: Field>(&self, value: T::Value) -> Result<()> {
         self.inner
             .write()
-            .expect("Lock is poisoned")
+            .expect("Lock writer should never panic")
             .set_by_json_str(T::KEY, &serde_json::to_string(&value)?)?;
 
         self.db
-            .op(move |tx| db::config::set_one::<T>(tx, &value))
+            .op(move |tx| db::config::upsert::<T>(tx, &value))
             .await?;
 
         Ok(())
     }
 
     pub(crate) fn get(&self) -> RwLockReadGuard<DynamicConfig> {
-        self.inner.read().expect("Lock is poisoned")
+        self.inner.read().expect("Lock writer should never panic")
     }
 }
 
@@ -170,8 +170,6 @@ impl Default for StaticConfig {
 // PARSING AND LOADING
 
 /// BeeGFS mgmtd Rust prototype
-///
-/// TODO
 #[derive(Debug, Default, Parser, Deserialize)]
 #[command(
     author,
@@ -232,17 +230,17 @@ struct ConfigArgs {
     )]
     #[serde(skip)]
     config_file: Option<PathBuf>,
-    /// TEMPORARY Runtime config file location [default:
-    /// /etc/beegfs/mgmtd-runtime.toml]
+    /// Dynamic config file location [default:
+    /// /etc/beegfs/mgmtd-dynamic.toml]
     ///
-    /// This option will be replaced with the new ctl tool when it is done.
+    /// Loads the dynamic configuration into the database at startup.
     #[arg(
         long,
-        default_value = "/etc/beegfs/mgmtd-runtime.toml",
+        default_value = "/etc/beegfs/mgmtd-dynamic.toml",
         hide_default_value = true
     )]
     #[serde(skip)]
-    runtime_config_file: Option<PathBuf>,
+    dynamic_config_file: Option<PathBuf>,
 }
 
 impl ConfigArgs {
@@ -327,31 +325,31 @@ impl DynamicConfigArgs {
         db.op(move |tx| {
             use db::config::*;
 
-            set_one::<registration_enable>(tx, &self.registration_enable)?;
-            set_one::<node_offline_timeout>(tx, &self.node_offline_timeout)?;
-            set_one::<client_auto_remove_timeout>(tx, &self.client_auto_remove_timeout)?;
-            set_one::<quota_enable>(tx, &self.quota_enable)?;
-            set_one::<quota_update_interval>(tx, &self.quota_update_interval)?;
-            set_one::<quota_user_system_ids_min>(tx, &self.quota_user_system_ids_min)?;
-            set_one::<quota_user_ids_file>(tx, &self.quota_user_ids_file)?;
-            set_one::<quota_user_ids_range>(
+            upsert::<registration_enable>(tx, &self.registration_enable)?;
+            upsert::<node_offline_timeout>(tx, &self.node_offline_timeout)?;
+            upsert::<client_auto_remove_timeout>(tx, &self.client_auto_remove_timeout)?;
+            upsert::<quota_enable>(tx, &self.quota_enable)?;
+            upsert::<quota_update_interval>(tx, &self.quota_update_interval)?;
+            upsert::<quota_user_system_ids_min>(tx, &self.quota_user_system_ids_min)?;
+            upsert::<quota_user_ids_file>(tx, &self.quota_user_ids_file)?;
+            upsert::<quota_user_ids_range>(
                 tx,
                 &self
                     .quota_user_ids_range_start
                     .map(|start| start..=self.quota_user_ids_range_end.unwrap_or(start)),
             )?;
-            set_one::<quota_group_system_ids_min>(tx, &self.quota_group_system_ids_min)?;
-            set_one::<quota_group_ids_file>(tx, &self.quota_group_ids_file)?;
-            set_one::<quota_group_ids_range>(
+            upsert::<quota_group_system_ids_min>(tx, &self.quota_group_system_ids_min)?;
+            upsert::<quota_group_ids_file>(tx, &self.quota_group_ids_file)?;
+            upsert::<quota_group_ids_range>(
                 tx,
                 &self
                     .quota_group_ids_range_start
                     .map(|start| start..=self.quota_group_ids_range_end.unwrap_or(start)),
             )?;
-            set_one::<cap_pool_meta_limits>(tx, &self.cap_pool_meta_limits)?;
-            set_one::<cap_pool_storage_limits>(tx, &self.cap_pool_storage_limits)?;
-            set_one::<cap_pool_dynamic_meta_limits>(tx, &self.cap_pool_dynamic_meta_limits)?;
-            set_one::<cap_pool_dynamic_storage_limits>(tx, &self.cap_pool_dynamic_storage_limits)?;
+            upsert::<cap_pool_meta_limits>(tx, &self.cap_pool_meta_limits)?;
+            upsert::<cap_pool_storage_limits>(tx, &self.cap_pool_storage_limits)?;
+            upsert::<cap_pool_dynamic_meta_limits>(tx, &self.cap_pool_dynamic_meta_limits)?;
+            upsert::<cap_pool_dynamic_storage_limits>(tx, &self.cap_pool_dynamic_storage_limits)?;
 
             Ok(())
         })
@@ -386,25 +384,25 @@ pub fn load_and_parse() -> Result<(StaticConfig, Option<DynamicConfigArgs>, Vec<
         }
     }
 
-    let tmp_runtime_config = if let Some(ref file) = args.runtime_config_file {
+    let dynamic_config = if let Some(ref file) = args.dynamic_config_file {
         match std::fs::read_to_string(file) {
             Ok(ref toml_config) => {
                 let config_values: DynamicConfigArgs = toml::from_str(toml_config)
-                    .with_context(|| "Couldn't parse runtime config file")?;
+                    .with_context(|| "Couldn't parse dynamic config file")?;
 
-                info_log.push(format!("Loaded runtime configuration from {file:?}"));
+                info_log.push(format!("Loaded dynamic configuration from {file:?}"));
 
                 Some(config_values)
             }
             Err(err) => {
-                if file != Path::new("/etc/beegfs/mgmtd-runtime.toml") {
+                if file != Path::new("/etc/beegfs/mgmtd-dynamic.toml") {
                     return Err(err).with_context(|| {
-                        format!("Could not open runtime config file at {file:?}")
+                        format!("Could not open dynamic config file at {file:?}")
                     });
                 }
 
                 info_log
-                    .push("No runtime config file found at default location, ignoring".to_string());
+                    .push("No dynamic config file found at default location, ignoring".to_string());
 
                 None
             }
@@ -413,7 +411,7 @@ pub fn load_and_parse() -> Result<(StaticConfig, Option<DynamicConfigArgs>, Vec<
         None
     };
 
-    Ok((args.into_config(), tmp_runtime_config, info_log))
+    Ok((args.into_config(), dynamic_config, info_log))
 }
 
 #[derive(Clone, Debug, ValueEnum, Deserialize)]

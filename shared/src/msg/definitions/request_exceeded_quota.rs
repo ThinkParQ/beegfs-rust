@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fetches user / group IDs which exceed the quota limits.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RequestExceededQuota {
     #[bee_serde(as = Int<i32>)]

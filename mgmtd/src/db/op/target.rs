@@ -6,7 +6,9 @@ use itertools::Itertools;
 use std::cmp::Ordering;
 use std::time::Duration;
 
-/// Represents a target entry.
+/// A target entry.
+///
+/// Since this is also used for meta targets, pool_id is optional.
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct Target {
@@ -74,7 +76,7 @@ pub fn get_uid(
 }
 
 /// Ensures that the list of given targets actually exists and returns an appropriate error if not.
-pub fn check_existence(
+pub fn validate_ids(
     tx: &mut Transaction,
     target_ids: &[TargetID],
     node_type: NodeTypeServer,

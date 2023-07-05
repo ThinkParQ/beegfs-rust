@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::GetMirrorBuddyGroups,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetMirrorBuddyGroupsResp {
-    match ci
+    match ctx
         .db_op(move |tx| db::buddy_group::get_with_type(tx, msg.node_type))
         .await
     {

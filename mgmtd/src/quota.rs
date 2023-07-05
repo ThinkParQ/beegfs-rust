@@ -1,30 +1,21 @@
-use crate::config::ConfigCache;
-use crate::db::quota_entry::QuotaData;
-use crate::notification::request_tcp_by_type;
-use crate::{db, MgmtdPool};
+//! Functionality for fetching and updating quota information from / to nodes and the database.
+
+use crate::app_context::AppContext;
+use crate::db;
+use crate::db::node::Node;
+use crate::db::quota_usage::QuotaData;
 use anyhow::{Context, Result};
+use shared::msg::SetExceededQuotaResp;
 use shared::*;
 use std::collections::HashSet;
 use std::path::Path;
 
-fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<()> {
-    let data = std::fs::read_to_string(path)?;
-    for id in data.split_whitespace().map(|e| e.parse()) {
-        read_into.insert(id.context("Invalid syntax in quota file {path}")?);
-    }
-
-    Ok(())
-}
-
-pub(crate) async fn update_and_distribute(
-    db: &db::Connection,
-    conn_pool: &MgmtdPool,
-    config: &ConfigCache,
-) -> Result<()> {
+/// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
+pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     // Fetch quota data from storage daemons
 
-    let targets = db
-        .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+    let targets = ctx
+        .db_op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await?;
 
     if !targets.is_empty() {
@@ -34,9 +25,11 @@ pub(crate) async fn update_and_distribute(
         );
     }
 
+    // The to-be-queried IDs
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
-    let user_ids_min = config.get().quota_user_system_ids_min;
+    // If configured, add system User IDS
+    let user_ids_min = ctx.get_config().quota_user_system_ids_min;
     if let Some(user_ids_min) = user_ids_min {
         system_ids::user_ids()
             .await
@@ -46,7 +39,8 @@ pub(crate) async fn update_and_distribute(
             });
     }
 
-    let group_ids_min = config.get().quota_group_system_ids_min;
+    // If configured, add system Group IDS
+    let group_ids_min = ctx.get_config().quota_group_system_ids_min;
     if let Some(group_ids_min) = group_ids_min {
         system_ids::group_ids()
             .await
@@ -56,29 +50,38 @@ pub(crate) async fn update_and_distribute(
             });
     }
 
-    if let Some(ref path) = config.get().quota_user_ids_file {
+    // If configured, add user IDs from file
+    if let Some(ref path) = ctx.get_config().quota_user_ids_file {
         try_read_quota_ids(path, &mut user_ids)?;
     }
-    if let Some(ref path) = config.get().quota_group_ids_file {
+
+    // If configured, add group IDs from file
+    if let Some(ref path) = ctx.get_config().quota_group_ids_file {
         try_read_quota_ids(path, &mut group_ids)?;
     }
 
-    if let Some(range) = config.get().quota_user_ids_range.clone() {
-        user_ids.extend(range.into_iter().map(QuotaID::from));
+    // If configured, add range based user IDs
+    if let Some(range) = &ctx.get_config().quota_user_ids_range {
+        user_ids.extend(range.clone().map(QuotaID::from));
     }
-    if let Some(range) = config.get().quota_group_ids_range.clone() {
-        group_ids.extend(range.into_iter().map(QuotaID::from));
+
+    // If configured, add range based group IDs
+    if let Some(range) = &ctx.get_config().quota_group_ids_range {
+        group_ids.extend(range.clone().map(QuotaID::from));
     }
 
     let mut tasks = vec![];
+    // Sends one request per target to the respective owner node
+    // Requesting is done concurrently.
     for t in targets {
         let pool_id = t.pool_id.try_into()?;
 
-        let cp = conn_pool.clone();
+        let ctx2 = ctx.clone();
         let user_ids2 = user_ids.clone();
 
+        // Users
         tasks.push(tokio::spawn(async move {
-            let res: Result<msg::GetQuotaInfoResp> = cp
+            let res: Result<msg::GetQuotaInfoResp> = ctx2
                 .request(
                     PeerID::Node(t.node_uid),
                     &msg::GetQuotaInfo::with_user_ids(user_ids2, t.target_id, pool_id),
@@ -88,11 +91,12 @@ pub(crate) async fn update_and_distribute(
             (t.target_id, res)
         }));
 
-        let cp = conn_pool.clone();
+        let ctx2 = ctx.clone();
         let group_ids2 = group_ids.clone();
 
+        // Groups
         tasks.push(tokio::spawn(async move {
-            let res: Result<msg::GetQuotaInfoResp> = cp
+            let res: Result<msg::GetQuotaInfoResp> = ctx2
                 .request(
                     PeerID::Node(t.node_uid),
                     &msg::GetQuotaInfo::with_group_ids(group_ids2, t.target_id, pool_id),
@@ -102,12 +106,14 @@ pub(crate) async fn update_and_distribute(
         }));
     }
 
+    // Await all the responses
     for t in tasks {
         let (target_id, resp) = t.await?;
         match resp {
             Ok(r) => {
-                db.op(move |tx| {
-                    db::quota_entry::upsert(
+                // Insert quota usage data into the database
+                ctx.db_op(move |tx| {
+                    db::quota_usage::upsert(
                         tx,
                         target_id,
                         r.quota_entry.into_iter().map(|e| QuotaData {
@@ -130,9 +136,9 @@ pub(crate) async fn update_and_distribute(
         }
     }
 
-    // calculate exceeded quota information and send to daemons
+    // calculate exceeded quota information and create messages
     let mut msges: Vec<msg::SetExceededQuota> = vec![];
-    for e in db.op(db::quota_entry::all_exceeded_quota_entries).await? {
+    for e in ctx.db_op(db::quota_usage::all_exceeded_quota_ids).await? {
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
                 && e.id_type == last.id_type
@@ -151,27 +157,59 @@ pub(crate) async fn update_and_distribute(
         });
     }
 
-    for e in msges {
-        let storage_responses: Vec<msg::SetExceededQuotaResp> =
-            request_tcp_by_type(conn_pool, db, NodeTypeServer::Storage, e.clone()).await?;
+    // Get all meta and storage nodes
+    let (meta_nodes, storage_nodes) = ctx
+        .db_op(move |tx| {
+            Ok((
+                db::node::get_with_type(tx, NodeType::Meta)?,
+                db::node::get_with_type(tx, NodeType::Storage)?,
+            ))
+        })
+        .await?;
+    let nodes: Vec<Node> = meta_nodes.into_iter().chain(storage_nodes).collect();
 
-        let meta_responses: Vec<msg::SetExceededQuotaResp> =
-            request_tcp_by_type(conn_pool, db, NodeTypeServer::Meta, e.clone()).await?;
-
-        let fail_count = storage_responses
-            .iter()
-            .chain(&meta_responses)
-            .fold(0, |acc, e| {
-                if e.result == OpsErr::SUCCESS {
-                    acc
-                } else {
-                    acc + 1
+    // Send all messages with exceeded quota information to all meta and storage nodes
+    // Since there is one message for each combination of (pool x (user, group) x (space, inode)),
+    // this might be very demanding, but can't do anything about that without changing meta and
+    // storage too.
+    // If this shows as a bottleneck, the requests could be done concurrently though.
+    for msg in msges {
+        let mut request_fails = 0;
+        let mut non_success_count = 0;
+        for node in &nodes {
+            match ctx
+                .request::<_, SetExceededQuotaResp>(PeerID::Node(node.uid), &msg)
+                .await
+            {
+                Ok(resp) => {
+                    if resp.result != OpsErr::SUCCESS {
+                        non_success_count += 1;
+                    }
                 }
-            });
-
-        if fail_count > 0 {
-            log::error!("Pushing exceeded quota IDs to nodes failed {fail_count} times");
+                Err(_) => {
+                    request_fails += 1;
+                }
+            }
         }
+
+        if request_fails > 0 || non_success_count > 0 {
+            log::error!(
+                "Pushing exceeded quota IDs to some nodes failed. Request failures: \
+                 {request_fails}, received non-success responses: {non_success_count}"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Tries to read quota IDs (users, groups) from a file
+///
+/// IDs must be in numerical form and separated by any whitespace.
+fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<()> {
+    let data = std::fs::read_to_string(path)?;
+    for id in data.split_whitespace().map(|e| e.parse()) {
+        read_into.insert(id.context("Invalid syntax in quota file {path}")?);
     }
 
     Ok(())

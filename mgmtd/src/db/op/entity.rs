@@ -11,6 +11,10 @@ use rusqlite::OptionalExtension;
 use shared::{impl_enum_to_sql_str, EntityAlias};
 use std::fmt::Display;
 
+/// A globally unique entity identifier.
+///
+/// "Globally" means spanning different entity types, e.g. nodes, targets, buddy groups and storage
+/// pools.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntityUID(i64);
 
@@ -28,6 +32,7 @@ impl From<i64> for EntityUID {
     }
 }
 
+/// The entity type.
 #[derive(Clone, Debug)]
 pub enum EntityType {
     Node,

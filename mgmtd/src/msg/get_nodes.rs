@@ -3,10 +3,10 @@ use db::misc::MetaRoot;
 
 pub(super) async fn handle(
     msg: msg::GetNodes,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetNodesResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             let res = (
                 db::node::get_with_type(tx, msg.node_type)?,

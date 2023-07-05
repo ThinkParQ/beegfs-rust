@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::Heartbeat,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::Ack {
     let _ = register_node::update(
         msg::RegisterNode {
@@ -18,7 +18,7 @@ pub(super) async fn handle(
             port: msg.port,
             port_tcp_unused: msg.port_tcp_unused,
         },
-        ci,
+        ctx,
     )
     .await;
 

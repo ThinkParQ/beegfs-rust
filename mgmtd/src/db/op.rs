@@ -14,14 +14,15 @@ pub mod misc;
 pub mod node;
 pub mod node_nic;
 pub mod quota_default_limit;
-pub mod quota_entry;
 pub mod quota_limit;
+pub mod quota_usage;
 pub mod storage_pool;
 pub mod target;
 
+/// Convienence methods meant for extending [rusqlite::Transaction].
+///
+/// See the implementation for description.
 trait TransactionExt {
-    fn is_count_zero(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<bool>;
-    fn is_count_zero_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<bool>;
     fn execute_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<usize>;
     fn execute_checked(
         &mut self,
@@ -40,18 +41,12 @@ trait TransactionExt {
         P: Params,
         F: FnOnce(&Row<'_>) -> rusqlite::Result<T>;
 }
+
+/// Extends [rusqlite::Transaction] with convenience methods.
 impl TransactionExt for Transaction<'_> {
-    fn is_count_zero(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<bool> {
-        let count: i64 = self.query_row(sql, params, |row| row.get(0))?;
-        Ok(count == 0)
-    }
-
-    fn is_count_zero_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<bool> {
-        let mut stmt = self.prepare_cached(sql)?;
-        let count: i64 = stmt.query_row(params, |row| row.get(0))?;
-        Ok(count == 0)
-    }
-
+    /// Executes and caches a non-SELECT statement.
+    ///
+    /// Convenience function for combination of  `.prepare_cached()` and `.execute()`.
     fn execute_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<usize> {
         let mut stmt = self.prepare_cached(sql)?;
         let affected = stmt.execute(params)?;
@@ -59,6 +54,10 @@ impl TransactionExt for Transaction<'_> {
         Ok(affected)
     }
 
+    /// Executes and checks a non-SELECT statement.
+    ///
+    /// After `.execute()` the statement, checks if the affected row count is within the given
+    /// range.
     fn execute_checked(
         &mut self,
         sql: &str,
@@ -71,6 +70,7 @@ impl TransactionExt for Transaction<'_> {
         Ok(affected)
     }
 
+    /// Combines [TransactionExt::execute_cached()] and [TransactionExt::execute_checked()]
     fn execute_checked_cached(
         &mut self,
         sql: &str,
@@ -83,6 +83,9 @@ impl TransactionExt for Transaction<'_> {
         Ok(affected)
     }
 
+    /// Executes and caches a SELECT statement returning one row.
+    ///
+    /// Convenience function for combination of  `.prepare_cached()` and `.query_row()`.
     fn query_row_cached<T, P, F>(&mut self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
     where
         P: Params,
@@ -93,6 +96,7 @@ impl TransactionExt for Transaction<'_> {
     }
 }
 
+/// Checks if the given count is within the given range and returns an error if not.
 fn check_count(count: usize, allowed_range: impl RangeBounds<usize>) -> rusqlite::Result<()> {
     if !allowed_range.contains(&count) {
         Err(rusqlite::Error::StatementChangedRows(count))

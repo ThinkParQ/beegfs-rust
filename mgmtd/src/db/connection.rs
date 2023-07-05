@@ -10,6 +10,9 @@ use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::path::Path;
 
+/// Creates a new database and initializes it.
+///
+/// Automatically creates the parent folder if it doesn't exist yest.
 pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
     if std::fs::try_exists(&path)? {
         bail!("Database file {path:?} already exists");
@@ -24,9 +27,9 @@ pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
     std::fs::File::create(&path)
         .with_context(|| format!("Creating database file {path:?} failed"))?;
 
-    let mut conn = rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+    let conn = rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
 
-    connection::setup_connection(&mut conn)?;
+    connection::setup_connection(&conn)?;
 
     conn.execute_batch(include_str!("schema/schema.sql"))
         .with_context(|| "Creating database schema failed")?;
@@ -37,24 +40,33 @@ pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
     Ok(())
 }
 
+/// Wraps an async database connection and provides means to use it
 #[derive(Clone, Debug)]
 pub struct Connection {
     conn: tokio_rusqlite::Connection,
 }
 
 impl Connection {
+    /// Opens a new asynchronous SQLite connection.
     pub async fn open(path: impl AsRef<Path> + Debug) -> Result<Self> {
         let conn =
             tokio_rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
                 .await?;
 
-        conn.call(setup_connection).await?;
+        conn.call(|conn| setup_connection(conn)).await?;
 
         log::info!("Opened database at {:?}", path);
 
         Ok(Self { conn })
     }
 
+    /// Executes code within the database thread.
+    ///
+    /// Automatically wraps the provided code in a transaction that is commited on successful
+    /// completion or rolled in case of an Error.
+    ///
+    /// Database access is provided using a single thread, so blocking or heavy computation must be
+    /// avoided.
     pub async fn op<
         T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
         R: Send + 'static,
@@ -95,7 +107,8 @@ impl AddrResolver for Connection {
     }
 }
 
-pub fn setup_connection(conn: &mut rusqlite::Connection) -> DbResult<()> {
+/// Sets connection parameters on an SQLite connection.
+pub fn setup_connection(conn: &rusqlite::Connection) -> DbResult<()> {
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
     conn.pragma_update(None, "journal_mode", "DELETE")?;

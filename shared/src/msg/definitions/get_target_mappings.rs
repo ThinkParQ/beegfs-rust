@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fetches a mapping target ID to its owner node ID
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetTargetMappings {}
 

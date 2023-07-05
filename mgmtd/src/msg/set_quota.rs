@@ -3,10 +3,10 @@ use crate::db::quota_limit::SpaceAndInodeLimits;
 
 pub(super) async fn handle(
     msg: msg::SetQuota,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::SetQuotaResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check pool ID exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {

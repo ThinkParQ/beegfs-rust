@@ -1,5 +1,8 @@
 use super::*;
 
+/// Sets exceeded quota information on server nodes.
+///
+/// Also used as list entries in [RequestExceededQuota]
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetExceededQuota {
     pub pool_id: StoragePoolID,

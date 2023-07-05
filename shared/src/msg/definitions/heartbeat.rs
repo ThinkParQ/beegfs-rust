@@ -1,5 +1,8 @@
 use super::*;
 
+/// Requests a heartbeat from a node.
+///
+/// Usually sent by UDP.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct HeartbeatRequest {}
 
@@ -7,9 +10,14 @@ impl Msg for HeartbeatRequest {
     const ID: MsgID = MsgID(1019);
 }
 
+/// Updates a node with the given information.
+///
+/// Similar to [RegisterNode]
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct Heartbeat {
+    /// Unused
     pub instance_version: u64,
+    /// Unused
     pub nic_list_version: u64,
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
@@ -20,12 +28,14 @@ pub struct Heartbeat {
     #[bee_serde(as = Int<u32>)]
     pub node_num_id: NodeID,
     // The root info is only relevant when sent from meta nodes. There it must contain the meta
-    // root nodes ID, but on other nodes it is just irrelevant and can be set to whatever.
-    // Can be Node ID or BuddyGroup ID
+    // root nodes ID, but on other nodes it is just irrelevant.
+    // Can be a Node ID or a BuddyGroup ID
     pub root_num_id: u32,
     #[bee_serde(as = BoolAsInt<u8>)]
     pub is_root_mirrored: bool,
     pub port: Port,
+    /// This is transmitted from other nodes but we decided to just use one port for TCP and UDP in
+    /// the future
     pub port_tcp_unused: Port,
     #[bee_serde(as = Seq<false, _>)]
     pub nic_list: Vec<Nic>,

@@ -18,11 +18,6 @@ pub enum DbError {
     /// expected not to (e.g. for a new entry).
     #[error("{name} with value {value} already exists")]
     ValueExists { name: String, value: String },
-    #[error("(De-)serialization of config field failed")]
-    ConfigSerialization {
-        #[from]
-        inner: serde_json::Error,
-    },
     /// The inner rusqlite crate returned an error.
     #[error(transparent)]
     Sqlite {

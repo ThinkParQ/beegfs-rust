@@ -68,3 +68,13 @@ instead of
 ```
 UNIQUE constraint failed: entities.alias: Error code 2067: A UNIQUE constraint failed
 ```
+
+# Error handling
+If an operation fails, the error should either be passed upwards by using `?` or handled by matching on the result. Panics are not caught, will abort the process and must therefore be avoided in normal operation. `panic!`, `.unwrap()`, `.expect()`, `assert!()` and other functions that fail by panicking must not be used.
+
+There are some exceptions:
+* It can (and has to) be used in tests - if something unexpectedly returns error, the test has to fail anyway
+* If an error shouldn't happen during normal operation and can not easily be recovered from, panicking is allowed. This includes `assert!()` or `debug_assert!()` for checking invariants.
+* If a value demands for an `.unwrap()` of an `Option` and it is clear from the surrounding code that it cannot be `None`, unwrapping is also ok as a last resort. It is highly preferred though to restructure the code instead so that is not necessary anymore. In almost all cases it is possible (e.g. by using the inner value before putting it in the `Option` or use one of the countless helper functions`).
+
+If `.unwrap()` should be used, consider using `.expect()` instead and provide additional information.

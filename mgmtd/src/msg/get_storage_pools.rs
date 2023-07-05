@@ -3,11 +3,11 @@ use shared::msg::types::{BuddyGroupCapacityPools, TargetCapacityPools};
 
 pub(super) async fn handle(
     _msg: msg::GetStoragePools,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetStoragePoolsResp {
     let pools = match async move {
-        let (targets, pools, buddy_groups) = ci
+        let (targets, pools, buddy_groups) = ctx
             .db_op(move |tx| {
                 let pools = db::storage_pool::get_all(tx)?;
                 let targets = db::cap_pool::for_storage_targets(tx)?;

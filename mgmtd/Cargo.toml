@@ -44,7 +44,7 @@ name = "beegfs-mgmtd"
 assets = [
     { source = "target/release/mgmtd", dest = "/opt/beegfs/sbin/beegfs-mgmtd", mode = "755" },
     { source = "assets/mgmtd.toml", dest = "/etc/beegfs/", mode = "644" },
-    { source = "assets/mgmtd-runtime.toml", dest = "/etc/beegfs/", mode = "644" },
+    { source = "assets/mgmtd-dynamic.toml", dest = "/etc/beegfs/", mode = "644" },
     { source = "assets/mgmtd.auth", dest = "/etc/beegfs/", mode = "600" },
     { source = "assets/beegfs-mgmtd.service", dest = "/etc/systemd/system/", mode = "644" },
 ]
@@ -63,7 +63,7 @@ assets = [
         "644",
     ],
     [
-        "assets/mgmtd-runtime.toml",
+        "assets/mgmtd-dynamic.toml",
         "/etc/beegfs/",
         "644",
     ],

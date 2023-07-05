@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) async fn handle(
     _msg: msg::SetMirrorBuddyGroupResp,
-    _ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    _ctx: &impl AppContext,
+    _req: &impl Request,
 ) {
     // response from server nodes to SetMirrorBuddyGroup notification
 }

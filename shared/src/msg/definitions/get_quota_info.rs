@@ -1,5 +1,8 @@
 use super::*;
 
+/// Fetch quota info for the given type and list or range of IDs.
+///
+/// Used by the ctl to query management and by the managment to query the nodes
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GetQuotaInfo {
     pub query_type: QuotaQueryType,
@@ -8,7 +11,13 @@ pub struct GetQuotaInfo {
     pub id_range_end: QuotaID,
     pub id_list: Vec<QuotaID>,
     pub transfer_method: GetQuotaInfoTransferMethod,
+    /// If "one request per target" is chosen as transfer method, the target ID goes in here.
+    ///
+    /// It is the only mode ctl uses, and the only mode we use to send requests to the node.
     pub target_id: TargetID,
+    /// If targets shall be combined by pool in one response message, the pool ID goes in here.
+    ///
+    /// Completely unused.
     pub pool_id: StoragePoolID,
 }
 
@@ -52,6 +61,7 @@ impl Msg for GetQuotaInfo {
     const ID: MsgID = MsgID(2097);
 }
 
+// Custom BeeSerde impl because (de-)serialization actions depend on msg data
 impl BeeSerde for GetQuotaInfo {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.i32(self.query_type.into())?;

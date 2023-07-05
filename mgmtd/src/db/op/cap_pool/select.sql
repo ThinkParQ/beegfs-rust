@@ -1,12 +1,12 @@
 WITH
--- Select the wanted entities ((meta, storage), (target, buddy_group)) with their free (space, inodes)
--- information (see the separate statement files)
+-- Select chosen entities ((meta, storage), (target, buddy_group)) including their free
+-- (space, inodes) information (see the separate statement files)
 -- In case of buddy groups, choose the lower value from both of their member targets
 entities AS (
     {select_entities}
 ),
--- Groups up the data from above by each cap pool (calculated by the given limits) AND storage pool id
--- (0 for meta) and calculates their spread from all their targets/groups
+-- Groups up the data from above by each cap pool (calculated by the given limits) AND storage pool
+-- id (0 for meta) and calculates their spread from all their targets/groups
 spreads AS (
     SELECT pool_id,
         CASE
@@ -19,8 +19,8 @@ spreads AS (
     FROM entities
     GROUP BY pool_id, cap_pool
 ),
--- Takes the (pool, cap pool) rows with their spreads, determines the limit to apply (normal or dynamic)
--- and merges normal and low cap rows for the same pool_id into one row
+-- Takes the (pool, cap pool) rows with their spreads, determines the limit to apply (normal or
+-- dynamic) and merges normal and low cap rows for the same pool_id into one row
 limits AS (
     SELECT DISTINCT b.pool_id,
         CASE WHEN COALESCE(n.space_spread, 0) >= :space_normal_threshold THEN :space_low_dynamic_limit ELSE :space_low_limit END AS space_low_limit,

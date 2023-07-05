@@ -1,5 +1,3 @@
-// TODO remove
-#![allow(unused)]
 #![feature(test)]
 
 pub mod config;
@@ -8,8 +6,7 @@ use crate::config::Config::*;
 use crate::config::StaticConfig;
 use anyhow::{anyhow, Result};
 use shared::conn::msg_dispatch::*;
-use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig, PeerID, SocketAddrResolver};
-use shared::msg::{self};
+use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig, SocketAddrResolver};
 use shared::{shutdown, NodeTypeServer};
 
 #[derive(Clone, Debug)]
@@ -17,10 +14,7 @@ struct EmptyMsgHandler {}
 
 #[async_trait::async_trait]
 impl DispatchRequest for EmptyMsgHandler {
-    async fn dispatch_request(
-        &mut self,
-        _req: impl RequestConnectionController + DeserializeMsg,
-    ) -> Result<()> {
+    async fn dispatch_request(&self, _req: impl Request) -> Result<()> {
         Err(anyhow!("Unexpected incoming stream request"))
     }
 }
@@ -38,7 +32,7 @@ pub async fn run(static_config: StaticConfig) -> Result<()> {
     conn_pool_actor.start_tasks(EmptyMsgHandler {}, shutdown);
 
     CommandExecutor {
-        conn,
+        _conn: conn,
         static_config,
     }
     .execute()
@@ -46,7 +40,7 @@ pub async fn run(static_config: StaticConfig) -> Result<()> {
 }
 
 struct CommandExecutor {
-    conn: ConnPool<SocketAddrResolver>,
+    _conn: ConnPool<SocketAddrResolver>,
     static_config: StaticConfig,
 }
 
@@ -61,23 +55,23 @@ impl CommandExecutor {
                         unimplemented!()
                     }
                     Disable => unimplemented!(),
-                    SetUpdateInterval { interval_secs } => {
+                    SetUpdateInterval { interval_secs: _ } => {
                         unimplemented!()
                     }
                 }
             }
             Config(cmd) => match cmd {
-                Get { ref key } => {
+                Get { key: _ } => {
                     unimplemented!()
                 }
             },
             CapPools(cmd) => match cmd {
                 config::CapPools::Set {
                     node_type,
-                    inode_low_limit,
-                    inode_emergency_limit,
-                    space_low_limit,
-                    space_emergency_limit,
+                    inode_low_limit: _,
+                    inode_emergency_limit: _,
+                    space_low_limit: _,
+                    space_emergency_limit: _,
                 } => {
                     // let mut limits = match node_type {
                     //     NodeTypeServer::Meta => unimplemented!(),

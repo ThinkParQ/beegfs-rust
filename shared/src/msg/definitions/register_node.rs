@@ -1,8 +1,13 @@
 use super::*;
 
+/// Registers a new node with the given information.
+///
+/// Similar to [Heartbeat]
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterNode {
+    /// Unused
     pub instance_version: u64,
+    /// Unused
     pub nic_list_version: u64,
     #[bee_serde(as = CStr<0>)]
     pub node_alias: EntityAlias,
@@ -16,6 +21,8 @@ pub struct RegisterNode {
     #[bee_serde(as = BoolAsInt<u8>)]
     pub is_root_mirrored: bool,
     pub port: Port,
+    /// This is transmitted from other nodes but we decided to just use one port for TCP and UDP in
+    /// the future
     pub port_tcp_unused: Port,
 }
 

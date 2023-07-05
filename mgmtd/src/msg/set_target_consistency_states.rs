@@ -2,15 +2,15 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetTargetConsistencyStates,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::SetTargetConsistencyStatesResp {
     match async {
         let msg = msg.clone();
 
-        ci.db_op(move |tx| {
+        ctx.db_op(move |tx| {
             // Check given target IDs exist
-            db::target::check_existence(tx, &msg.target_ids, msg.node_type)?;
+            db::target::validate_ids(tx, &msg.target_ids, msg.node_type)?;
 
             if msg.set_online {
                 db::node::update_last_contact_for_targets(tx, &msg.target_ids, msg.node_type)?;
@@ -24,8 +24,11 @@ pub(super) async fn handle(
         })
         .await?;
 
-        ci.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
-            .await;
+        ctx.notify_nodes(
+            &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+            &msg::RefreshTargetStates { ack_id: "".into() },
+        )
+        .await;
 
         Ok(()) as DbResult<()>
     }

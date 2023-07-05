@@ -219,7 +219,7 @@ mod test {
 
     #[bench]
     fn bench_quota_limits_read(b: &mut Bencher) {
-        let mut conn = setup_benchmark();
+        let mut conn = setup_on_disk_db();
         let mut counter = 0;
 
         transaction(&mut conn, |tx| {
@@ -257,7 +257,7 @@ mod test {
 
     #[bench]
     fn bench_quota_limits_write(b: &mut Bencher) {
-        let mut conn = setup_benchmark();
+        let mut conn = setup_on_disk_db();
         let mut counter = 0;
 
         b.iter(|| {

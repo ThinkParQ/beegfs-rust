@@ -1,42 +1,30 @@
-use crate::config::ConfigCache;
+//! Contains timers executing periodic tasks.
+
+use crate::app_context::AppContext;
 use crate::db::{self};
-use crate::notification::notify_nodes;
 use crate::quota::update_and_distribute;
-use crate::MgmtdPool;
 use shared::shutdown::Shutdown;
-use shared::{log_error_chain, msg};
+use shared::{log_error_chain, msg, NodeType};
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
-pub(crate) fn start_tasks(
-    db: db::Connection,
-    conn_pool: MgmtdPool,
-    config: ConfigCache,
-    shutdown: Shutdown,
-) {
+/// Starts the timed tasks.
+pub(crate) fn start_tasks(ctx: impl AppContext, shutdown: Shutdown) {
     // TODO send out timer based RefreshTargetStates notification if a reachability
     // state changed ?
 
-    tokio::spawn(delete_stale_clients(
-        db.clone(),
-        config.clone(),
-        shutdown.clone(),
-    ));
-    tokio::spawn(update_quota(
-        db.clone(),
-        conn_pool.clone(),
-        config.clone(),
-        shutdown.clone(),
-    ));
-    tokio::spawn(check_for_switchover(db, conn_pool, config, shutdown));
+    tokio::spawn(delete_stale_clients(ctx.clone(), shutdown.clone()));
+    tokio::spawn(update_quota(ctx.clone(), shutdown.clone()));
+    tokio::spawn(switchover(ctx, shutdown));
 }
 
-async fn delete_stale_clients(db: db::Connection, config: ConfigCache, mut shutdown: Shutdown) {
+/// Deletes client nodes from the database which haven't responded for the configured time.
+async fn delete_stale_clients(ctx: impl AppContext, mut shutdown: Shutdown) {
     loop {
-        let timeout = config.get().client_auto_remove_timeout;
+        let timeout = ctx.get_config().client_auto_remove_timeout;
 
-        match db
-            .op(move |tx| db::node::delete_stale_clients(tx, timeout))
+        match ctx
+            .db_op(move |tx| db::node::delete_stale_clients(tx, timeout))
             .await
         {
             Ok(affected) => {
@@ -56,22 +44,18 @@ async fn delete_stale_clients(db: db::Connection, config: ConfigCache, mut shutd
     log::debug!("Timed task delete_stale_clients has been shut down");
 }
 
-async fn update_quota(
-    db: db::Connection,
-    conn_pool: MgmtdPool,
-    config: ConfigCache,
-    mut shutdown: Shutdown,
-) {
+/// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
+async fn update_quota(ctx: impl AppContext, mut shutdown: Shutdown) {
     loop {
-        if config.get().quota_enable {
-            match update_and_distribute(&db, &conn_pool, &config).await {
+        if ctx.get_config().quota_enable {
+            match update_and_distribute(&ctx).await {
                 Ok(_) => {}
                 Err(err) => log_error_chain!(err, "Updating quota failed"),
             }
         }
 
         tokio::select! {
-            _ = sleep(config.get().quota_update_interval) => {}
+            _ = sleep(ctx.get_config().quota_update_interval) => {}
             _ = shutdown.wait() => { break; }
         }
     }
@@ -79,12 +63,8 @@ async fn update_quota(
     log::debug!("Timed task update_quota has been shut down");
 }
 
-async fn check_for_switchover(
-    db: db::Connection,
-    conn_pool: MgmtdPool,
-    config: ConfigCache,
-    mut shutdown: Shutdown,
-) {
+/// Finds buddy groups with switchover condition, swaps them and notifies nodes.
+async fn switchover(ctx: impl AppContext, mut shutdown: Shutdown) {
     let mut timer = tokio::time::interval(Duration::from_secs(10));
     timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -94,10 +74,10 @@ async fn check_for_switchover(
             _ = shutdown.wait() => { break; }
         }
 
-        let timeout = config.get().node_offline_timeout;
+        let timeout = ctx.get_config().node_offline_timeout;
 
-        match db
-            .op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
+        match ctx
+            .db_op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
             .await
         {
             Ok(swapped) => {
@@ -106,9 +86,8 @@ async fn check_for_switchover(
                         "A switchover was triggered for the following buddy groups: {swapped:?}"
                     );
 
-                    notify_nodes(
-                        &conn_pool,
-                        &db,
+                    ctx.notify_nodes(
+                        &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                         &msg::RefreshTargetStates { ack_id: "".into() },
                     )
                     .await;

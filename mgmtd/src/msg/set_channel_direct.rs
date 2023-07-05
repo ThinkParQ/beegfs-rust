@@ -2,9 +2,8 @@ use super::*;
 
 pub(super) async fn handle(
     _msg: msg::SetChannelDirect,
-    _ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    _ctx: &impl AppContext,
+    _req: &impl Request,
 ) {
-    // TODO implement this
     // do nothing
 }

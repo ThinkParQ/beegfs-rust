@@ -1,5 +1,5 @@
 use super::msg_buffer::MsgBuffer;
-use super::msg_dispatch::{DispatchRequest, SocketRequestChannel, StreamRequestChannel};
+use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::AddrResolver;
 use crate::conn::PeerID;
@@ -332,7 +332,7 @@ impl<A: AddrResolver> ConnPoolActor<A> {
             bail!("Unauthenticated stream from {:?}", stream.peer_id);
         }
 
-        let req = StreamRequestChannel {
+        let req = StreamRequest {
             stream,
             msg_buf: buf,
         };
@@ -366,14 +366,14 @@ impl<A: AddrResolver> ConnPoolActor<A> {
 
     async fn on_incoming_datagram(
         sock: Arc<UdpSocket>,
-        mut msg_handler: impl DispatchRequest,
+        msg_handler: impl DispatchRequest,
         store_tx: UnboundedSender<Cmd>,
     ) -> Result<()> {
         let mut buf = ConnPool::<A>::pop_or_create_buffer(&store_tx).await?;
         let peer_addr = buf.recv_from_socket(&sock).await?;
 
         tokio::spawn(async move {
-            let req = SocketRequestChannel {
+            let req = SocketRequest {
                 sock,
                 peer_addr,
                 msg_buf: &mut buf,
@@ -410,40 +410,37 @@ async fn store_task(
     loop {
         tokio::select! {
             cmd = rx.recv() => {
+                let Some(cmd) = cmd else {
+                    break
+                };
+
                 match cmd {
-                    Some(cmd) => {
-                        match cmd {
-                            Cmd::PushOutgoing(generic_addr, stream) => {
-                                match outbound_conns.get_mut(&generic_addr) {
-                                    Some(c) => c.push(stream),
-                                    None => {
-                                        outbound_conns.insert(generic_addr, vec![stream]);
-                                    }
-                                }
-                            }
-                            Cmd::PopOutgoing(generic_addr, tx) => {
-                                let conn = outbound_conns.get_mut(&generic_addr).and_then(|e| e.pop());
-                                let _ = tx.send(conn);
-                            }
-                            Cmd::PushIncoming(handle) => {
-                                inbound_handles.push(handle);
-                            }
-                            Cmd::GetSocket(tx) => {
-                                let _ = tx.send(sockets.first().cloned());
-                            }
-                            Cmd::PushBuffer(buf) => {
-                                msg_buffers.push_back(buf);
-                            }
-                            Cmd::PopBuffer(tx) => {
-                                let buf = msg_buffers.pop_front();
-                                let _ = tx.send(buf);
+                    Cmd::PushOutgoing(generic_addr, stream) => {
+                        match outbound_conns.get_mut(&generic_addr) {
+                            Some(c) => c.push(stream),
+                            None => {
+                                outbound_conns.insert(generic_addr, vec![stream]);
                             }
                         }
                     }
-
-                    None => { break; }
+                    Cmd::PopOutgoing(generic_addr, tx) => {
+                        let conn = outbound_conns.get_mut(&generic_addr).and_then(|e| e.pop());
+                        let _ = tx.send(conn);
+                    }
+                    Cmd::PushIncoming(handle) => {
+                        inbound_handles.push(handle);
+                    }
+                    Cmd::GetSocket(tx) => {
+                        let _ = tx.send(sockets.first().cloned());
+                    }
+                    Cmd::PushBuffer(buf) => {
+                        msg_buffers.push_back(buf);
+                    }
+                    Cmd::PopBuffer(tx) => {
+                        let buf = msg_buffers.pop_front();
+                        let _ = tx.send(buf);
+                    }
                 }
-
             }
 
             _ = shutdown.wait() => { break; }

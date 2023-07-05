@@ -7,9 +7,11 @@ use rusqlite::{Connection, Transaction};
 use std::sync::atomic::{AtomicU64, Ordering};
 pub use test::Bencher;
 
+/// Sets ups a fresh database instance in memory and fills, with the test data set and provides a
+/// transaction handle.
 pub fn with_test_data(op: impl FnOnce(&mut Transaction)) {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-    connection::setup_connection(&mut conn).unwrap();
+    connection::setup_connection(&conn).unwrap();
 
     // Setup test data
     conn.execute_batch(include_str!("schema/schema.sql"))
@@ -19,16 +21,26 @@ pub fn with_test_data(op: impl FnOnce(&mut Transaction)) {
     conn.execute_batch(include_str!("schema/test_data.sql"))
         .unwrap();
 
-    let mut tx = conn.transaction().unwrap();
-    op(&mut tx);
-    tx.commit().unwrap();
+    transaction(&mut conn, op)
 }
 
 static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-pub fn setup_benchmark() -> rusqlite::Connection {
+/// Sets up a fresh database instance on disk and provides the connection handle.
+///
+/// Does NOT wrap the provided closure in a transaction. To do that, use [transaction()] where
+/// appropriate.
+///
+/// Each test or benchmark using this gets its own database file when run within the same test
+/// binary. This allows tests to be run in parallel even if they use an on-disk file. This should of
+/// course still be avoided in case of benchmarks (and is by default, when using the experimental
+/// Bencher from [test]).
+///
+/// The disk location of the database instance can be set by the environment variable
+/// `BEEGFS_TEST_DB_DIR`.
+pub fn setup_on_disk_db() -> rusqlite::Connection {
     let benchmark_dir =
-        std::env::var("BEEGFS_BENCHMARK_DIR").unwrap_or("/tmp/beegfs_benchmarks".to_string());
+        std::env::var("BEEGFS_TEST_DB_DIR").unwrap_or("/tmp/beegfs_test_db".to_string());
 
     let counter = DB_COUNTER.fetch_add(1, Ordering::Relaxed);
     let path = format!("{benchmark_dir}/{counter}.db");
@@ -37,8 +49,8 @@ pub fn setup_benchmark() -> rusqlite::Connection {
     let _ = std::fs::remove_file(&path);
     initialize(&path).unwrap();
 
-    let mut conn = rusqlite::Connection::open(&path).unwrap();
-    connection::setup_connection(&mut conn).unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    connection::setup_connection(&conn).unwrap();
 
     conn.execute_batch(include_str!("schema/test_data.sql"))
         .unwrap();
@@ -46,6 +58,9 @@ pub fn setup_benchmark() -> rusqlite::Connection {
     conn
 }
 
+/// Sets up a transaction for the given [rusqlite::Connection] and executes the provided code.
+///
+/// Meant for tests and does not return results.
 pub fn transaction(conn: &mut Connection, op: impl FnOnce(&mut Transaction)) {
     let mut tx = conn.transaction().unwrap();
     op(&mut tx);

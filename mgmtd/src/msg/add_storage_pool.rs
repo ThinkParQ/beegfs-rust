@@ -3,10 +3,10 @@ use crate::db::entity::EntityType;
 
 pub(super) async fn handle(
     msg: msg::AddStoragePool,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::AddStoragePoolResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check alias is free
             if db::entity::get_uid(tx, &msg.alias)?.is_some() {
@@ -14,13 +14,9 @@ pub(super) async fn handle(
             }
 
             // Check all of the given target IDs exist
-            db::target::check_existence(tx, &msg.move_target_ids, NodeTypeServer::Storage)?;
+            db::target::validate_ids(tx, &msg.move_target_ids, NodeTypeServer::Storage)?;
             // Check all of the given buddy group IDs exist
-            db::buddy_group::check_existence(
-                tx,
-                &msg.move_buddy_group_ids,
-                NodeTypeServer::Storage,
-            )?;
+            db::buddy_group::validate_ids(tx, &msg.move_buddy_group_ids, NodeTypeServer::Storage)?;
 
             let pool_id = if msg.pool_id != StoragePoolID::ZERO {
                 // Check given pool_id is free
@@ -52,8 +48,11 @@ pub(super) async fn handle(
                 msg.pool_id,
             );
 
-            ci.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
-                .await;
+            ctx.notify_nodes(
+                &[NodeType::Meta, NodeType::Storage],
+                &msg::RefreshStoragePools { ack_id: "".into() },
+            )
+            .await;
 
             msg::AddStoragePoolResp {
                 result: OpsErr::SUCCESS,

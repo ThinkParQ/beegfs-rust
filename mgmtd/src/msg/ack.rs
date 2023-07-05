@@ -1,9 +1,9 @@
 use super::*;
 
-pub(super) async fn handle(
-    msg: msg::Ack,
-    _ci: impl ComponentInteractor,
-    rcc: &impl RequestConnectionController,
-) {
-    log::debug!("Ignoring Ack from {:?}: ID: {:?}", rcc.peer(), msg.ack_id);
+pub(super) async fn handle(msg: msg::Ack, _ctx: &impl AppContext, req: &impl Request) {
+    log::debug!(
+        "Ignoring Ack from {:?}: ID: {:?}",
+        req.peer_id(),
+        msg.ack_id
+    );
 }

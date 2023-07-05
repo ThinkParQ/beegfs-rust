@@ -7,9 +7,8 @@ use std::time::Duration;
 static REGEX: OnceLock<Regex> = OnceLock::new();
 
 fn parse(input: &str) -> Result<Duration, ()> {
-    let regex = REGEX.get_or_init(|| {
-        Regex::new(r"^(\d+) *(([num]?s|[mhd])?)$").expect("Failed to compile Regex")
-    });
+    let regex = REGEX
+        .get_or_init(|| Regex::new(r"^(\d+) *(([num]?s|[mhd])?)$").expect("Regex must be valid"));
     let captures = regex.captures(input.trim()).ok_or(())?;
     let number = captures.get(1).ok_or(())?;
     let suffix = captures.get(2).ok_or(())?;
@@ -22,10 +21,9 @@ fn parse(input: &str) -> Result<Duration, ()> {
         "ms" => Duration::from_millis(number),
         "s" => Duration::from_secs(number),
         "" => Duration::from_secs(number),
-        // TODO handle possible overflow?
-        "m" => Duration::from_secs(number * 60),
-        "h" => Duration::from_secs(number * 60 * 60),
-        "d" => Duration::from_secs(number * 24 * 60 * 60),
+        "m" => Duration::from_secs(number.saturating_mul(60)),
+        "h" => Duration::from_secs(number.saturating_mul(60 * 60)),
+        "d" => Duration::from_secs(number.saturating_mul(24 * 60 * 60)),
         _ => return Err(()),
     };
 

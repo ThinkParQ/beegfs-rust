@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fetches all storage pools.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetStoragePools {}
 

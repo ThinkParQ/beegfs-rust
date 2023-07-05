@@ -20,7 +20,6 @@ pub struct BuddyGroup {
     pub secondary_free_space: Option<u64>,
     pub secondary_free_inodes: Option<u64>,
 }
-
 /// Retrieve a list of nodes filtered by node type.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> DbResult<Vec<BuddyGroup>> {
     let mut stmt = tx.prepare_cached(
@@ -77,7 +76,7 @@ pub fn get_uid(
 
 /// Ensures that the list of given buddy groups actually exists and returns an appropriate error if
 /// not.
-pub fn check_existence(
+pub fn validate_ids(
     tx: &mut Transaction,
     buddy_group_ids: &[BuddyGroupID],
     node_type: NodeTypeServer,
@@ -112,43 +111,49 @@ pub fn check_existence(
 /// Returns the ID of the new buddy group.
 pub fn insert(
     tx: &mut Transaction,
-    id: Option<BuddyGroupID>,
+    buddy_group_id: Option<BuddyGroupID>,
     node_type: NodeTypeServer,
     primary_target_id: TargetID,
     secondary_target_id: TargetID,
 ) -> DbResult<BuddyGroupID> {
     let node_type_table = format!("{}_buddy_groups", node_type.as_sql_str());
 
-    let new_id = if let Some(id) = id {
-        id
+    let new_id = if let Some(buddy_group_id) = buddy_group_id {
+        buddy_group_id
     } else {
         misc::find_new_id(tx, &node_type_table, "buddy_group_id", 1..=0xFFFF)?.into()
     };
 
-    if !tx.is_count_zero(
+    // Check that both given target IDs are not assigned to any buddy group
+    if tx.query_row(
         &format!(
             "SELECT COUNT(*) FROM {node_type_table}
              WHERE primary_target_id IN (?1, ?2) OR secondary_target_id IN (?1, ?2)"
         ),
         [primary_target_id, secondary_target_id],
-    )? {
+        |row| row.get::<_, i64>(0),
+    )? > 0
+    {
         return Err(DbError::other(format!(
             "One or both of the given target IDs {primary_target_id} and {secondary_target_id} \
              are already part of a buddy group"
         )));
     }
 
+    // Insert entity
     let new_uid = entity::insert(
         tx,
         EntityType::BuddyGroup,
         &format!("{node_type}_buddy_group_{new_id}").into(),
     )?;
 
+    // Insert generic buddy group
     tx.execute(
         "INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES (?1, ?2)",
         params![new_uid, node_type],
     )?;
 
+    // Insert type specific buddy group
     tx.execute(
         &format!(
             r#"
@@ -173,7 +178,7 @@ pub fn insert(
     Ok(new_id)
 }
 
-/// Change the storage pool of the given buddy group IDs to a new one.
+/// Changes the storage pool of the given buddy group IDs to a new one.
 pub(crate) fn update_storage_pools(
     tx: &mut Transaction,
     new_pool_id: StoragePoolID,
@@ -227,50 +232,41 @@ pub fn check_and_swap_buddies(
     tx: &mut Transaction,
     timeout: Duration,
 ) -> DbResult<Vec<(BuddyGroupID, NodeTypeServer)>> {
-    // TODO use constants for timeout?
-    let mut select = tx.prepare_cached(
-        r#"
-        SELECT buddy_group_id, node_type FROM all_buddy_groups_v
-        WHERE (
-            primary_last_contact_s >= ?1
-            OR
-            primary_consistency == "needs_resync"
-        )
-        AND secondary_consistency == "good"
-        AND secondary_last_contact_s < (?1 / 2)
-        "#,
-    )?;
+    let affected_groups: Vec<(BuddyGroupID, NodeTypeServer)> = {
+        let mut select = tx.prepare_cached(
+            r#"
+            SELECT buddy_group_id, node_type FROM all_buddy_groups_v
+            WHERE (
+                primary_last_contact_s >= ?1
+                OR
+                primary_consistency == "needs_resync"
+            )
+            AND secondary_consistency == "good"
+            AND secondary_last_contact_s < (?1 / 2)
+            "#,
+        )?;
 
-    let mut update_meta = tx.prepare_cached(
-        r#"
-        UPDATE meta_buddy_groups
-        SET primary_target_id = secondary_target_id, secondary_target_id = primary_target_id
-        WHERE buddy_group_id = ?1
-        "#,
-    )?;
+        let affected_groups = select
+            .query_map([timeout.as_secs()], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .try_collect()?;
 
-    let mut update_storage = tx.prepare_cached(
-        r#"
-        UPDATE storage_buddy_groups
-        SET primary_target_id = secondary_target_id, secondary_target_id = primary_target_id
-        WHERE buddy_group_id = ?1
-        "#,
-    )?;
+        #[allow(clippy::let_and_return)]
+        affected_groups
+    };
 
-    let mut rows = select.query([timeout.as_secs()])?;
-
-    let mut affected_groups = vec![];
-    while let Some(row) = rows.next()? {
-        let id: BuddyGroupID = row.get(0)?;
-        let node_type: NodeTypeServer = row.get(1)?;
-
-        let affected = match node_type {
-            NodeTypeServer::Meta => update_meta.execute([id])?,
-            NodeTypeServer::Storage => update_storage.execute([id])?,
-        };
-        check_count(affected, 1..=1)?;
-
-        affected_groups.push((id, node_type));
+    for (id, node_type) in &affected_groups {
+        tx.execute_checked(
+            &format!(
+                r#"
+                UPDATE {}_buddy_groups
+                SET primary_target_id = secondary_target_id, secondary_target_id = primary_target_id
+                WHERE buddy_group_id = ?1
+                "#,
+                node_type.as_sql_str()
+            ),
+            [id],
+            1..=1,
+        )?;
     }
 
     Ok(affected_groups)
@@ -285,7 +281,10 @@ pub fn prepare_storage_deletion(
     tx: &mut Transaction,
     id: BuddyGroupID,
 ) -> DbResult<(NodeUID, NodeUID)> {
-    if !tx.is_count_zero("SELECT COUNT(*) FROM client_nodes", [])? {
+    if tx.query_row("SELECT COUNT(*) FROM client_nodes", [], |row| {
+        row.get::<_, i64>(0)
+    })? > 0
+    {
         return Err(DbError::other(
             "Can't remove storage buddy group while clients are still mounted",
         ));

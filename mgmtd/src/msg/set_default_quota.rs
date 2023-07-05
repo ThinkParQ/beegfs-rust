@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetDefaultQuota,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::SetDefaultQuotaResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check pool ID exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {
@@ -16,7 +16,7 @@ pub(super) async fn handle(
                 0 => {
                     db::quota_default_limit::delete(tx, msg.pool_id, msg.id_type, QuotaType::Space)?
                 }
-                n => db::quota_default_limit::update(
+                n => db::quota_default_limit::upsert(
                     tx,
                     msg.pool_id,
                     msg.id_type,
@@ -32,7 +32,7 @@ pub(super) async fn handle(
                     msg.id_type,
                     QuotaType::Inodes,
                 )?,
-                n => db::quota_default_limit::update(
+                n => db::quota_default_limit::upsert(
                     tx,
                     msg.pool_id,
                     msg.id_type,

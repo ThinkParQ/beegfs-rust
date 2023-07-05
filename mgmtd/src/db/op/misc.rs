@@ -5,10 +5,14 @@ use rusqlite::types::FromSql;
 use std::ops::RangeInclusive;
 use std::time::Duration;
 
-pub fn calc_reachability_state(age: Duration, timeout: Duration) -> TargetReachabilityState {
-    if age < timeout {
+/// Calculate reachability state as requested by old BeeGFS code.
+pub fn calc_reachability_state(
+    contact_age: Duration,
+    timeout: Duration,
+) -> TargetReachabilityState {
+    if contact_age < timeout {
         TargetReachabilityState::Online
-    } else if age < timeout / 2 {
+    } else if contact_age < timeout / 2 {
         TargetReachabilityState::ProbablyOffline
     } else {
         TargetReachabilityState::Offline
@@ -77,7 +81,7 @@ pub enum MetaRoot {
     Mirrored(BuddyGroupID),
 }
 
-/// Retrieved the meta root information of the BeeGFS system.
+/// Retrieves the meta root information of the BeeGFS system.
 pub fn get_meta_root(tx: &mut Transaction) -> DbResult<MetaRoot> {
     let mut stmt = tx.prepare_cached(
         r#"

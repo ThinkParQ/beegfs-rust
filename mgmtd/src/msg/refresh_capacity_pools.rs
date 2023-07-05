@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::RefreshCapacityPools,
-    _ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    _ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::Ack {
     // This message is superfluos and therefore ignored. It is meant to tell the
     // mgmtd to trigger a capacity pool pull immediately after a node starts.

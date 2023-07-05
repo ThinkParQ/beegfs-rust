@@ -23,9 +23,10 @@ pub struct EntityWithCapPool {
     pub cap_pool: CapacityPool,
 }
 
+/// Calculate capacity pools for meta targets
 pub fn for_meta_targets(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
-    let limits = config::get_one::<config::cap_pool_meta_limits>(tx)?;
-    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_meta_limits>(tx)?;
+    let limits = config::get::<config::cap_pool_meta_limits>(tx)?;
+    let dynamic_limits = config::get::<config::cap_pool_dynamic_meta_limits>(tx)?;
 
     select(
         tx,
@@ -35,9 +36,10 @@ pub fn for_meta_targets(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>
     )
 }
 
+/// Calculate capacity pools for storage targets
 pub fn for_storage_targets(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
-    let limits = config::get_one::<config::cap_pool_storage_limits>(tx)?;
-    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_storage_limits>(tx)?;
+    let limits = config::get::<config::cap_pool_storage_limits>(tx)?;
+    let dynamic_limits = config::get::<config::cap_pool_dynamic_storage_limits>(tx)?;
 
     select(
         tx,
@@ -47,9 +49,10 @@ pub fn for_storage_targets(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPo
     )
 }
 
+/// Calculate capacity pools for meta buddy groups
 pub fn for_meta_buddy_groups(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
-    let limits = config::get_one::<config::cap_pool_meta_limits>(tx)?;
-    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_meta_limits>(tx)?;
+    let limits = config::get::<config::cap_pool_meta_limits>(tx)?;
+    let dynamic_limits = config::get::<config::cap_pool_dynamic_meta_limits>(tx)?;
 
     select(
         tx,
@@ -59,9 +62,10 @@ pub fn for_meta_buddy_groups(tx: &mut Transaction) -> DbResult<Vec<EntityWithCap
     )
 }
 
+/// Calculate capacity pools for storage buddy groups
 pub fn for_storage_buddy_groups(tx: &mut Transaction) -> DbResult<Vec<EntityWithCapPool>> {
-    let limits = config::get_one::<config::cap_pool_storage_limits>(tx)?;
-    let dynamic_limits = config::get_one::<config::cap_pool_dynamic_storage_limits>(tx)?;
+    let limits = config::get::<config::cap_pool_storage_limits>(tx)?;
+    let dynamic_limits = config::get::<config::cap_pool_dynamic_storage_limits>(tx)?;
 
     select(
         tx,
@@ -71,6 +75,10 @@ pub fn for_storage_buddy_groups(tx: &mut Transaction) -> DbResult<Vec<EntityWith
     )
 }
 
+/// Execute the actual select statement to fetch and calculate capacity pools from DB.
+///
+/// Requires type specific part of the statement (`select_entities`) and type specific config
+/// parameters (`limits` and `dynamic_limits`)
 fn select(
     tx: &mut Transaction,
     select_entities: &str,
@@ -170,7 +178,7 @@ mod test {
     fn fixed_limits_for_meta_targets() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
 
                 let pools = for_meta_targets(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
@@ -182,7 +190,7 @@ mod test {
     fn fixed_limits_for_meta_buddy_groups() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
 
                 let pools = for_meta_buddy_groups(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
@@ -194,7 +202,7 @@ mod test {
     fn fixed_limits_for_storage_targets() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
 
                 let pools = for_storage_targets(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
@@ -206,7 +214,7 @@ mod test {
     fn fixed_limits_for_storage_buddy_groups() {
         with_test_data(|tx| {
             for (i, set) in FIXED_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
 
                 let pools = for_storage_buddy_groups(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.1), "Case #{i}");
@@ -263,8 +271,8 @@ mod test {
     fn dynamic_limits_for_meta_targets() {
         with_test_data(|tx| {
             for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
-                config::set_one::<config::cap_pool_dynamic_meta_limits>(tx, &set.1).unwrap();
+                config::upsert::<config::cap_pool_meta_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_dynamic_meta_limits>(tx, &set.1).unwrap();
 
                 let pools = for_meta_targets(tx).unwrap();
                 assert!(pools.into_iter().all(|e| e.cap_pool == set.2), "Case #{i}");
@@ -276,8 +284,8 @@ mod test {
     fn dynamic_limits_for_storage_targets() {
         with_test_data(|tx| {
             for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
-                config::set_one::<config::cap_pool_dynamic_storage_limits>(tx, &set.1).unwrap();
+                config::upsert::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_dynamic_storage_limits>(tx, &set.1).unwrap();
 
                 let pools = for_storage_targets(tx).unwrap();
                 assert!(
@@ -296,8 +304,8 @@ mod test {
     fn dynamic_limits_for_storage_buddy_groups() {
         with_test_data(|tx| {
             for (i, set) in DYNAMIC_LIMITS.iter().enumerate() {
-                config::set_one::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
-                config::set_one::<config::cap_pool_dynamic_storage_limits>(tx, &set.1).unwrap();
+                config::upsert::<config::cap_pool_storage_limits>(tx, &set.0).unwrap();
+                config::upsert::<config::cap_pool_dynamic_storage_limits>(tx, &set.1).unwrap();
 
                 let pools = for_storage_buddy_groups(tx).unwrap();
                 assert!(
@@ -314,7 +322,7 @@ mod test {
 
     #[bench]
     fn bench_get_all_cap_pools(b: &mut Bencher) {
-        let mut conn = setup_benchmark();
+        let mut conn = setup_on_disk_db();
         let mut counter = 0;
 
         b.iter(|| {

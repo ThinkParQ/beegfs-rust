@@ -98,9 +98,9 @@ CREATE VIEW quota_default_limits_combined_v AS
         AND gi.quota_type = "inodes" AND gi.id_type = "group"
 ;
 
-CREATE VIEW exceeded_quota_entries_v AS
+CREATE VIEW exceeded_quota_v AS
     SELECT e.quota_id, e.id_type, e.quota_type, st.pool_id, SUM(e.value) AS value_sum
-    FROM quota_entries AS e
+    FROM quota_usage AS e
     INNER JOIN storage_targets AS st USING(target_id)
     LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
     LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)

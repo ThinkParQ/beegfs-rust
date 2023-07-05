@@ -2,22 +2,22 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::AuthenticateChannel,
-    ci: impl ComponentInteractor,
-    rcc: &mut impl RequestConnectionController,
+    ctx: &impl AppContext,
+    req: &mut impl Request,
 ) {
-    if let Some(ref secret) = ci.get_static_info().auth_secret {
+    if let Some(ref secret) = ctx.get_static_info().auth_secret {
         if secret == &msg.auth_secret {
-            rcc.authenticate();
+            req.authenticate_connection();
         } else {
             log::error!(
                 "Peer {:?} tried to authenticate stream with wrong secret",
-                rcc.peer()
+                req.peer_id()
             );
         }
     } else {
         log::debug!(
             "Peer {:?} tried to authenticate stream, but authentication is not required",
-            rcc.peer()
+            req.peer_id()
         );
     }
 }

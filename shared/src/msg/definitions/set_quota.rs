@@ -1,7 +1,6 @@
 use super::*;
 
-// Has a bad implementation in BeeGFS: When quotaEnableEnforcement=false,
-// it closes the connection after sending the response
+/// Used by the server nodes to set quota usage information on the management
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetQuota {
     pub pool_id: StoragePoolID,

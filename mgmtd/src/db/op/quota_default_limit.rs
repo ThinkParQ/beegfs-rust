@@ -1,6 +1,11 @@
+//! Functions for getting and setting quota default limits.
+//!
+//! Quota default limits are quota limits applying to a storage pool and all users / groups that
+//! don't have a explicit limit assigned.
 use super::*;
 use rusqlite::OptionalExtension;
 
+/// A set of quota default limits.
 #[derive(Debug, Clone, Default)]
 pub struct DefaultLimits {
     pub user_space_limit: Option<u64>,
@@ -9,7 +14,8 @@ pub struct DefaultLimits {
     pub group_inodes_limit: Option<u64>,
 }
 
-pub fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> DbResult<DefaultLimits> {
+/// Retrieves the default limits for the given storage pool ID.
+pub fn get_with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> DbResult<DefaultLimits> {
     storage_pool::get_uid(tx, pool_id)?
         .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
 
@@ -35,16 +41,16 @@ pub fn with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> DbResult<De
     Ok(limits.unwrap_or_default())
 }
 
-pub fn update(
+/// Inserts or updates one default limit for the given storage pool ID.
+///
+/// Affects one of the four limits ((user, group) x (space, inode)).
+pub fn upsert(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
     quota_type: QuotaType,
     value: u64,
 ) -> DbResult<()> {
-    storage_pool::get_uid(tx, pool_id)?
-        .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
-
     let mut stmt = tx.prepare_cached(
         r#"
         INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value)
@@ -60,6 +66,9 @@ pub fn update(
     Ok(())
 }
 
+/// Deletes one default limit for the given storage pool ID.
+///
+/// Affects one of the four limits ((user, group) x (space, inode)).
 pub fn delete(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
@@ -88,14 +97,14 @@ mod test {
     #[test]
     fn set_get() {
         with_test_data(|tx| {
-            let defaults = super::with_pool_id(tx, 1.into()).unwrap();
+            let defaults = super::get_with_pool_id(tx, 1.into()).unwrap();
 
             assert_eq!(Some(1000), defaults.user_space_limit);
             assert_eq!(Some(1000), defaults.user_inodes_limit);
             assert_eq!(Some(1000), defaults.group_space_limit);
             assert_eq!(Some(1000), defaults.group_inodes_limit);
 
-            let defaults = super::with_pool_id(tx, 2.into()).unwrap();
+            let defaults = super::get_with_pool_id(tx, 2.into()).unwrap();
 
             assert_eq!(None, defaults.user_space_limit);
             assert_eq!(None, defaults.user_inodes_limit);
@@ -103,9 +112,9 @@ mod test {
             assert_eq!(None, defaults.group_inodes_limit);
 
             super::delete(tx, 1.into(), QuotaIDType::User, QuotaType::Space).unwrap();
-            super::update(tx, 1.into(), QuotaIDType::User, QuotaType::Inodes, 2000).unwrap();
+            super::upsert(tx, 1.into(), QuotaIDType::User, QuotaType::Inodes, 2000).unwrap();
 
-            let defaults = super::with_pool_id(tx, 1.into()).unwrap();
+            let defaults = super::get_with_pool_id(tx, 1.into()).unwrap();
 
             assert_eq!(None, defaults.user_space_limit);
             assert_eq!(Some(2000), defaults.user_inodes_limit);

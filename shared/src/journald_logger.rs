@@ -37,7 +37,10 @@ impl Log for JournaldLogger {
             buf.extend(msg);
             buf.extend(b"\n");
 
-            self.sock.send(&buf).unwrap();
+            // If sending the data to the socket fails, report this to stderr
+            if let Err(err) = self.sock.send(&buf) {
+                eprintln!("Sending log to systemd failed: {err}");
+            }
         }
     }
 

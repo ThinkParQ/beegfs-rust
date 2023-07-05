@@ -4,7 +4,7 @@ use super::entity::EntityUID;
 use super::*;
 use rusqlite::OptionalExtension;
 
-/// A storage pool entry
+/// A storage pool entry.
 #[derive(Clone, Debug)]
 pub struct StoragePool {
     pub pool_id: StoragePoolID,

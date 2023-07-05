@@ -1,5 +1,6 @@
 use super::*;
 
+/// Remove a node from the system
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveNode {
     #[bee_serde(as = Int<i16>)]

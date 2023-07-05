@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::SetMirrorBuddyGroup,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::SetMirrorBuddyGroupResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check buddy group doesn't exist
             if db::buddy_group::get_uid(tx, msg.buddy_group_id, msg.node_type)?.is_some() {
@@ -13,7 +13,7 @@ pub(super) async fn handle(
             }
 
             // Check targets exist
-            db::target::check_existence(
+            db::target::validate_ids(
                 tx,
                 &[msg.primary_target_id, msg.secondary_target_id],
                 msg.node_type,
@@ -41,18 +41,24 @@ pub(super) async fn handle(
                 msg.buddy_group_id,
             );
 
-            ci.notify_nodes(&msg::SetMirrorBuddyGroup {
-                ack_id: "".into(),
-                node_type: msg.node_type,
-                primary_target_id: msg.primary_target_id,
-                secondary_target_id: msg.secondary_target_id,
-                buddy_group_id: actual_id,
-                allow_update: false,
-            })
+            ctx.notify_nodes(
+                &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                &msg::SetMirrorBuddyGroup {
+                    ack_id: "".into(),
+                    node_type: msg.node_type,
+                    primary_target_id: msg.primary_target_id,
+                    secondary_target_id: msg.secondary_target_id,
+                    buddy_group_id: actual_id,
+                    allow_update: false,
+                },
+            )
             .await;
 
-            ci.notify_nodes(&msg::RefreshCapacityPools { ack_id: "".into() })
-                .await;
+            ctx.notify_nodes(
+                &[NodeType::Meta],
+                &msg::RefreshCapacityPools { ack_id: "".into() },
+            )
+            .await;
 
             msg::SetMirrorBuddyGroupResp {
                 result: OpsErr::SUCCESS,

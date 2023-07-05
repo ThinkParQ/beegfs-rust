@@ -1,16 +1,17 @@
-use crate::config::DynamicConfig;
+//! Message dispatcher and handle functions
+//!
+//! This is the heart of managment as is dispatches the incoming requests (coming from the
+//! connection pool), takes appropriate action in the matching handler and provides a response.
+
+use crate::app_context::AppContext;
 use crate::db;
 use crate::db::{DbError, DbResult};
-use crate::notification::Notification;
 use anyhow::{bail, Result};
-use async_trait::async_trait;
-use rusqlite::Transaction;
 use shared::conn::msg_dispatch::*;
 use shared::conn::PeerID;
 use shared::msg::{self, GenericResponse, Msg};
 use shared::*;
 use std::collections::HashMap;
-use std::sync::RwLockReadGuard;
 
 mod ack;
 mod add_storage_pool;
@@ -33,7 +34,7 @@ mod modify_storage_pool;
 mod peer_info;
 mod refresh_capacity_pools;
 mod register_node;
-mod register_storage_target;
+mod register_target;
 mod remove_buddy_group;
 mod remove_node;
 mod remove_node_resp;
@@ -45,49 +46,69 @@ mod set_metadata_mirroring;
 mod set_mirror_buddy_group;
 mod set_mirror_buddy_group_resp;
 mod set_quota;
+mod set_storage_target_info;
 mod set_target_consistency_states;
-mod set_target_info;
 mod unmap_target;
 
-// TODO put the config source requirement into the trait
-#[async_trait]
-pub(crate) trait ComponentInteractor: Clone {
-    async fn db_op<T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>, R: Send + 'static>(
-        &self,
-        op: T,
-    ) -> DbResult<R>;
-
-    async fn request<M: Msg, R: Msg>(&self, dest: PeerID, msg: &M) -> Result<R, anyhow::Error>;
-    async fn send<M: Msg>(&self, dest: PeerID, msg: &M) -> Result<(), anyhow::Error>;
-    async fn notify_nodes<M: Notification<'static>>(&self, msg: &M);
-
-    fn get_config(&self) -> RwLockReadGuard<DynamicConfig>;
-    fn get_static_info(&self) -> &'static crate::StaticInfo;
-}
-
+/// Takes a generic request, deserialized the message and dispatches it to the handler in the
+/// appropriate submodule.
+///
+/// Concrete messages to handle must be added into the macro call within this function like this:
+/// ```ignore
+/// ...
+/// msg::SomeMessage => some_message_handle_module,
+/// ...
+/// ```
+///
+/// A handler submodule must be created. The submodule must contain a function with the following
+/// signature:
+///
+/// ```ignore
+/// pub(super) async fn handle(
+///     msg: msg::SomeMessage,
+///     ctx: &impl AppContext,
+///     req: &impl Request,
+/// ) -> msg::SomeMessageResponse {
+///     // Handling code
+/// }
+/// ```
+///
+/// If the function returns nothing (`()`), no response will be sent. Make sure this matches the
+/// expecation of the requester.
 pub(crate) async fn dispatch_request(
-    ci: impl ComponentInteractor,
-    mut req: impl RequestConnectionController + DeserializeMsg,
+    ctx: &impl AppContext,
+    mut req: impl Request,
 ) -> anyhow::Result<()> {
+    // This macro creates the dispatching match statement
     macro_rules! dispatch_msg {
-        ($($msg_type:path => $submod:ident),*) => {
+        ($($msg_type:path => $handle_mod:ident),* $(,)?) => {
+            // Match on the message ID provided by the request
             match req.msg_id() {
                 $(
                     <$msg_type>::ID => {
+                        // Deserialize into the specified BeeGFS message
                         let des: $msg_type = req.deserialize_msg()?;
-                        log::debug!("INCOMING from {:?}: {:?}", req.peer(), des);
+                        log::debug!("INCOMING from {:?}: {:?}", req.peer_id(), des);
 
                         #[allow(clippy::unnecessary_mut_passed)]
-                        let response = $submod::handle(des, ci, &mut req).await;
+                        // Call the specified handler and receive the response
+                        // The response can be `()`, in which case no response will be sent
+                        let response = $handle_mod::handle(des, ctx, &mut req).await;
 
-                        log::debug!("PROCESSED from {:?}. Responding: {:?}", req.peer(), response);
+                        log::debug!("PROCESSED from {:?}. Responding: {:?}", req.peer_id(), response);
+
+                        // Process the response (or non-response) using the ResponseMsg helper
                         ResponseMsg::respond(req, &response).await
                     }
                 ),*
 
+                // Handle unspecified msg IDs
                 id => {
-                    log::warn!("UNHANDLED INCOMING from {:?} with ID {id}", req.peer());
+                    log::warn!("UNHANDLED INCOMING from {:?} with ID {id}", req.peer_id());
 
+                    // Signal to the caller that the msg is not handled. The generic response
+                    // doesnt have a code for this case, so we just send `TRY_AGAIN` with an
+                    // appropriate description.
                     ResponseMsg::respond(req, &GenericResponse {
                         code: GenericResponseCode::TRY_AGAIN,
                         description: "Unhandled msg".into(),
@@ -99,12 +120,14 @@ pub(crate) async fn dispatch_request(
         }
     }
 
+    // Defines the concrete message to be handled by which handler. See function description for
+    // details.
     dispatch_msg!(
         // TCP
         msg::RegisterNode => register_node,
         msg::RemoveNode => remove_node,
         msg::GetNodes => get_nodes,
-        msg::RegisterStorageTarget => register_storage_target,
+        msg::RegisterTarget => register_target,
         msg::MapTargets => map_targets,
         msg::GetTargetMappings => get_target_mappings,
         msg::GetTargetStates => get_target_states,
@@ -112,7 +135,7 @@ pub(crate) async fn dispatch_request(
         msg::GetStatesAndBuddyGroups => get_states_and_buddy_groups,
         msg::GetNodeCapacityPools => get_node_capacity_pools,
         msg::ChangeTargetConsistencyStates => change_target_consistency_states,
-        msg::SetTargetInfo => set_target_info,
+        msg::SetStorageTargetInfo => set_storage_target_info,
         msg::RequestExceededQuota => request_exceeded_quota,
         msg::GetMirrorBuddyGroups => get_mirror_buddy_groups,
         msg::SetChannelDirect => set_channel_direct,
@@ -140,6 +163,6 @@ pub(crate) async fn dispatch_request(
         msg::Ack => ack,
         msg::RemoveNodeResp => remove_node_resp,
         msg::MapTargetsResp => map_targets_resp,
-        msg::SetMirrorBuddyGroupResp => set_mirror_buddy_group_resp
+        msg::SetMirrorBuddyGroupResp => set_mirror_buddy_group_resp,
     )
 }

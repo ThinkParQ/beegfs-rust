@@ -1,5 +1,9 @@
 use super::*;
 
+/// Set consistency states for a list of targets of the given node type.
+///
+/// Some nodes receive this via UDP, therefore the msg has an AckID field. Similar to
+/// [ChangeTargetConsistencyStates].
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetTargetConsistencyStates {
     #[bee_serde(as = Int<i32>)]

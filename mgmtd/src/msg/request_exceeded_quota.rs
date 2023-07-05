@@ -1,14 +1,14 @@
 use super::*;
-use crate::db::quota_entry::PoolOrTargetID;
+use crate::db::quota_usage::PoolOrTargetID;
 
 pub(super) async fn handle(
     msg: msg::RequestExceededQuota,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::RequestExceededQuotaResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
-            let exceeded_ids = db::quota_entry::exceeded_quota_ids(
+            let exceeded_ids = db::quota_usage::exceeded_quota_ids(
                 tx,
                 if msg.pool_id != StoragePoolID::ZERO {
                     PoolOrTargetID::PoolID(msg.pool_id)

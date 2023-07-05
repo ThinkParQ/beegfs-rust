@@ -40,7 +40,8 @@ impl MsgBuffer {
             self.des_header
                 .as_ref()
                 .as_ref()
-                .expect("No header loaded")
+                // TODO UNWRAP
+                .expect("No header available")
                 .msg_feature_flags,
         );
         M::deserialize(&mut des)
@@ -67,11 +68,6 @@ impl MsgBuffer {
 
     pub(super) async fn write_to_stream(&self, stream: &mut Stream) -> Result<()> {
         let msg_len = self.msg_len();
-
-        // log::warn!(
-        //     "WRITE TO STREAM {msg_len} bytes (buf size {})",
-        //     self.buf.len()
-        // );
         stream.write_all(&self.buf[0..msg_len]).await?;
         Ok(())
     }
@@ -86,6 +82,7 @@ impl MsgBuffer {
                 self.des_header
                     .replace(Header::from_buf(&self.buf[0..Header::LEN])?);
 
+                // TODO UNWRAP
                 self.buf
                     .truncate(self.des_header.as_ref().as_ref().unwrap().msg_len());
 
@@ -118,6 +115,7 @@ impl MsgBuffer {
         self.des_header
             .as_ref()
             .as_ref()
+            // TODO UNWRAP
             .expect("No header loaded")
             .msg_id
     }
@@ -126,6 +124,7 @@ impl MsgBuffer {
         self.des_header
             .as_ref()
             .as_ref()
+            // TODO UNWRAP
             .expect("No header loaded")
             .msg_len()
     }

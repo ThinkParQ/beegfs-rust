@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     _msg: msg::GetTargetMappings,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetTargetMappingsResp {
-    match ci
+    match ctx
         .db_op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await
     {

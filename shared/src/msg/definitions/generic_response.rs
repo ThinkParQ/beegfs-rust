@@ -1,5 +1,6 @@
 use super::*;
 
+/// Replaces the expected response to a message and signals the requester that something went wrong.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GenericResponse {
     pub code: GenericResponseCode,

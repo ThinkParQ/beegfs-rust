@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fetch all nodes of the given type
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetNodes {
     #[bee_serde(as = Int<u32>)]
@@ -14,9 +15,11 @@ impl Msg for GetNodes {
 pub struct GetNodesResp {
     #[bee_serde(as = Seq<false, _>)]
     pub nodes: Vec<Node>,
-    // this can be a NodeNumID or a BuddyGroupID
+    /// If the requested node type was Meta, then this contains the target / buddy group ID which
+    /// owns the root inode.
     pub root_num_id: u32,
     #[bee_serde(as = BoolAsInt<u8>)]
+    /// Determines wether root_num_id is a target or buddy group ID
     pub is_root_mirrored: bool,
 }
 

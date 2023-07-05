@@ -2,24 +2,20 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::ModifyStoragePool,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::ModifyStoragePoolResp {
     match async {
-        ci.db_op(move |tx| {
+        ctx.db_op(move |tx| {
             // Check ID exists
             let uid = db::storage_pool::get_uid(tx, msg.pool_id)?
                 .ok_or_else(|| DbError::value_not_found("storage pool ID", msg.pool_id))?;
 
             // Check all of the given target IDs exist
-            db::target::check_existence(tx, &msg.add_target_ids, NodeTypeServer::Storage)?;
-            db::target::check_existence(tx, &msg.remove_target_ids, NodeTypeServer::Storage)?;
-            db::buddy_group::check_existence(
-                tx,
-                &msg.add_buddy_group_ids,
-                NodeTypeServer::Storage,
-            )?;
-            db::buddy_group::check_existence(
+            db::target::validate_ids(tx, &msg.add_target_ids, NodeTypeServer::Storage)?;
+            db::target::validate_ids(tx, &msg.remove_target_ids, NodeTypeServer::Storage)?;
+            db::buddy_group::validate_ids(tx, &msg.add_buddy_group_ids, NodeTypeServer::Storage)?;
+            db::buddy_group::validate_ids(
                 tx,
                 &msg.remove_buddy_group_ids,
                 NodeTypeServer::Storage,
@@ -55,8 +51,11 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Storage pool {} modified", msg.pool_id,);
 
-            ci.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
-                .await;
+            ctx.notify_nodes(
+                &[NodeType::Meta, NodeType::Storage],
+                &msg::RefreshStoragePools { ack_id: "".into() },
+            )
+            .await;
 
             msg::ModifyStoragePoolResp {
                 result: OpsErr::SUCCESS,

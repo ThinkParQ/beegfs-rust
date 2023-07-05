@@ -2,12 +2,12 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::MapTargets,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::MapTargetsResp {
     let target_ids = msg.target_ids.keys().copied().collect::<Vec<_>>();
 
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check node ID exists
             if db::node::get_uid(tx, msg.node_id, NodeType::Storage)?.is_none() {
@@ -15,7 +15,7 @@ pub(super) async fn handle(
             }
 
             // Check all target IDs exist
-            db::target::check_existence(tx, &target_ids, NodeTypeServer::Storage)?;
+            db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
 
             let updated = db::target::update_storage_node_mappings(tx, &target_ids, msg.node_id)?;
 
@@ -27,11 +27,14 @@ pub(super) async fn handle(
             log::info!("Mapped {} storage targets to node {}", updated, msg.node_id);
 
             // TODO only do it with successful ones
-            ci.notify_nodes(&msg::MapTargets {
-                target_ids: msg.target_ids.clone(),
-                node_id: msg.node_id,
-                ack_id: "".into(),
-            })
+            ctx.notify_nodes(
+                &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                &msg::MapTargets {
+                    target_ids: msg.target_ids.clone(),
+                    node_id: msg.node_id,
+                    ack_id: "".into(),
+                },
+            )
             .await;
 
             // Storage server expects a separate status code for each target map requested.

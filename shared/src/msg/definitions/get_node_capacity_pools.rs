@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fetches node capacity pools of the given type for all targets / groups.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetNodeCapacityPools {
     #[bee_serde(as = Int<i32>)]
@@ -10,11 +11,12 @@ impl Msg for GetNodeCapacityPools {
     const ID: MsgID = MsgID(1021);
 }
 
-/// The u16 ID is interpreted differently from BeeGFS, depending on the request.
-/// If it requests buddy groups, it is a buddy group ID, if it is storage targets it is a
-/// TargetNumID and if it is meta targets it is a NodeNumID.
+/// Response containing node capacity bool mapping
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GetNodeCapacityPoolsResp {
+    /// Target or group IDs grouped by storage pool and cap pool.
+    ///
+    /// The outer Vec has index 0, 1, 2 containing lists with IDs belonging to that pool.
     pub pools: HashMap<StoragePoolID, Vec<Vec<u16>>>,
 }
 
@@ -22,6 +24,7 @@ impl Msg for GetNodeCapacityPoolsResp {
     const ID: MsgID = MsgID(1022);
 }
 
+// Custom BeeSerde impl because nested sequences / maps are not supported by the macro
 impl BeeSerde for GetNodeCapacityPoolsResp {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.map(

@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::GetStatesAndBuddyGroups,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetStatesAndBuddyGroupsResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             let targets = db::target::get_with_type(tx, msg.node_type)?;
             let groups = db::buddy_group::get_with_type(tx, msg.node_type)?;
@@ -23,7 +23,7 @@ pub(super) async fn handle(
                         msg::types::CombinedTargetState {
                             reachability: db::misc::calc_reachability_state(
                                 e.last_contact,
-                                ci.get_config().node_offline_timeout,
+                                ctx.get_config().node_offline_timeout,
                             ),
                             consistency: e.consistency,
                         },

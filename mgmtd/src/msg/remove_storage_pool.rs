@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::RemoveStoragePool,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::RemoveStoragePoolResp {
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check ID exists
             db::storage_pool::get_uid(tx, msg.pool_id)?
@@ -29,8 +29,11 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Storage pool {} removed", msg.pool_id,);
 
-            ci.notify_nodes(&msg::RefreshStoragePools { ack_id: "".into() })
-                .await;
+            ctx.notify_nodes(
+                &[NodeType::Meta, NodeType::Storage],
+                &msg::RefreshStoragePools { ack_id: "".into() },
+            )
+            .await;
 
             msg::RemoveStoragePoolResp {
                 result: OpsErr::SUCCESS,

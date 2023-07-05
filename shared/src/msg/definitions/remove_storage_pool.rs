@@ -1,5 +1,6 @@
 use super::*;
 
+/// Removes a storage pool from the system
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveStoragePool {
     pub pool_id: StoragePoolID,

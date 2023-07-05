@@ -1,5 +1,6 @@
 use super::*;
 
+/// Fetches a buddy group ids with their assigned targets and target ids with their states
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetStatesAndBuddyGroups {
     #[bee_serde(as = Int<u32>)]
@@ -21,4 +22,3 @@ pub struct GetStatesAndBuddyGroupsResp {
 impl Msg for GetStatesAndBuddyGroupsResp {
     const ID: MsgID = MsgID(1054);
 }
-

@@ -1,13 +1,14 @@
 use super::*;
+use crate::config::registration_enable;
 use db::entity::EntityType;
 use db::misc::MetaRoot;
 
 pub(super) async fn handle(
     msg: msg::RegisterNode,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::RegisterNodeResp {
-    let node_id = update(msg, ci).await;
+    let node_id = update(msg, ctx).await;
 
     msg::RegisterNodeResp {
         node_num_id: node_id,
@@ -15,21 +16,30 @@ pub(super) async fn handle(
 }
 
 /// Processes incoming node information. Registeres new nodes if config allows it
-pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor) -> NodeID {
+pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> NodeID {
     let msg2 = msg.clone();
-    let registration_enable = ci.get_config().registration_enable;
 
-    match ci
+    match ctx
         .db_op(move |tx| {
-            let mut node_id = msg.node_id;
-            let mut node_uid = db::node::get_uid(tx, msg.node_id, msg.node_type)?;
-            let is_new_node = msg.node_id == NodeID::ZERO || node_uid.is_none();
+            let node_uid = if msg.node_id == NodeID::ZERO {
+                // No node ID given => new node
+                None
+            } else {
+                // If Some is returned, the node with node_id already exists
+                db::node::get_uid(tx, msg.node_id, msg.node_type)?
+            };
 
-            if is_new_node {
-                // If the node is new, do additional checks and insert the prerequisites
+            let (node_id, node_uid) = if let Some(node_uid) = node_uid {
+                // Existing node, update data
+                db::entity::update_alias(tx, node_uid, &msg.node_alias)?;
+                db::node::update(tx, node_uid, msg.port)?;
 
-                // TODO overhaul the config system and get this directly from the DB
-                if !registration_enable {
+                (msg.node_id, node_uid)
+            } else {
+                // New node, do additional checks and insert data
+
+                // Check node registration is allowed
+                if !db::config::get::<registration_enable>(tx)? {
                     return Err(DbError::other("Registration of new nodes is not allowed"));
                 }
 
@@ -40,7 +50,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor)
 
                 // Services send a 0 value when they want the new node to be assigned an ID
                 // automatically
-                node_id = if node_id == NodeID::ZERO {
+                let node_id = if msg.node_id == NodeID::ZERO {
                     db::misc::find_new_id(
                         tx,
                         &format!("{}_nodes", msg.node_type.as_sql_str()),
@@ -49,17 +59,17 @@ pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor)
                     )?
                     .into()
                 } else {
-                    node_id
+                    msg.node_id
                 };
 
                 // Insert new entity and node entry
-                node_uid = Some(db::entity::insert(tx, EntityType::Node, &msg.node_alias)?);
-                db::node::insert(tx, node_id, node_uid.unwrap(), msg.node_type, msg.port)?;
+                let node_uid = db::entity::insert(tx, EntityType::Node, &msg.node_alias)?;
+                db::node::insert(tx, node_id, node_uid, msg.node_type, msg.port)?;
 
-                // if this is a meta node, auto-add a corresponding meta target after the node. This
-                // is required because currently the rest of BeeGFS doesn't know
-                // about meta targets and expects exactly one meta target per meta
-                // node (with the same ID)
+                // if this is a meta node, auto-add a corresponding meta target after the node.
+                // This is required because currently the rest of BeeGFS
+                // doesn't know about meta targets and expects exactly one
+                // meta target per meta node (with the same ID)
                 if msg.node_type == NodeType::Meta {
                     db::target::insert_meta(
                         tx,
@@ -67,14 +77,12 @@ pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor)
                         &format!("{}_target", msg.node_alias).into(),
                     )?;
                 }
-            } else {
-                // Existing node, update attached information
-                db::entity::update_alias(tx, node_uid.unwrap(), &msg.node_alias)?;
-                db::node::update(tx, node_uid.unwrap(), msg.port)?;
-            }
+
+                (node_id, node_uid)
+            };
 
             // Update the corresponding nic lists
-            db::node_nic::replace(tx, node_uid.unwrap(), &msg.nics)?;
+            db::node_nic::replace(tx, node_uid, &msg.nics)?;
 
             Ok((
                 node_id,
@@ -96,26 +104,34 @@ pub(super) async fn update(msg: msg::RegisterNode, ci: impl ComponentInteractor)
             );
 
             // notify all nodes
-            ci.notify_nodes(&msg::Heartbeat {
-                instance_version: 0,
-                nic_list_version: 0,
-                node_type: msg2.node_type,
-                node_alias: msg2.node_alias,
-                ack_id: "".into(),
-                node_num_id: node_id,
-                root_num_id: match meta_root {
-                    MetaRoot::Unknown => 0,
-                    MetaRoot::Normal(node_id, _) => node_id.into(),
-                    MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
+            ctx.notify_nodes(
+                match msg.node_type {
+                    NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+                    NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                    NodeType::Client => &[NodeType::Meta],
+                    _ => &[],
                 },
-                is_root_mirrored: match meta_root {
-                    MetaRoot::Unknown | MetaRoot::Normal(_, _) => false,
-                    MetaRoot::Mirrored(_) => true,
+                &msg::Heartbeat {
+                    instance_version: 0,
+                    nic_list_version: 0,
+                    node_type: msg2.node_type,
+                    node_alias: msg2.node_alias,
+                    ack_id: "".into(),
+                    node_num_id: node_id,
+                    root_num_id: match meta_root {
+                        MetaRoot::Unknown => 0,
+                        MetaRoot::Normal(node_id, _) => node_id.into(),
+                        MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
+                    },
+                    is_root_mirrored: match meta_root {
+                        MetaRoot::Unknown | MetaRoot::Normal(_, _) => false,
+                        MetaRoot::Mirrored(_) => true,
+                    },
+                    port: msg.port,
+                    port_tcp_unused: msg.port,
+                    nic_list: msg2.nics,
                 },
-                port: msg.port,
-                port_tcp_unused: msg.port,
-                nic_list: msg2.nics,
-            })
+            )
             .await;
 
             node_id

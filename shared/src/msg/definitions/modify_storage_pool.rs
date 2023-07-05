@@ -1,5 +1,8 @@
 use super::*;
 
+/// Modifies an existing storage pool and adds/removes targets fromto/from this pool
+///
+/// Targets removed shall be put into the default pool.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModifyStoragePool {
     pub pool_id: StoragePoolID,
@@ -43,6 +46,7 @@ impl Msg for ModifyStoragePool {
     }
 }
 
+/// Custom BeeSerde impl because actions depend on flags set in the msg header
 impl BeeSerde for ModifyStoragePool {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         let flags = ser.msg_feature_flags;

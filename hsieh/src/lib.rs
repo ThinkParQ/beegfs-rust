@@ -25,6 +25,7 @@ fn pop_word(data: &mut &[u8]) -> u32 {
     word as u32
 }
 
+/// Generate the hash value for the given data.
 pub fn hash(mut data: &[u8]) -> u32 {
     let len = data.len() as u32;
 

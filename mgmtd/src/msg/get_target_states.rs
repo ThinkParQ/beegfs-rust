@@ -2,10 +2,10 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::GetTargetStates,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetTargetStatesResp {
-    match ci
+    match ctx
         .db_op(move |tx| db::target::get_with_type(tx, msg.node_type))
         .await
     {
@@ -18,7 +18,7 @@ pub(super) async fn handle(
                 targets.push(e.target_id);
                 reachability_states.push(db::misc::calc_reachability_state(
                     e.last_contact,
-                    ci.get_config().node_offline_timeout,
+                    ctx.get_config().node_offline_timeout,
                 ));
                 consistency_states.push(e.consistency);
             }

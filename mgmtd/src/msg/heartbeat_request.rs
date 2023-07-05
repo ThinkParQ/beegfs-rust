@@ -2,8 +2,8 @@ use super::*;
 
 pub(super) async fn handle(
     _msg: msg::HeartbeatRequest,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::Heartbeat {
     msg::Heartbeat {
         instance_version: 0,
@@ -14,8 +14,8 @@ pub(super) async fn handle(
         node_num_id: NodeID::MGMTD,
         root_num_id: 0,
         is_root_mirrored: false,
-        port: ci.get_static_info().static_config.port,
-        port_tcp_unused: ci.get_static_info().static_config.port,
-        nic_list: ci.get_static_info().network_interfaces.to_vec(),
+        port: ctx.get_static_info().static_config.port,
+        port_tcp_unused: ctx.get_static_info().static_config.port,
+        nic_list: ctx.get_static_info().network_interfaces.to_vec(),
     }
 }

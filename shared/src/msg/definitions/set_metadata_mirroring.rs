@@ -1,5 +1,6 @@
 use super::*;
 
+/// Enables a metadata mirrored system
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetMetadataMirroring {}
 

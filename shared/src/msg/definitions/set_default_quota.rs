@@ -1,5 +1,6 @@
 use super::*;
 
+/// Sets default quota limits per storage pool
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetDefaultQuota {
     pub pool_id: StoragePoolID,

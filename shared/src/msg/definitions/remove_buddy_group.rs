@@ -1,5 +1,8 @@
 use super::*;
 
+/// Removes a buddy group from the system.
+///
+/// Currently only supported for storage buddy groups, despite the field `node_type`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveBuddyGroup {
     #[bee_serde(as = Int<i32>)]

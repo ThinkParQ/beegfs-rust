@@ -3,12 +3,15 @@ use shared::msg::types::{QuotaInodeSupport, QuotaQueryType};
 
 pub(super) async fn handle(
     msg: msg::GetQuotaInfo,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::GetQuotaInfoResp {
+    // TODO Respect the requested transfer method. Or, at least, query by target, not by storage
+    // pool (since this and only this is used by ctl for the request).
+
     let pool_id = msg.pool_id;
 
-    match ci
+    match ctx
         .db_op(move |tx| {
             // Check pool id exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {

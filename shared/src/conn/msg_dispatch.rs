@@ -10,26 +10,25 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 
+/// Enables an object to act as a message dispatcher and being called from the generic connection
+/// pool.
 #[async_trait]
 pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
-    async fn dispatch_request(
-        &mut self,
-        chn: impl RequestConnectionController + DeserializeMsg,
-    ) -> Result<()>;
+    async fn dispatch_request(&self, chn: impl Request) -> Result<()>;
 }
 
-/// Enables a type to issue a response message (or not).
+/// Enables a object to issue a response message (or not).
 ///
 /// This allows to take different actions when sending a response based on the (msg) type.
 #[async_trait]
 pub trait ResponseMsg {
-    async fn respond(rcc: impl RequestConnectionController, msg: &Self) -> Result<()>;
+    async fn respond(rcc: impl Request, msg: &Self) -> Result<()>;
 }
 
 /// Do nothing response when the type is ()
 #[async_trait]
 impl ResponseMsg for () {
-    async fn respond(_rcc: impl RequestConnectionController, _msg: &Self) -> Result<()> {
+    async fn respond(_rcc: impl Request, _msg: &Self) -> Result<()> {
         Ok(())
     }
 }
@@ -37,37 +36,34 @@ impl ResponseMsg for () {
 /// Forward to the Controllers response call for all Msg based types
 #[async_trait]
 impl<M: Msg> ResponseMsg for M {
-    async fn respond(rcc: impl RequestConnectionController, msg: &Self) -> Result<()> {
+    async fn respond(rcc: impl Request, msg: &Self) -> Result<()> {
         rcc.respond(msg).await
     }
 }
 
 #[async_trait]
-pub trait RequestConnectionController: Send + Sync {
+pub trait Request: Send + Sync {
     async fn respond(self, msg: &impl Msg) -> Result<()>;
-    fn authenticate(&mut self);
-    fn peer(&self) -> PeerID;
-}
-
-pub trait DeserializeMsg {
-    fn deserialize_msg<M: Msg>(&self) -> Result<M>;
+    fn authenticate_connection(&mut self);
+    fn peer_id(&self) -> PeerID;
     fn msg_id(&self) -> MsgID;
+    fn deserialize_msg<M: Msg>(&self) -> Result<M>;
 }
 
 #[derive(Debug)]
-pub struct StreamRequestChannel<'a> {
+pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
     pub(super) msg_buf: &'a mut MsgBuffer,
 }
 
 #[async_trait]
-impl<'a> RequestConnectionController for StreamRequestChannel<'a> {
+impl<'a> Request for StreamRequest<'a> {
     async fn respond(mut self, msg: &impl Msg) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
         self.msg_buf.write_to_stream(self.stream).await
     }
 
-    fn authenticate(&mut self) {
+    fn authenticate_connection(&mut self) {
         if !self.stream.authenticated {
             log::debug!(
                 "Marking stream from {:?} as authenticated",
@@ -77,12 +73,10 @@ impl<'a> RequestConnectionController for StreamRequestChannel<'a> {
         }
     }
 
-    fn peer(&self) -> PeerID {
+    fn peer_id(&self) -> PeerID {
         self.stream.peer_id
     }
-}
 
-impl<'a> DeserializeMsg for StreamRequestChannel<'a> {
     fn deserialize_msg<M: Msg>(&self) -> Result<M> {
         self.msg_buf.deserialize_msg()
     }
@@ -93,14 +87,14 @@ impl<'a> DeserializeMsg for StreamRequestChannel<'a> {
 }
 
 #[derive(Debug)]
-pub struct SocketRequestChannel<'a> {
+pub struct SocketRequest<'a> {
     pub(crate) sock: Arc<UdpSocket>,
     pub(crate) peer_addr: SocketAddr,
     pub(crate) msg_buf: &'a mut MsgBuffer,
 }
 
 #[async_trait]
-impl<'a> RequestConnectionController for SocketRequestChannel<'a> {
+impl<'a> Request for SocketRequest<'a> {
     async fn respond(mut self, msg: &impl Msg) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
 
@@ -109,16 +103,14 @@ impl<'a> RequestConnectionController for SocketRequestChannel<'a> {
             .await
     }
 
-    fn authenticate(&mut self) {
+    fn authenticate_connection(&mut self) {
         // No authentication mechanism for sockets
     }
 
-    fn peer(&self) -> PeerID {
+    fn peer_id(&self) -> PeerID {
         PeerID::Addr(self.peer_addr)
     }
-}
 
-impl<'a> DeserializeMsg for SocketRequestChannel<'a> {
     fn deserialize_msg<M: Msg>(&self) -> Result<M> {
         self.msg_buf.deserialize_msg()
     }

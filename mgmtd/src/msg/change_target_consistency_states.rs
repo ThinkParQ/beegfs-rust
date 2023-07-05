@@ -2,19 +2,20 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::ChangeTargetConsistencyStates,
-    ci: impl ComponentInteractor,
-    _rcc: &impl RequestConnectionController,
+    ctx: &impl AppContext,
+    _req: &impl Request,
 ) -> msg::ChangeTargetConsistencyStatesResp {
-    match ci
+    // msg.old_states is currently completely ignored. If something reports a non-GOOD state, I see
+    // no apparent reason to that the old state matches before setting. We have the authority,
+    // whatever nodes think their old state was doesn't matter.
+
+    match ctx
         .db_op(move |tx| {
-            // TODO This is where old mgmtd updates the "last_seen" time
-            // (as this msg comes in every 30 seconds)
-            // We adapt this for now, but actually want to do this independent from the msg
-            // type
-
             // Check given target IDs exist
-            db::target::check_existence(tx, &msg.target_ids, msg.node_type)?;
+            db::target::validate_ids(tx, &msg.target_ids, msg.node_type)?;
 
+            // Old management updates contact time while handling this message (comes usually in
+            // every 30 seconds), so we do it as well
             db::node::update_last_contact_for_targets(tx, &msg.target_ids, msg.node_type)?;
 
             let affected = db::target::update_consistency_states(
@@ -34,8 +35,11 @@ pub(super) async fn handle(
             );
 
             if changed {
-                ci.notify_nodes(&msg::RefreshTargetStates { ack_id: "".into() })
-                    .await;
+                ctx.notify_nodes(
+                    &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                    &msg::RefreshTargetStates { ack_id: "".into() },
+                )
+                .await;
             }
 
             msg::ChangeTargetConsistencyStatesResp {

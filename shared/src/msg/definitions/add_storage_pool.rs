@@ -1,5 +1,6 @@
 use super::*;
 
+/// Adds a new storage pool and moves the specified entities to that pool.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct AddStoragePool {
     pub pool_id: StoragePoolID,
@@ -18,6 +19,7 @@ impl Msg for AddStoragePool {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct AddStoragePoolResp {
     pub result: OpsErr,
+    /// The ID used for the new pool
     pub pool_id: StoragePoolID,
 }
 

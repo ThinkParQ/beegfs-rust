@@ -1,5 +1,6 @@
 use super::*;
 
+/// Unmap a storage target.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct UnmapTarget {
     pub target_id: TargetID,

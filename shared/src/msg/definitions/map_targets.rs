@@ -1,5 +1,6 @@
 use super::*;
 
+/// Maps targets to owning nodes
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct MapTargets {
     #[bee_serde(as = Map<false, _, _>)]
@@ -15,6 +16,7 @@ impl Msg for MapTargets {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct MapTargetsResp {
+    /// Maps a target ID to the mapping result
     #[bee_serde(as = Map<false, _, _>)]
     pub results: HashMap<TargetID, OpsErr>,
 }
