@@ -20,7 +20,7 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
 
     if !targets.is_empty() {
         log::info!(
-            "Requesting quota information for {:?}",
+            "Fetching quota information for {:?}",
             targets.iter().map(|t| t.target_id).collect::<Vec<_>>()
         );
     }
@@ -81,14 +81,23 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
 
         // Users
         tasks.push(tokio::spawn(async move {
-            let res: Result<msg::GetQuotaInfoResp> = ctx2
+            let resp: Result<msg::GetQuotaInfoResp> = ctx2
                 .request(
-                    PeerID::Node(t.node_uid),
+                    t.node_uid,
                     &msg::GetQuotaInfo::with_user_ids(user_ids2, t.target_id, pool_id),
                 )
                 .await;
 
-            (t.target_id, res)
+            // Log immediately so there is no delay if other tasks have to wait and get joined
+            // first
+            if let Err(ref err) = resp {
+                log_error_chain!(
+                    err,
+                    "Fetching user quota info for storage target {:?} failed",
+                    t.target_id
+                );
+            }
+            (t.target_id, resp)
         }));
 
         let ctx2 = ctx.clone();
@@ -96,43 +105,45 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
 
         // Groups
         tasks.push(tokio::spawn(async move {
-            let res: Result<msg::GetQuotaInfoResp> = ctx2
+            let resp = ctx2
                 .request(
-                    PeerID::Node(t.node_uid),
+                    t.node_uid,
                     &msg::GetQuotaInfo::with_group_ids(group_ids2, t.target_id, pool_id),
                 )
                 .await;
-            (t.target_id, res)
+
+            // Log immediately so there is no delay if other tasks have to wait and get joined
+            // first
+            if let Err(ref err) = resp {
+                log_error_chain!(
+                    err,
+                    "Fetching group quota info for storage target {:?} failed",
+                    t.target_id
+                );
+            }
+
+            (t.target_id, resp)
         }));
     }
 
     // Await all the responses
     for t in tasks {
         let (target_id, resp) = t.await?;
-        match resp {
-            Ok(r) => {
-                // Insert quota usage data into the database
-                ctx.db_op(move |tx| {
-                    db::quota_usage::upsert(
-                        tx,
-                        target_id,
-                        r.quota_entry.into_iter().map(|e| QuotaData {
-                            quota_id: e.id,
-                            id_type: e.id_type,
-                            space: e.space,
-                            inodes: e.inodes,
-                        }),
-                    )
-                })
-                .await?;
-            }
-            Err(err) => {
-                log_error_chain!(
-                    err,
-                    "Getting quota info for storage target {:?} failed",
-                    target_id
-                );
-            }
+        if let Ok(r) = resp {
+            // Insert quota usage data into the database
+            ctx.db_op(move |tx| {
+                db::quota_usage::upsert(
+                    tx,
+                    target_id,
+                    r.quota_entry.into_iter().map(|e| QuotaData {
+                        quota_id: e.id,
+                        id_type: e.id_type,
+                        space: e.space,
+                        inodes: e.inodes,
+                    }),
+                )
+            })
+            .await?;
         }
     }
 
@@ -177,10 +188,7 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
         let mut request_fails = 0;
         let mut non_success_count = 0;
         for node in &nodes {
-            match ctx
-                .request::<_, SetExceededQuotaResp>(PeerID::Node(node.uid), &msg)
-                .await
-            {
+            match ctx.request::<_, SetExceededQuotaResp>(node.uid, &msg).await {
                 Ok(resp) => {
                     if resp.result != OpsErr::SUCCESS {
                         non_success_count += 1;

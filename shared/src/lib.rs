@@ -13,7 +13,6 @@ pub mod shutdown;
 pub mod types;
 
 use anyhow::{bail, Result};
-pub use conn::PeerID;
 use std::net::IpAddr;
 // Reexport for convenience
 pub use types::*;

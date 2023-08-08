@@ -2,12 +2,9 @@
 
 use super::*;
 use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
 use rusqlite::config::DbConfig;
 use rusqlite::{OpenFlags, Transaction};
-use shared::conn::{AddrResolver, PeerID};
 use std::fmt::Debug;
-use std::net::SocketAddr;
 use std::path::Path;
 
 /// Creates a new database and initializes it.
@@ -83,27 +80,6 @@ impl Connection {
                 Ok(res)
             })
             .await
-    }
-}
-
-#[async_trait]
-impl AddrResolver for Connection {
-    async fn lookup(&self, generic_addr: PeerID) -> Result<Vec<SocketAddr>> {
-        Ok(match generic_addr {
-            PeerID::Addr(addr) => {
-                vec![addr]
-            }
-            PeerID::Node(uid) => self
-                .op(move |tx| node_nic::get_with_node_uid(tx, uid))
-                .await?
-                .into_iter()
-                .map(|e| SocketAddr::new(e.addr.into(), e.port.into()))
-                .collect(),
-        })
-    }
-
-    async fn reverse_lookup(&self, addr: SocketAddr) -> PeerID {
-        PeerID::Addr(addr)
     }
 }
 

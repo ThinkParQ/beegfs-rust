@@ -8,7 +8,6 @@ use crate::db;
 use crate::db::{DbError, DbResult};
 use anyhow::{bail, Result};
 use shared::conn::msg_dispatch::*;
-use shared::conn::PeerID;
 use shared::msg::{self, GenericResponse, Msg};
 use shared::*;
 use std::collections::HashMap;
@@ -88,14 +87,14 @@ pub(crate) async fn dispatch_request(
                     <$msg_type>::ID => {
                         // Deserialize into the specified BeeGFS message
                         let des: $msg_type = req.deserialize_msg()?;
-                        log::debug!("INCOMING from {:?}: {:?}", req.peer_id(), des);
+                        log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
 
                         #[allow(clippy::unnecessary_mut_passed)]
                         // Call the specified handler and receive the response
                         // The response can be `()`, in which case no response will be sent
                         let response = $handle_mod::handle(des, ctx, &mut req).await;
 
-                        log::debug!("PROCESSED from {:?}. Responding: {:?}", req.peer_id(), response);
+                        log::debug!("PROCESSED from {:?}. Responding: {:?}", req.addr(), response);
 
                         // Process the response (or non-response) using the ResponseMsg helper
                         ResponseMsg::respond(req, &response).await
@@ -104,7 +103,7 @@ pub(crate) async fn dispatch_request(
 
                 // Handle unspecified msg IDs
                 id => {
-                    log::warn!("UNHANDLED INCOMING from {:?} with ID {id}", req.peer_id());
+                    log::warn!("UNHANDLED INCOMING from {:?} with ID {id}", req.addr());
 
                     // Signal to the caller that the msg is not handled. The generic response
                     // doesnt have a code for this case, so we just send `TRY_AGAIN` with an

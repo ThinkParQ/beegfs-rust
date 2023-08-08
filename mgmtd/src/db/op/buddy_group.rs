@@ -65,7 +65,8 @@ pub fn get_uid(
 ) -> DbResult<Option<EntityUID>> {
     let res: Option<EntityUID> = tx
         .query_row_cached(
-            "SELECT buddy_group_uid FROM all_buddy_groups_v WHERE node_id = ?1 AND node_type = ?2",
+            "SELECT buddy_group_uid FROM all_buddy_groups_v WHERE buddy_group_id = ?1 AND \
+             node_type = ?2",
             params![buddy_group_id, node_type],
             |row| row.get(0),
         )

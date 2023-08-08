@@ -1,6 +1,5 @@
-use super::msg_buffer::MsgBuffer;
+use super::msg_buf::MsgBuf;
 use super::stream::Stream;
-use crate::conn::PeerID;
 use crate::msg::Msg;
 use crate::MsgID;
 use anyhow::Result;
@@ -45,7 +44,7 @@ impl<M: Msg> ResponseMsg for M {
 pub trait Request: Send + Sync {
     async fn respond(self, msg: &impl Msg) -> Result<()>;
     fn authenticate_connection(&mut self);
-    fn peer_id(&self) -> PeerID;
+    fn addr(&self) -> SocketAddr;
     fn msg_id(&self) -> MsgID;
     fn deserialize_msg<M: Msg>(&self) -> Result<M>;
 }
@@ -53,7 +52,7 @@ pub trait Request: Send + Sync {
 #[derive(Debug)]
 pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
-    pub(super) msg_buf: &'a mut MsgBuffer,
+    pub(super) msg_buf: &'a mut MsgBuf,
 }
 
 #[async_trait]
@@ -67,14 +66,14 @@ impl<'a> Request for StreamRequest<'a> {
         if !self.stream.authenticated {
             log::debug!(
                 "Marking stream from {:?} as authenticated",
-                self.stream.peer_id
+                self.stream.addr()
             );
             self.stream.authenticated = true;
         }
     }
 
-    fn peer_id(&self) -> PeerID {
-        self.stream.peer_id
+    fn addr(&self) -> SocketAddr {
+        self.stream.addr()
     }
 
     fn deserialize_msg<M: Msg>(&self) -> Result<M> {
@@ -90,7 +89,7 @@ impl<'a> Request for StreamRequest<'a> {
 pub struct SocketRequest<'a> {
     pub(crate) sock: Arc<UdpSocket>,
     pub(crate) peer_addr: SocketAddr,
-    pub(crate) msg_buf: &'a mut MsgBuffer,
+    pub(crate) msg_buf: &'a mut MsgBuf,
 }
 
 #[async_trait]
@@ -99,7 +98,7 @@ impl<'a> Request for SocketRequest<'a> {
         self.msg_buf.serialize_msg(msg)?;
 
         self.msg_buf
-            .send_to_socket(&self.sock, self.peer_addr)
+            .send_to_socket(&self.sock, &self.peer_addr)
             .await
     }
 
@@ -107,8 +106,8 @@ impl<'a> Request for SocketRequest<'a> {
         // No authentication mechanism for sockets
     }
 
-    fn peer_id(&self) -> PeerID {
-        PeerID::Addr(self.peer_addr)
+    fn addr(&self) -> SocketAddr {
+        self.peer_addr
     }
 
     fn deserialize_msg<M: Msg>(&self) -> Result<M> {

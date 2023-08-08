@@ -20,9 +20,8 @@ pub(super) async fn handle(
             })
             .await?;
 
-        let res_primary: RemoveBuddyGroupResp = ctx.request(PeerID::Node(node_ids.0), &msg).await?;
-        let res_secondary: RemoveBuddyGroupResp =
-            ctx.request(PeerID::Node(node_ids.1), &msg).await?;
+        let res_primary: RemoveBuddyGroupResp = ctx.request(node_ids.0, &msg).await?;
+        let res_secondary: RemoveBuddyGroupResp = ctx.request(node_ids.1, &msg).await?;
 
         if res_primary.result != OpsErr::SUCCESS || res_secondary.result != OpsErr::SUCCESS {
             bail!(

@@ -145,6 +145,7 @@ pub struct StaticConfig {
     pub init: bool,
     pub port: Port,
     pub interfaces: Vec<String>,
+    pub connection_limit: usize,
     pub db_file: PathBuf,
     pub auth_file: PathBuf,
     pub auth_enable: bool,
@@ -158,6 +159,7 @@ impl Default for StaticConfig {
             init: false,
             port: 8008.into(),
             interfaces: vec![],
+            connection_limit: 12,
             db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
             auth_file: "/etc/beegfs/mgmtd.auth".into(),
             auth_enable: true,
@@ -190,6 +192,9 @@ struct ConfigArgs {
     /// can be used.
     #[arg(long = "interface", short = 'i')]
     interfaces: Option<Vec<String>>,
+    /// Maximum number of outgoing connections per node [default: 12]
+    #[arg(long)]
+    connection_limit: Option<usize>,
     /// Sqlite database file location [default: /var/lib/beegfs/mgmtd.sqlite]
     #[arg(long)]
     db_file: Option<PathBuf>,
@@ -255,6 +260,10 @@ impl ConfigArgs {
             self.interfaces = other.interfaces
         };
 
+        if self.connection_limit.is_none() {
+            self.connection_limit = other.connection_limit
+        };
+
         if self.db_file.is_none() {
             self.db_file = other.db_file
         };
@@ -284,6 +293,7 @@ impl ConfigArgs {
 
         config.port = self.port.unwrap_or(config.port);
         config.interfaces = self.interfaces.unwrap_or(config.interfaces);
+        config.connection_limit = self.connection_limit.unwrap_or(config.connection_limit);
         config.db_file = self.db_file.unwrap_or(config.db_file);
         config.auth_file = self.auth_file.unwrap_or(config.auth_file);
         config.auth_enable = self.auth_enable.unwrap_or(config.auth_enable);

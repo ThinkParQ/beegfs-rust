@@ -1,13 +1,13 @@
 //! Functions for node nic management.
 use super::*;
 use rusqlite::ToSql;
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 /// Represents a network interface entry
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct NodeNic {
-    pub uid: NodeUID,
     pub node_uid: NodeUID,
     pub addr: Ipv4Addr,
     pub port: Port,
@@ -15,18 +15,52 @@ pub struct NodeNic {
     pub alias: EntityAlias,
 }
 
+/// Retrieves all node addresses grouped by NodeUID.
+///
+/// # Return value
+/// A Vec containing (NodeUID, Vec<SocketAddr>) entries.
+pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(NodeUID, Vec<SocketAddr>)>> {
+    let mut stmt = tx.prepare_cached(
+        r#"
+        SELECT nn.node_uid, nn.addr, n.port
+        FROM node_nics AS nn
+        INNER JOIN nodes AS n USING(node_uid)
+        ORDER BY nn.node_uid ASC
+        "#,
+    )?;
+
+    let mut rows = stmt.query([])?;
+
+    let mut res = vec![];
+    let mut cur: Option<&mut (NodeUID, Vec<SocketAddr>)> = None;
+    while let Some(row) = rows.next()? {
+        let node_uid = row.get(0)?;
+        let addr = SocketAddr::new(row.get::<_, [u8; 4]>(1)?.into(), row.get(2)?);
+
+        if cur.is_some() && cur.as_ref().unwrap().0 == node_uid {
+            cur.as_mut().unwrap().1.push(addr);
+        } else {
+            res.push((node_uid, vec![addr]));
+            cur = res.last_mut();
+        }
+    }
+
+    Ok(res)
+}
+
 /// Retrieves all node nics for the given node type.
 ///
 /// # Return value
 /// A Vec containing [NodeNic] entries.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Vec<NodeNic>> {
+pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Arc<[NodeNic]>> {
     fetch(
         tx,
         r#"
-        SELECT nn.nic_uid, nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+        SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
         FROM node_nics AS nn
         INNER JOIN nodes AS n USING(node_uid)
         WHERE n.node_type = ?1
+        ORDER BY nn.node_uid ASC
         "#,
         params![node_type],
     )
@@ -36,11 +70,11 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Vec<
 ///
 /// # Return value
 /// A Vec containing [NodeNic] entries.
-pub fn get_with_node_uid(tx: &mut Transaction, node_uid: NodeUID) -> DbResult<Vec<NodeNic>> {
+pub fn get_with_node_uid(tx: &mut Transaction, node_uid: NodeUID) -> DbResult<Arc<[NodeNic]>> {
     fetch(
         tx,
         r#"
-        SELECT nn.nic_uid, nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+        SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
         FROM node_nics AS nn
         INNER JOIN nodes AS n USING(node_uid)
         WHERE n.node_uid = ?1
@@ -49,18 +83,17 @@ pub fn get_with_node_uid(tx: &mut Transaction, node_uid: NodeUID) -> DbResult<Ve
     )
 }
 
-fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> DbResult<Vec<NodeNic>> {
+fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> DbResult<Arc<[NodeNic]>> {
     let mut stmt = tx.prepare_cached(stmt)?;
 
     let nics = stmt
         .query_map(params, |row| {
             Ok(NodeNic {
-                uid: row.get(0)?,
-                node_uid: row.get(1)?,
-                addr: row.get::<_, [u8; 4]>(2)?.into(),
-                port: row.get(3)?,
-                nic_type: row.get(4)?,
-                alias: row.get(5)?,
+                node_uid: row.get(0)?,
+                addr: row.get::<_, [u8; 4]>(1)?.into(),
+                port: row.get(2)?,
+                nic_type: row.get(3)?,
+                alias: row.get(4)?,
             })
         })?
         .try_collect()?;
@@ -94,7 +127,16 @@ mod test {
     use super::*;
 
     #[test]
-    fn with_type() {
+    fn get_all_addrs() {
+        with_test_data(|tx| {
+            let addrs = super::get_all_addrs(tx).unwrap();
+            assert_eq!(12, addrs.len());
+            assert_eq!(4, addrs[0].1.len());
+        })
+    }
+
+    #[test]
+    fn get_with_type() {
         with_test_data(|tx| {
             let nics = super::get_with_type(tx, NodeType::Meta).unwrap();
             assert_eq!(7, nics.len());

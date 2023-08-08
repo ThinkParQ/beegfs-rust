@@ -11,16 +11,16 @@ use tokio::net::UdpSocket;
 const MAX_DATAGRAM_LEN: usize = 65535;
 
 #[derive(Debug, Default)]
-pub struct MsgBuffer {
-    buf: BytesMut,
-    des_header: Box<Option<Header>>,
+pub struct MsgBuf {
+    ser_msg: BytesMut,
+    header: Box<Option<Header>>,
 }
 
-impl MsgBuffer {
+impl MsgBuf {
     pub fn serialize_msg<M: Msg>(&mut self, msg: &M) -> Result<()> {
-        self.buf.truncate(0);
+        self.ser_msg.truncate(0);
 
-        let mut split = SplitBuffers::from(&mut self.buf);
+        let mut split = SplitBuffers::from(&mut self.ser_msg);
 
         let mut ser_body = Serializer::new(&mut split.body, msg.build_feature_flags());
         msg.serialize(&mut ser_body)?;
@@ -30,61 +30,58 @@ impl MsgBuffer {
         let mut ser_header = Serializer::new(split.header, msg.build_feature_flags());
         header.serialize(&mut ser_header)?;
 
-        self.des_header.replace(header);
+        self.header.replace(header);
         Ok(())
     }
 
     pub fn deserialize_msg<M: Msg>(&self) -> Result<M> {
         let mut des = Deserializer::new(
-            &self.buf[Header::LEN..],
-            self.des_header
+            &self.ser_msg[Header::LEN..],
+            self.header
                 .as_ref()
                 .as_ref()
-                // TODO UNWRAP
-                .expect("No header available")
+                .expect("Header field must be set by serializing a message or receiving data first")
                 .msg_feature_flags,
         );
         M::deserialize(&mut des)
     }
 
     pub(super) async fn read_from_stream(&mut self, stream: &mut Stream) -> Result<()> {
-        if self.buf.len() < Header::LEN {
-            self.buf.resize(Header::LEN, 0);
+        if self.ser_msg.len() < Header::LEN {
+            self.ser_msg.resize(Header::LEN, 0);
         }
 
-        stream.read_exact(&mut self.buf[0..Header::LEN]).await?;
+        stream.read_exact(&mut self.ser_msg[0..Header::LEN]).await?;
+        let header = Header::from_buf(&self.ser_msg[0..Header::LEN])?;
+        let msg_len = header.msg_len();
+        self.header.replace(header);
 
-        self.des_header
-            .replace(Header::from_buf(&self.buf[0..Header::LEN])?);
-
-        let msg_len = self.msg_len();
-
-        if self.buf.len() != msg_len {
-            self.buf.resize(msg_len, 0);
+        if self.ser_msg.len() != msg_len {
+            self.ser_msg.resize(msg_len, 0);
         }
 
-        stream.read_exact(&mut self.buf[Header::LEN..msg_len]).await
+        stream
+            .read_exact(&mut self.ser_msg[Header::LEN..msg_len])
+            .await
     }
 
     pub(super) async fn write_to_stream(&self, stream: &mut Stream) -> Result<()> {
         let msg_len = self.msg_len();
-        stream.write_all(&self.buf[0..msg_len]).await?;
+        stream.write_all(&self.ser_msg[0..msg_len]).await?;
         Ok(())
     }
 
     pub(super) async fn recv_from_socket(&mut self, sock: &Arc<UdpSocket>) -> Result<SocketAddr> {
-        if self.buf.len() != MAX_DATAGRAM_LEN {
-            self.buf.resize(MAX_DATAGRAM_LEN, 0);
+        if self.ser_msg.len() != MAX_DATAGRAM_LEN {
+            self.ser_msg.resize(MAX_DATAGRAM_LEN, 0);
         }
 
-        match sock.recv_from(&mut self.buf).await {
+        match sock.recv_from(&mut self.ser_msg).await {
             Ok(n) => {
-                self.des_header
-                    .replace(Header::from_buf(&self.buf[0..Header::LEN])?);
+                let header = Header::from_buf(&self.ser_msg[0..Header::LEN])?;
+                self.ser_msg.truncate(header.msg_len());
 
-                // TODO UNWRAP
-                self.buf
-                    .truncate(self.des_header.as_ref().as_ref().unwrap().msg_len());
+                self.header.replace(header);
 
                 Ok(n.1)
             }
@@ -94,17 +91,11 @@ impl MsgBuffer {
 
     pub(super) async fn send_to_socket(
         &self,
-        sock: &Arc<UdpSocket>,
-        peer_addr: SocketAddr,
+        sock: &UdpSocket,
+        peer_addr: &SocketAddr,
     ) -> Result<()> {
         let msg_len = self.msg_len();
-
-        // log::warn!(
-        //     "SEND TO SOCKET: {msg_len} bytes (buf size {})",
-        //     self.buf.len()
-        // );
-
-        let sent = sock.send_to(&self.buf, peer_addr).await?;
+        let sent = sock.send_to(&self.ser_msg, peer_addr).await?;
 
         assert_eq!(sent, msg_len);
 
@@ -112,20 +103,18 @@ impl MsgBuffer {
     }
 
     pub fn msg_id(&self) -> MsgID {
-        self.des_header
+        self.header
             .as_ref()
             .as_ref()
-            // TODO UNWRAP
-            .expect("No header loaded")
+            .expect("Header field must be set by serializing a message or receiving data first")
             .msg_id
     }
 
     fn msg_len(&self) -> usize {
-        self.des_header
+        self.header
             .as_ref()
             .as_ref()
-            // TODO UNWRAP
-            .expect("No header loaded")
+            .expect("Header field must be set by serializing a message or receiving data first")
             .msg_len()
     }
 }

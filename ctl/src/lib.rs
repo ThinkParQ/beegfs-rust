@@ -4,43 +4,14 @@ pub mod config;
 
 use crate::config::Config::*;
 use crate::config::StaticConfig;
-use anyhow::{anyhow, Result};
-use shared::conn::msg_dispatch::*;
-use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig, SocketAddrResolver};
-use shared::{shutdown, NodeTypeServer};
-
-#[derive(Clone, Debug)]
-struct EmptyMsgHandler {}
-
-#[async_trait::async_trait]
-impl DispatchRequest for EmptyMsgHandler {
-    async fn dispatch_request(&self, _req: impl Request) -> Result<()> {
-        Err(anyhow!("Unexpected incoming stream request"))
-    }
-}
+use anyhow::Result;
+use shared::NodeTypeServer;
 
 pub async fn run(static_config: StaticConfig) -> Result<()> {
-    let (conn_pool_actor, conn) = ConnPoolActor::new(ConnPoolConfig {
-        stream_auth_secret: static_config.auth_secret,
-        addr_resolver: SocketAddrResolver {},
-        udp_sockets: vec![],
-        tcp_listeners: vec![],
-    });
-
-    let (shutdown, _shutdown_control) = shutdown::new();
-
-    conn_pool_actor.start_tasks(EmptyMsgHandler {}, shutdown);
-
-    CommandExecutor {
-        _conn: conn,
-        static_config,
-    }
-    .execute()
-    .await
+    CommandExecutor { static_config }.execute().await
 }
 
 struct CommandExecutor {
-    _conn: ConnPool<SocketAddrResolver>,
     static_config: StaticConfig,
 }
 

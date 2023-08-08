@@ -11,13 +11,13 @@ pub(super) async fn handle(
         } else {
             log::error!(
                 "Peer {:?} tried to authenticate stream with wrong secret",
-                req.peer_id()
+                req.addr()
             );
         }
     } else {
         log::debug!(
             "Peer {:?} tried to authenticate stream, but authentication is not required",
-            req.peer_id()
+            req.addr()
         );
     }
 }

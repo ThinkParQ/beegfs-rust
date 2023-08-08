@@ -3,6 +3,8 @@
 #![feature(test)]
 #![feature(fs_try_exists)]
 #![feature(iterator_try_collect)]
+#![feature(try_blocks)]
+#![feature(slice_group_by)]
 
 mod app_context;
 pub mod config;
@@ -15,14 +17,13 @@ use crate::app_context::AppHandles;
 use crate::config::{DynamicConfigArgs, StaticConfig};
 use anyhow::Result;
 use config::ConfigCache;
-use shared::conn::{ConnPool, ConnPoolActor, ConnPoolConfig};
+use shared::conn::incoming::{listen_tcp, recv_udp};
+use shared::conn::Pool;
 use shared::shutdown::Shutdown;
 use shared::{AuthenticationSecret, Nic};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
-
-pub(crate) type MgmtdPool = ConnPool<db::Connection>;
 
 /// Contains information that is obtained at the start of the app and then never changes again.
 #[derive(Debug)]
@@ -39,8 +40,9 @@ pub struct StaticInfo {
 /// testing context without involving a standalone binary.
 ///
 /// # Return behavior
-/// Returns after all startup work is done. The caller is responsible for keeping the shutdown
-/// control handle and use it to send a shutdown request when the program shall be terminated.
+/// Returns after all setup work is done and all tasks are started. The caller is responsible for
+/// keeping the shutdown control handle and send a shutdown request when the program shall
+/// be terminated.
 pub async fn start(
     static_config: StaticConfig,
     dynamic_config: Option<DynamicConfigArgs>,
@@ -51,6 +53,7 @@ pub async fn start(
 
     let network_interfaces = shared::network_interfaces(static_config.interfaces.as_slice())?;
 
+    // Static configuration which doesn't change at runtime
     let static_info = Box::leak(Box::new(StaticInfo {
         static_config,
         auth_secret,
@@ -66,33 +69,53 @@ pub async fn start(
         log::info!("Set system configuration from dynamic config file")
     }
 
+    // Cache for dynamic configuration
     let config_cache = ConfigCache::from_db(db.clone()).await?;
 
-    // Create the conn pool and bind sockets
-    let (conn_pool_actor, conn) = ConnPoolActor::new(ConnPoolConfig {
-        stream_auth_secret: static_info.auth_secret,
-        udp_sockets: vec![Arc::new(
-            UdpSocket::bind(SocketAddr::new(
-                "0.0.0.0".parse()?,
-                static_info.static_config.port.into(),
-            ))
-            .await?,
-        )],
-        tcp_listeners: vec![
-            TcpListener::bind(SocketAddr::new(
-                "0.0.0.0".parse()?,
-                static_info.static_config.port.into(),
-            ))
-            .await?,
-        ],
-        addr_resolver: db.clone(),
-    });
+    // TCP listener for incoming connections
+    let tcp_listener = TcpListener::bind(SocketAddr::new(
+        "0.0.0.0".parse()?,
+        static_info.static_config.port.into(),
+    ))
+    .await?;
 
-    // THe handles struct that combines all handles for sharing between tasks
-    let app_handles = AppHandles::new(conn, db, config_cache, static_info);
+    // UDP socket for in- and outgoing messages
+    let udp_socket = Arc::new(
+        UdpSocket::bind(SocketAddr::new(
+            "0.0.0.0".parse()?,
+            static_info.static_config.port.into(),
+        ))
+        .await?,
+    );
 
-    // Start tasks
-    conn_pool_actor.start_tasks(app_handles.clone(), shutdown.clone());
+    // Node address store and connection pool
+    let conn_pool = Pool::new(
+        udp_socket.clone(),
+        static_info.static_config.connection_limit,
+        static_info.auth_secret,
+    );
+
+    // Fill node addrs store from db
+    db.op(db::node_nic::get_all_addrs)
+        .await?
+        .into_iter()
+        .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
+
+    // Combines all handles for sharing between tasks
+    let app_handles = AppHandles::new(conn_pool, db, config_cache, static_info);
+
+    // Listen for incoming TCP connections
+    tokio::spawn(listen_tcp(
+        tcp_listener,
+        app_handles.clone(),
+        static_info.auth_secret.is_some(),
+        shutdown.clone(),
+    ));
+
+    // Recv UDP datagrams
+    tokio::spawn(recv_udp(udp_socket, app_handles.clone(), shutdown.clone()));
+
+    // Run the timers
     timer::start_tasks(app_handles, shutdown);
 
     Ok(())

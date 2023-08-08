@@ -28,6 +28,9 @@
 # Network interfaces to use
 # interfaces = ["eth0", "eth1"]
 
+# Maximum number of outgoing connections per node
+# connection_limit = 12
+
 # Location of the SQLite database file
 # db_file = ""
 

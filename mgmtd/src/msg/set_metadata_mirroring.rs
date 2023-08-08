@@ -9,8 +9,7 @@ pub(super) async fn handle(
     match async {
         match ctx.db_op(db::misc::get_meta_root).await? {
             MetaRoot::Normal(_, node_uid) => {
-                let _: msg::SetMetadataMirroringResp =
-                    ctx.request(PeerID::Node(node_uid), &msg).await?;
+                let _: msg::SetMetadataMirroringResp = ctx.request(node_uid, &msg).await?;
 
                 ctx.db_op(db::misc::enable_metadata_mirroring).await?;
             }

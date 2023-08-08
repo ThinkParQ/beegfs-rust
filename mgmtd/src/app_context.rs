@@ -1,17 +1,18 @@
 //! Interfaces and implementations for in-app interaction between tasks or threads.
 
 use crate::config::{ConfigCache, DynamicConfig};
+use crate::db;
 use crate::db::DbResult;
 use crate::msg::dispatch_request;
-use crate::{db, MgmtdPool};
 use anyhow::Result;
 use async_trait::async_trait;
 use rusqlite::Transaction;
 use shared::bee_serde::BeeSerde;
 use shared::conn::msg_dispatch::*;
-use shared::conn::PeerID;
+use shared::conn::Pool;
 use shared::msg::Msg;
-use shared::{log_error_chain, NodeType};
+use shared::{log_error_chain, NodeType, NodeUID};
+use std::net::SocketAddr;
 use std::ops::Deref;
 use std::sync::{Arc, RwLockReadGuard};
 
@@ -33,9 +34,9 @@ pub(crate) trait AppContext: Clone + Send + Sync + 'static {
     ) -> DbResult<R>;
 
     /// Sends a BeeGFS message via stream and expects a response
-    async fn request<M: Msg, R: Msg>(&self, dest: PeerID, msg: &M) -> Result<R, anyhow::Error>;
+    async fn request<M: Msg, R: Msg>(&self, dest: NodeUID, msg: &M) -> Result<R, anyhow::Error>;
     /// Sends a BeeGFS message via stream and doesn't expect a response
-    async fn send<M: Msg>(&self, dest: PeerID, msg: &M) -> Result<(), anyhow::Error>;
+    async fn send<M: Msg>(&self, dest: NodeUID, msg: &M) -> Result<(), anyhow::Error>;
     /// Notifies a collection of nodes via datagram and doesn't expect a response
     async fn notify_nodes(&self, node_types: &'static [NodeType], msg: &impl Msg);
 
@@ -43,6 +44,8 @@ pub(crate) trait AppContext: Clone + Send + Sync + 'static {
     fn get_config(&self) -> RwLockReadGuard<DynamicConfig>;
     /// Obtains read access to [crate::StaticInfo]
     fn get_static_info(&self) -> &'static crate::StaticInfo;
+
+    fn replace_node_addrs(&self, node_uid: NodeUID, addrs: impl Into<Arc<[SocketAddr]>>);
 }
 
 /// A collection of Handles used for interacting and accessing the different components of the app.
@@ -62,14 +65,14 @@ impl AppHandles {
     ///
     /// Takes all the stored handles.
     pub(crate) fn new(
-        conn: MgmtdPool,
+        conn_pool: Pool,
         db: db::Connection,
         config_cache: ConfigCache,
         static_info: &'static crate::StaticInfo,
     ) -> Self {
         Self {
             inner: Arc::new(InnerAppHandles {
-                conn,
+                conn_pool,
                 db,
                 static_info,
                 config_cache,
@@ -92,7 +95,7 @@ impl Deref for AppHandles {
 /// Stores the actual handles.
 #[derive(Debug)]
 pub(crate) struct InnerAppHandles {
-    conn: MgmtdPool,
+    conn_pool: Pool,
     db: db::Connection,
     static_info: &'static crate::StaticInfo,
     config_cache: ConfigCache,
@@ -110,16 +113,16 @@ impl AppContext for AppHandles {
         self.db.op(op).await
     }
 
-    async fn request<M: Msg, R: Msg>(&self, dest: PeerID, msg: &M) -> Result<R, anyhow::Error> {
+    async fn request<M: Msg, R: Msg>(&self, dest: NodeUID, msg: &M) -> Result<R, anyhow::Error> {
         log::debug!(target: "mgmtd::msg", "REQUEST to {:?}: {:?}", dest, msg);
-        let response = MgmtdPool::request(&self.conn, dest, msg).await?;
+        let response = Pool::request(&self.conn_pool, dest, msg).await?;
         log::debug!(target: "mgmtd::msg", "RESPONSE RECEIVED from {:?}: {:?}", dest, msg);
         Ok(response)
     }
 
-    async fn send<M: Msg + BeeSerde>(&self, dest: PeerID, msg: &M) -> Result<(), anyhow::Error> {
+    async fn send<M: Msg + BeeSerde>(&self, dest: NodeUID, msg: &M) -> Result<(), anyhow::Error> {
         log::debug!(target: "mgmtd::msg", "SEND to {:?}: {:?}", dest, msg);
-        MgmtdPool::send(&self.conn, dest, msg).await?;
+        Pool::send(&self.conn_pool, dest, msg).await?;
         Ok(())
     }
 
@@ -134,8 +137,8 @@ impl AppContext for AppHandles {
                     .op(move |tx| db::node::get_with_type(tx, *t))
                     .await?;
 
-                self.conn
-                    .broadcast(nodes.into_iter().map(|e| PeerID::Node(e.uid)), msg)
+                self.conn_pool
+                    .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)
                     .await?;
             }
 
@@ -156,6 +159,10 @@ impl AppContext for AppHandles {
 
     fn get_static_info(&self) -> &'static crate::StaticInfo {
         self.static_info
+    }
+
+    fn replace_node_addrs(&self, node_uid: NodeUID, addrs: impl Into<Arc<[SocketAddr]>>) {
+        self.conn_pool.replace_node_addrs(node_uid, addrs)
     }
 }
 

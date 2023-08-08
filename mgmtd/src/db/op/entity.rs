@@ -32,6 +32,12 @@ impl From<i64> for EntityUID {
     }
 }
 
+impl From<EntityUID> for NodeUID {
+    fn from(value: EntityUID) -> Self {
+        Self::from(value.0)
+    }
+}
+
 /// The entity type.
 #[derive(Clone, Debug)]
 pub enum EntityType {
