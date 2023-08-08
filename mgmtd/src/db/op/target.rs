@@ -1,6 +1,6 @@
 //! Functions for target management
 
-use super::entity::{EntityType, EntityUID};
+use super::entity::EntityType;
 use super::*;
 use itertools::Itertools;
 use std::cmp::Ordering;
@@ -15,7 +15,7 @@ pub struct Target {
     pub target_uid: EntityUID,
     pub target_id: TargetID,
     pub node_type: NodeTypeServer,
-    pub node_uid: NodeUID,
+    pub node_uid: EntityUID,
     pub node_id: NodeID,
     pub pool_id: Option<StoragePoolID>,
     pub free_space: Option<u64>,

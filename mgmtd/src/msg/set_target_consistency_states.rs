@@ -12,7 +12,7 @@ pub(super) async fn handle(
             // Check given target IDs exist
             db::target::validate_ids(tx, &msg.target_ids, msg.node_type)?;
 
-            if msg.set_online {
+            if msg.set_online > 0 {
                 db::node::update_last_contact_for_targets(tx, &msg.target_ids, msg.node_type)?;
             }
 

@@ -18,8 +18,7 @@ pub struct RegisterNode {
     #[bee_serde(as = Int<u32>)]
     pub node_id: NodeID,
     pub root_num_id: u32,
-    #[bee_serde(as = BoolAsInt<u8>)]
-    pub is_root_mirrored: bool,
+    pub is_root_mirrored: u8,
     pub port: Port,
     /// This is transmitted from other nodes but we decided to just use one port for TCP and UDP in
     /// the future

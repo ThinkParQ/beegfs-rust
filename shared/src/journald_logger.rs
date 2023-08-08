@@ -1,3 +1,5 @@
+//! Journald logger implementation for the `log` interface
+
 use bytes::BufMut;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::os::unix::net::UnixDatagram;
@@ -8,6 +10,7 @@ pub struct JournaldLogger {
     level_filter: LevelFilter,
 }
 
+/// Initializes `log` logger with [JournaldLogger]
 pub fn init(level_filter: LevelFilter) -> anyhow::Result<()> {
     let sock = UnixDatagram::unbound()?;
     sock.connect("/run/systemd/journal/socket")?;
@@ -17,6 +20,7 @@ pub fn init(level_filter: LevelFilter) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// [Log] Interface implementation
 impl Log for JournaldLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= self.level_filter
@@ -47,6 +51,7 @@ impl Log for JournaldLogger {
     fn flush(&self) {}
 }
 
+/// Convert [log::Level] into corresponding journald log level
 fn level_to_priority(level: Level) -> u8 {
     match level {
         Level::Error => 3,

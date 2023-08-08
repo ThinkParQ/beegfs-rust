@@ -198,8 +198,7 @@ pub struct QuotaEntry {
     pub id: QuotaID,
     #[bee_serde(as = Int<i32>)]
     pub id_type: QuotaIDType,
-    #[bee_serde(as = BoolAsInt<u8>)]
-    pub valid: bool,
+    pub valid: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]

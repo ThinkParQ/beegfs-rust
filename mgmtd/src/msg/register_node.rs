@@ -101,7 +101,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
             .await?;
 
         ctx.replace_node_addrs(
-            db_res.0.into(),
+            db_res.0,
             msg2.nics
                 .clone()
                 .into_iter()
@@ -142,8 +142,8 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
                         MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
                     },
                     is_root_mirrored: match meta_root {
-                        MetaRoot::Unknown | MetaRoot::Normal(_, _) => false,
-                        MetaRoot::Mirrored(_) => true,
+                        MetaRoot::Unknown | MetaRoot::Normal(_, _) => 0,
+                        MetaRoot::Mirrored(_) => 1,
                     },
                     port: msg.port,
                     port_tcp_unused: msg.port,

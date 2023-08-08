@@ -77,7 +77,7 @@ pub fn find_new_id<T: FromSql + std::fmt::Display>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetaRoot {
     Unknown,
-    Normal(NodeID, NodeUID),
+    Normal(NodeID, EntityUID),
     Mirrored(BuddyGroupID),
 }
 

@@ -18,9 +18,8 @@ pub struct GetNodesResp {
     /// If the requested node type was Meta, then this contains the target / buddy group ID which
     /// owns the root inode.
     pub root_num_id: u32,
-    #[bee_serde(as = BoolAsInt<u8>)]
     /// Determines wether root_num_id is a target or buddy group ID
-    pub is_root_mirrored: bool,
+    pub is_root_mirrored: u8,
 }
 
 impl Msg for GetNodesResp {

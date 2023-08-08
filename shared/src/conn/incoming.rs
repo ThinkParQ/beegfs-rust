@@ -1,3 +1,5 @@
+//! Handle incoming TCP and UDP connections and data
+
 use super::msg_buf::MsgBuf;
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
@@ -7,6 +9,7 @@ use anyhow::{bail, Result};
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
 
+/// Listens for new TCP connections
 pub async fn listen_tcp(
     listener: TcpListener,
     dispatch: impl DispatchRequest,
@@ -24,6 +27,11 @@ pub async fn listen_tcp(
                     }
                 };
 
+                // BeeGFS streams follow a "request-response" schema: A request is made using one
+                // stream and the following response comes back using the same stream. The stream
+                // is blocked during that and not used for anything else. Therefore, we just handle
+                // reading from each stream in a separate task that is also used for
+                // (de-)serializing, processing the request and sending the response.
                 tokio::spawn(new_stream(
                     stream.into(),
                     dispatch.clone(),
@@ -38,6 +46,7 @@ pub async fn listen_tcp(
     log::debug!("TCP listener task has been shut down: {listener:?}")
 }
 
+/// Handles an incoming stream
 async fn new_stream(
     mut stream: Stream,
     dispatch: impl DispatchRequest,
@@ -48,6 +57,7 @@ async fn new_stream(
     let mut buf = MsgBuf::default();
 
     loop {
+        // Wait for data being written to the "wire"
         if let Err(err) = stream.readable().await {
             log::debug!("Closed stream from {:?}: {err}", stream.addr());
             return;
@@ -67,6 +77,7 @@ async fn new_stream(
     }
 }
 
+/// Reads in data from a stream and forwards it to the dispatcher
 async fn read_stream(
     stream: &mut Stream,
     buf: &mut MsgBuf,
@@ -83,16 +94,16 @@ async fn read_stream(
         bail!("Unauthenticated stream from {:?}", stream.addr());
     }
 
-    let req = StreamRequest {
-        stream,
-        msg_buf: buf,
-    };
-
-    dispatch.dispatch_request(req).await?;
+    // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to
+    // msg handlers and sending a response using the [StreamRequest] handle.
+    dispatch
+        .dispatch_request(StreamRequest { stream, buf })
+        .await?;
 
     Ok(())
 }
 
+/// Receives datagrams from a UDP socket
 pub async fn recv_udp(
     sock: Arc<UdpSocket>,
     dispatch: impl DispatchRequest,
@@ -114,10 +125,13 @@ pub async fn recv_udp(
     log::debug!("UDP receiver task has been shut down: {sock:?}")
 }
 
+/// Receives a datagram and forwards it to the dispatcher
 async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) -> Result<()> {
     let mut buf = MsgBuf::default();
     let peer_addr = buf.recv_from_socket(&sock).await?;
 
+    // Request shall be handled in a separate task, so the next datagram can be processed
+    // immediately
     tokio::spawn(async move {
         let req = SocketRequest {
             sock,

@@ -38,14 +38,14 @@ pub(super) async fn handle(
     {
         Ok(_) => {
             log::info!("Set quota for storage pool {}", msg.pool_id,);
-            msg::SetQuotaResp { result: true }
+            msg::SetQuotaResp { result: 1 }
         }
 
         Err(err) => {
             err.as_ref();
             log_error_chain!(err, "Setting quota for storage pool {} failed", msg.pool_id);
 
-            msg::SetQuotaResp { result: false }
+            msg::SetQuotaResp { result: 0 }
         }
     }
 }

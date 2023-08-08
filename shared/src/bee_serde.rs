@@ -7,17 +7,22 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
+/// Enables (de-)serialization from / into BeeGFS custom message format
 pub trait BeeSerde {
-    // TODO no anyhow
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()>;
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self>
     where
         Self: Sized;
 }
 
+/// Serializes one BeeGFS message into a provided buffer
 pub struct Serializer<'a> {
+    /// The target buffer
     target_buf: &'a mut BytesMut,
+    /// BeeGFS message feature flags obtained from the message definition, used for
+    /// conditional serialization by certain messages.
     pub msg_feature_flags: u16,
+    /// The number of bytes written to the buffer
     bytes_written: usize,
 }
 
@@ -32,6 +37,12 @@ macro_rules! fn_serialize_primitive {
 }
 
 impl<'a> Serializer<'a> {
+    /// Creates a new Serializer object
+    ///
+    /// `msg_feature_flags` can be accessed from the (de-)serialization definition and is used for
+    /// conditional serialization on some messages.
+    /// `msg_feature_flags` is supposed to be obtained from the message definition, and is used
+    /// for conditional serialization by certain messages.
     pub fn new(target_buf: &'a mut BytesMut, msg_feature_flags: u16) -> Self {
         Self {
             target_buf,
@@ -49,12 +60,18 @@ impl<'a> Serializer<'a> {
     fn_serialize_primitive!(u64, put_u64_le);
     fn_serialize_primitive!(i64, put_i64_le);
 
+    /// Serialize the given slice as bytes as expected by BeeGFS
     pub fn bytes(&mut self, v: &[u8]) -> Result<()> {
         self.target_buf.put(v);
         self.bytes_written += v.len();
         Ok(())
     }
 
+    /// Serialize the given slice as c string (including terminating 0 byte) as expected by BeeGFS
+    ///
+    /// `align_to` optionally aligns the data as expected by BeeGFS deserializer. Must match the
+    /// original message definition. Some BeeGFS messages / types use this (usually set to 4), some
+    /// don't.
     pub fn cstr(&mut self, v: &[u8], align_to: usize) -> Result<()> {
         self.u32(v.len() as u32)?;
         self.bytes(v)?;
@@ -70,26 +87,32 @@ impl<'a> Serializer<'a> {
         Ok(())
     }
 
-    pub fn string(&mut self, v: &str) -> Result<()> {
-        let b = v.as_bytes();
-
-        self.u32(b.len() as u32)?;
-        self.bytes(b)?;
-
-        Ok(())
-    }
-
+    /// Serialize the elements in the given iterator into a sequence as expected by BeeGFS.
+    ///
+    /// "Sequence" is implemented for containers like `std::vector` and `std::list` and works the
+    /// same for all.
+    ///
+    /// `include_total_size` determines wether the total size of the sequence shall be included in
+    /// the serialized data. Must match the original message definition. Some BeeGFS messages /
+    /// types use this, some don't.
+    ///
+    /// `f` expects a closure that handles serialization of all the elements in the sequence.
     pub fn seq<T>(
         &mut self,
-        v: impl IntoIterator<Item = T>,
+        elements: impl IntoIterator<Item = T>,
         include_total_size: bool,
         f: impl Fn(&mut Self, T) -> Result<()>,
     ) -> Result<()> {
         let before = self.bytes_written;
 
+        // For the total size and length of the sequence we insert placeholders to be replaced
+        // later when the values are known
+        //
+        // On a side note, this is the sole reason why the Serialization struct needs a borrow to
+        // `BytesMut` and not the generic `BufMut` - the latter doesn't allow random access to
+        // already written data
         let size_pos = if include_total_size {
             let size_pos = self.bytes_written;
-            // placeholder for the total size in bytes
             self.u32(0xFFFFFFFFu32)?;
             size_pos
         } else {
@@ -97,24 +120,25 @@ impl<'a> Serializer<'a> {
         };
 
         let count_pos = self.bytes_written;
-        // placeholder for the total length
         self.u32(0xFFFFFFFFu32)?;
 
         let mut count = 0u32;
-        for e in v {
+        // Serialize each element of the sequence using the given closure
+        for e in elements {
             count += 1;
             f(self, e)?;
         }
 
+        // Now that the total amount and size of the serialized sequence elements is known, replace
+        // the placeholders in the beginning of the sequence with the actual values
+
         if include_total_size {
-            // overwrite the placeholder with the actual size of the collection
             let written = (self.bytes_written - before) as u32;
             for (p, b) in written.to_le_bytes().iter().enumerate() {
                 self.target_buf[size_pos + p] = *b;
             }
         }
 
-        // overwrite the placeholder with the actual collection count
         for (p, b) in count.to_le_bytes().iter().enumerate() {
             self.target_buf[count_pos + p] = *b;
         }
@@ -122,20 +146,32 @@ impl<'a> Serializer<'a> {
         Ok(())
     }
 
+    /// Serialize the key value pairs in the given iterator into a map as expected by BeeGFS.
+    ///
+    /// "map" is implemented for maps like `std::map`.
+    ///
+    /// `include_total_size` determines wether the total size of the map shall be included in
+    /// the serialized data. Must match the original message definition. Some BeeGFS messages /
+    /// types use this, some don't.
+    ///
+    /// `f_key` and `f_value` expect closures that handles serialization of all the keys and values.
     pub fn map<K, V>(
         &mut self,
-        iter: impl IntoIterator<Item = (K, V)>,
+        elements: impl IntoIterator<Item = (K, V)>,
         include_total_size: bool,
         f_key: impl Fn(&mut Self, K) -> Result<()>,
         f_value: impl Fn(&mut Self, V) -> Result<()>,
     ) -> Result<()> {
-        self.seq(iter, include_total_size, |s, (k, v)| {
+        // A map is actually serialized like a sequence with each element containing the key
+        // first and value second
+        self.seq(elements, include_total_size, |s, (k, v)| {
             f_key(s, k)?;
             f_value(s, v)?;
             Ok(())
         })
     }
 
+    /// Fills with `n` zeroes
     pub fn zeroes(&mut self, n: usize) -> Result<()> {
         for _ in 0..n {
             self.u8(0)?;
@@ -143,13 +179,18 @@ impl<'a> Serializer<'a> {
         Ok(())
     }
 
+    /// The amount of bytes written to the buffer (so far)
     pub fn bytes_written(&self) -> usize {
         self.bytes_written
     }
 }
 
+/// Deserializes one BeeGFS message from the given buffer
 pub struct Deserializer<'a> {
+    /// The source buffer
     source_buf: &'a [u8],
+    /// BeeGFS message feature flags obtained from the message definition, used for
+    /// conditional deserialization by certain messages.
     pub msg_feature_flags: u16,
 }
 
@@ -163,6 +204,10 @@ macro_rules! fn_deserialize_primitive {
 }
 
 impl<'a> Deserializer<'a> {
+    /// Creates a new Deserializer object
+    ///
+    /// `msg_feature_flags` is supposed to be obtained from the message definition, and is used
+    /// for conditional serialization by certain messages.
     pub fn new(source_buf: &'a [u8], msg_feature_flags: u16) -> Self {
         Self {
             source_buf,
@@ -179,10 +224,7 @@ impl<'a> Deserializer<'a> {
     fn_deserialize_primitive!(u64, get_u64_le);
     fn_deserialize_primitive!(i64, get_i64_le);
 
-    pub fn bool_from<S: IntoBool + BeeSerde>(&mut self) -> Result<bool> {
-        Ok(S::deserialize(self)?.into_bool())
-    }
-
+    /// Deserialize a block of bytes as expected by BeeGFS
     pub fn bytes(&mut self, len: usize) -> Result<Vec<u8>> {
         let mut v = vec![0; len];
 
@@ -192,6 +234,11 @@ impl<'a> Deserializer<'a> {
         Ok(v)
     }
 
+    /// Deserialize a BeeGFS serialized c string
+    ///
+    /// `align_to` optionally aligns the data as expected by BeeGFS serializer. Must match the
+    /// original message definition. Some BeeGFS messages / types use this (usually set to 4), some
+    /// don't.
     pub fn cstr(&mut self, align_to: usize) -> Result<Vec<u8>> {
         let len = self.u32()? as usize;
 
@@ -225,6 +272,16 @@ impl<'a> Deserializer<'a> {
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Deserializes a BeeGFS serialized sequence of elements
+    ///
+    /// "Sequence" is implemented for containers like `std::vector` and `std::list` and works the
+    /// same for all.
+    ///
+    /// `include_total_size` determines wether the total size of the sequence is included in
+    /// the serialized data. Must match the original message definition. Some BeeGFS messages /
+    /// types use this, some don't.
+    ///
+    /// `f` expects a closure that handles deserialization of all the elements in the sequence.
     pub fn seq<T>(
         &mut self,
         include_total_size: bool,
@@ -244,12 +301,25 @@ impl<'a> Deserializer<'a> {
         Ok(v)
     }
 
+    /// Deserialized a BeeGFS serialized map
+    ///
+    /// "map" is implemented for maps like `std::map`.
+    ///
+    /// `include_total_size` determines wether the total size of the map is included in
+    /// the serialized data. Must match the original message definition. Some BeeGFS messages /
+    /// types use this, some don't.
+    ///
+    /// `f_key` and `f_value` expect closures that handles deserialization of all the keys and
+    /// values.
     pub fn map<K: Hash + Eq, V>(
         &mut self,
         include_total_size: bool,
         f_key: impl Fn(&mut Self) -> Result<K>,
         f_value: impl Fn(&mut Self) -> Result<V>,
     ) -> Result<HashMap<K, V>> {
+        // Unlike in serialization we do not forward deserialization to self.seq() to avoid double
+        // allocation of Vec and Hashmap
+
         if include_total_size {
             self.skip(size_of::<u32>())?;
         }
@@ -264,6 +334,9 @@ impl<'a> Deserializer<'a> {
         Ok(v)
     }
 
+    /// Skips `n` bytes
+    ///
+    /// The opposite of fill_zeroes() in serialization.
     pub fn skip(&mut self, n: usize) -> Result<()> {
         self.check_remaining(n)?;
         self.source_buf.advance(n);
@@ -271,11 +344,15 @@ impl<'a> Deserializer<'a> {
         Ok(())
     }
 
-    fn check_remaining(&self, len: usize) -> Result<()> {
-        if self.source_buf.remaining() < len {
+    /// Ensures that the source buffer has at least `n` bytes left
+    ///
+    /// Meant to check that there are enough bytes left before calling `Bytes` functions that would
+    /// panic otherwise (which we wan't to avoid)
+    fn check_remaining(&self, n: usize) -> Result<()> {
+        if self.source_buf.remaining() < n {
             bail!(
                 "Unexpected end of source buffer. Needed at least {}, got {}",
-                len,
+                n,
                 self.source_buf.remaining()
             );
         }
@@ -283,11 +360,33 @@ impl<'a> Deserializer<'a> {
     }
 }
 
+/// Interface for serialization helpers to be used with the `bee_serde` derive macro
+///
+/// Serialization helpers are meant to control the `bee_serde` macro in case a value in the
+/// message struct shall be serialized as a different type or in case it doesn't have its own
+/// [BeeSerde] implementation. Also necessary for maps and sequences since the serializer can't
+/// know on its own whether to include collection size or not (it's totally message dependent).
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Debug, BeeSerde)]
+/// pub struct ExampleMsg {
+///     // Serializer doesn't know by itself wether or not C/C++ BeeGFS serializer expects sequence
+///     // size included or not - in this case it is not
+///     #[bee_serde(as = Seq<false, _>)]
+///     int_sequence: Vec<u32>,
+/// }
+/// ```
 pub trait BeeSerdeAs<Input> {
     fn serialize_as(data: &Input, ser: &mut Serializer<'_>) -> Result<()>;
     fn deserialize_as(des: &mut Deserializer<'_>) -> Result<Input>;
 }
 
+/// Serialize an arbitrary type as Integer
+///
+/// Note: Can potentially be used for non-integers, but is not practical due to the [Copy]
+/// requirement
 pub struct Int<Output>(PhantomData<Output>);
 
 impl<Input, Target> BeeSerdeAs<Input> for Int<Target>
@@ -306,24 +405,10 @@ where
     }
 }
 
-pub struct BoolAsInt<Output>(PhantomData<Output>);
-
-impl<Target> BeeSerdeAs<bool> for BoolAsInt<Target>
-where
-    bool: TryInto<Target> + Copy,
-    Target: IntoBool + BeeSerde,
-    anyhow::Error: From<<bool as TryInto<Target>>::Error>,
-{
-    fn serialize_as(data: &bool, ser: &mut Serializer<'_>) -> Result<()> {
-        let o: Target = (*data).try_into()?;
-        o.serialize(ser)
-    }
-
-    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<bool> {
-        Ok(Target::deserialize(des)?.into_bool())
-    }
-}
-
+/// Serialize a `Vec<T>` as sequence
+///
+/// `INCLUDE_SIZE` controls the `include_total_size` parameter of `seq(...)`[Serializer::seq].
+/// `T` must implement [BeeSerde].
 pub struct Seq<const INCLUDE_SIZE: bool, T>(PhantomData<T>);
 
 impl<const INCLUDE_SIZE: bool, T: BeeSerde> BeeSerdeAs<Vec<T>> for Seq<INCLUDE_SIZE, T> {
@@ -336,6 +421,10 @@ impl<const INCLUDE_SIZE: bool, T: BeeSerde> BeeSerdeAs<Vec<T>> for Seq<INCLUDE_S
     }
 }
 
+/// Serialize a `HashMap<K, V>` as map
+///
+/// `INCLUDE_SIZE` controls the `include_total_size` parameter of `seq(...)`.
+/// `K` must implement [BeeSerde] and [Hash], `V` must implement [BeeSerde].
 pub struct Map<const INCLUDE_SIZE: bool, K, V>(PhantomData<(K, V)>);
 
 impl<const INCLUDE_SIZE: bool, K: BeeSerde + Eq + Hash, V: BeeSerde> BeeSerdeAs<HashMap<K, V>>
@@ -359,6 +448,9 @@ impl<const INCLUDE_SIZE: bool, K: BeeSerde + Eq + Hash, V: BeeSerde> BeeSerdeAs<
     }
 }
 
+/// Serialize a slice of bytes as CStr
+///
+/// `ALIGN_TO` controls the `align_to` parameter of `cstr(...)`.
 pub struct CStr<const ALIGN_TO: usize>;
 
 impl<const ALIGN_TO: usize, Input> BeeSerdeAs<Input> for CStr<ALIGN_TO>
@@ -376,26 +468,9 @@ where
     }
 }
 
-pub trait IntoBool: seal_into_bool::Sealed {
-    fn into_bool(self) -> bool;
-}
-
-mod seal_into_bool {
-    pub trait Sealed {}
-}
-
+// Implement BeeSerde for all integer primitives including conversion into bool
 macro_rules! impl_traits_for_primitive {
     ($t:ident) => {
-        impl seal_into_bool::Sealed for $t {}
-        impl IntoBool for $t {
-            fn into_bool(self) -> bool {
-                match self {
-                    0 => false,
-                    _ => true,
-                }
-            }
-        }
-
         impl BeeSerde for $t {
             fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
                 ser.$t(*self)
@@ -416,16 +491,6 @@ impl_traits_for_primitive!(u32);
 impl_traits_for_primitive!(i32);
 impl_traits_for_primitive!(u64);
 impl_traits_for_primitive!(i64);
-
-impl BeeSerde for String {
-    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        ser.string(self)
-    }
-
-    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        des.string()
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -508,23 +573,6 @@ mod test {
     }
 
     #[test]
-    fn string() {
-        let mut buf = BytesMut::new();
-
-        let mut ser = Serializer::new(&mut buf, 0);
-        ser.string("one string").unwrap();
-        ser.string("another string").unwrap();
-
-        assert_eq!((4 + 10) + (4 + 14), ser.bytes_written);
-
-        let mut des = Deserializer::new(&buf, 0);
-        assert_eq!("one string", des.string().unwrap());
-        assert_eq!("another string", des.string().unwrap());
-
-        assert_eq!(0, des.source_buf.remaining());
-    }
-
-    #[test]
     fn nested() {
         #[derive(Clone, PartialEq, Eq, Debug)]
         struct S {
@@ -533,7 +581,7 @@ mod test {
             pub v: Vec<u64>,
             pub m: HashMap<u16, i64>,
             pub c: Vec<HashMap<i16, i32>>,
-            pub c2: HashMap<u16, Vec<String>>,
+            pub c2: HashMap<u16, Vec<Vec<u8>>>,
         }
 
         impl BeeSerde for S {
@@ -565,7 +613,7 @@ mod test {
                     self.c2.iter(),
                     true,
                     |ser, k| k.serialize(ser),
-                    |ser, v| ser.seq(v.iter(), false, |ser, e| ser.string(e)),
+                    |ser, v| ser.seq(v.iter(), false, |ser, e| ser.cstr(e, 0)),
                 )
                 .unwrap();
 
@@ -585,7 +633,7 @@ mod test {
                     c2: des.map(
                         true,
                         |des| des.u16(),
-                        |des| des.seq(false, |des| des.string()),
+                        |des| des.seq(false, |des| des.cstr(0)),
                     )?,
                 })
             }
@@ -611,7 +659,7 @@ mod test {
                 + (8 + 3 * 8)
                 + (4 + 2 + 8)
                 + (8 + (4 + 2 + 4))
-                + (8 + (2 + (4 + (4 + 3) + (4 + 5)))),
+                + (8 + (2 + (4 + (4 + 3 + 1) + (4 + 5 + 1)))),
             ser.bytes_written
         );
 

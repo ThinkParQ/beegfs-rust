@@ -6,7 +6,7 @@ use syn::{parse_macro_input, Data, DeriveInput, Field, Index, Type};
 
 /// Auto implement BeeGFS msg serialization and deserialization for a struct.
 ///
-/// Raw integers are serialized automatically as themselves, other types like bool, String, Vec and
+/// Raw integers are serialized automatically as themselves, other types like String, Vec and
 /// Map need a hint. A hint is provided by annotating a struct member with `#[bee_serde(as =
 /// HINT)]`. See `shared::bee_serde` for available options.
 ///

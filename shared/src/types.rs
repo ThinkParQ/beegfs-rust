@@ -1,9 +1,11 @@
-//! Various BeeGFS internal types used by network msg definitions
+//! Various BeeGFS type definitions
+//!
+//! Used internally (e.g. in the management) and by network messages. Types only used by BeeGFS
+//! messages are found in [crate::msg::types].
 
 mod buddy_group;
 pub use buddy_group::*;
 mod nic;
-use bee_macro::BeeSerde;
 pub use nic::*;
 mod node;
 pub use node::*;
@@ -16,12 +18,19 @@ mod target;
 use crate::bee_serde::{self, *};
 use crate::{impl_enum_to_int, impl_enum_to_sql_str, impl_enum_to_user_str, impl_newtype_to_sql};
 use anyhow::{bail, Result};
+use bee_macro::BeeSerde;
 use core::hash::Hash;
 use std::fmt::{Debug, Display};
 use std::string::FromUtf8Error;
 pub use target::*;
 use thiserror::Error;
 
+/// Implements SQLite support for a newtype.
+///
+/// Types with SQLite support can be used as parameters in SQLite statements without converting
+/// them to a compatible type first.
+///
+/// The inner type must implement [rusqlite::types::ToSql] and [rusqlite::types::FromSql].
 #[macro_export]
 macro_rules! impl_newtype_to_sql {
     ($type:ty => $inner:ty) => {
@@ -41,6 +50,7 @@ macro_rules! impl_newtype_to_sql {
     };
 }
 
+/// Implements safe (e.g. no panic) conversion of an enum to all integer types and back
 #[macro_export]
 macro_rules! impl_enum_to_int {
     ($type:ty, $($variant:ident => $number:literal),+) => {
@@ -80,6 +90,9 @@ macro_rules! impl_enum_to_int {
     };
 }
 
+/// Implements SQLite support for an enum (without data) by converting its variants into strings.
+///
+/// The enum can then be used as parameter for a TEXT column.
 #[macro_export]
 macro_rules! impl_enum_to_sql_str {
     ($type:ty, $($variant:ident => $text:literal),+ $(,)?) => {
@@ -124,6 +137,10 @@ macro_rules! impl_enum_to_sql_str {
     };
 }
 
+/// Implements a user friendly string representation of the enum.
+///
+/// Provides `as_user_str()` and implements [Display], which give a `'static str` representing the
+/// enums variant. Also implements `FromStr` to allow the enum to be parsed from user input.
 #[macro_export]
 macro_rules! impl_enum_to_user_str {
     ($type:ty, $($variant:ident => $text:literal),+) => {
@@ -160,10 +177,39 @@ macro_rules! impl_enum_to_user_str {
     };
 }
 
+/// A globally unique entity identifier.
+///
+/// "Globally" means spanning different entity types, e.g. nodes, targets, buddy groups and storage
+/// pools.
+///
+/// It's based on an i64 because the management as the authorative instance giving these out uses
+/// SQLite as a backend. SQLite only supports signed 64bit integers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EntityUID(i64);
+
+impl_newtype_to_sql!(EntityUID => i64);
+
+impl Display for EntityUID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.0, f)
+    }
+}
+
+impl From<i64> for EntityUID {
+    fn from(value: i64) -> Self {
+        Self(value)
+    }
+}
+
+/// Returned when integer or string fails the enum conversion (doesn't match any variant)
 #[derive(Clone, Debug, Error)]
 #[error("Invalid enum value {0} for conversion")]
 pub struct InvalidEnumValue<I: Display>(pub I);
 
+/// Matches the `FhgfsOpsErr` value from the BeeGFS C/C++ codebase.
+///
+/// Since this is a struct, not an enum, it allows for all possible values, not only the ones
+/// defined as constants.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct OpsErr(i32);
 
@@ -179,6 +225,7 @@ impl OpsErr {
     pub const UNKNOWN_POOL: Self = Self(30);
 }
 
+/// The BeeGFS message ID as defined in `NetMsgTypes.h`
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct MsgID(pub u16);
 
@@ -200,6 +247,9 @@ impl Display for MsgID {
     }
 }
 
+/// The BeeGFS AckID
+///
+/// AckID is always a c string.
 #[derive(Clone, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct AckID(#[bee_serde(as = CStr<0>)] Vec<u8>);
 
@@ -229,16 +279,20 @@ impl AsRef<[u8]> for AckID {
     }
 }
 
+/// The BeeGFS generic response code
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct GenericResponseCode(i32);
 
-#[allow(unused)]
 impl GenericResponseCode {
     pub const TRY_AGAIN: Self = Self(0);
     pub const INDIRECT_COMM_ERR: Self = Self(1);
     pub const NEW_SEQ_NO_BASE: Self = Self(2);
 }
 
+/// A user friendly alias for an entity
+///
+/// Aliases an [EntityUID]. Meant to be used in command line arguments and config files to identify
+/// entities.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct EntityAlias(String);
 
@@ -276,6 +330,9 @@ impl AsRef<[u8]> for EntityAlias {
 
 impl_newtype_to_sql!(EntityAlias => String);
 
+/// The BeeGFS authentication secret
+///
+/// Sent by the `AuthenticateChannel` message to authenticate a connection.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct AuthenticationSecret(i64);
 

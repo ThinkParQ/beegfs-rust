@@ -51,7 +51,7 @@ pub(super) async fn handle(
                 msg.id_type,
                 msg.pool_id,
             );
-            msg::SetDefaultQuotaResp { result: true }
+            msg::SetDefaultQuotaResp { result: 1 }
         }
 
         Err(err) => {
@@ -61,7 +61,7 @@ pub(super) async fn handle(
                 msg.id_type,
                 msg.pool_id
             );
-            msg::SetDefaultQuotaResp { result: false }
+            msg::SetDefaultQuotaResp { result: 0 }
         }
     }
 }

@@ -1,143 +1,172 @@
+//! Reusable buffer for serialized BeeGFS messages
+//!
+//! This buffer provides the memory and the functionality to (de-)serialize BeeGFS messages from /
+//! into and read / write / send / receive from / to streams and UDP sockets.
+//!
+//! They are meant to be used in two steps:
+//! Serialize a message first, then write or send it to the wire.
+//! OR
+//! Read or receive data from the wire, then deserialize it into a message.
+//!
+//! # Example: Reading from stream
+//! 1. `.read_from_stream()` to read in the data from stream into the buffer
+//! 2. `.deserialize_msg()` to deserialize the message from the buffer
+//!
+//! # Important
+//! If receiving data failed part way or didn't happen at all before calling `deserialize_msg`, the
+//! buffer is in an invalid state. Deserializing will then most likely fail, or worse, succeed and
+//! provide old or garbage data. The same applies for the opposite direction. It's up to the user to
+//! make sure the buffer is used the appropriate way.
 use super::stream::Stream;
 use crate::bee_serde::{BeeSerde, Deserializer, Serializer};
 use crate::msg::{Header, Msg};
 use crate::MsgID;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bytes::BytesMut;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 
-const MAX_DATAGRAM_LEN: usize = 65535;
+/// Fixed length of the datagrams to send and receive via UDP.
+///
+/// Must match DGRAMMGR_*BUF_SIZE in `AbstractDatagramListener.h` (common) and `DatagramListener.h`
+/// (client_module).
+const DATAGRAM_LEN: usize = 65536;
 
+/// Reusable buffer for serialized BeeGFS messages
+///
+/// See module level documentation for more information.
 #[derive(Debug, Default)]
 pub struct MsgBuf {
-    ser_msg: BytesMut,
-    header: Box<Option<Header>>,
+    buf: BytesMut,
+    header: Box<Header>,
 }
 
 impl MsgBuf {
+    /// Serializes a BeeGFS message into the buffer
     pub fn serialize_msg<M: Msg>(&mut self, msg: &M) -> Result<()> {
-        self.ser_msg.truncate(0);
+        self.buf.truncate(0);
 
-        let mut split = SplitBuffers::from(&mut self.ser_msg);
+        if self.buf.capacity() < Header::LEN {
+            self.buf.reserve(Header::LEN);
+        }
 
-        let mut ser_body = Serializer::new(&mut split.body, msg.build_feature_flags());
-        msg.serialize(&mut ser_body)?;
+        // We need to serialize the body first since we need its total length for the header.
+        // Therefore, the body part (which comes AFTER the header) is split off to be passed as a
+        // separate BytesMut to the serializer.
+        let mut body = self.buf.split_off(Header::LEN);
 
-        let header = Header::new(ser_body.bytes_written(), M::ID, msg.build_feature_flags());
+        // Catching serialization errors to ensure buffer is unsplit afterwards in all cases
+        let res = (|| {
+            // Serialize body
+            let mut ser_body = Serializer::new(&mut body, msg.build_feature_flags());
+            msg.serialize(&mut ser_body)?;
 
-        let mut ser_header = Serializer::new(split.header, msg.build_feature_flags());
-        header.serialize(&mut ser_header)?;
+            // Create and serialize header
+            let header = Header::new(ser_body.bytes_written(), M::ID, msg.build_feature_flags());
+            let mut ser_header = Serializer::new(&mut self.buf, msg.build_feature_flags());
+            header.serialize(&mut ser_header)?;
 
-        self.header.replace(header);
-        Ok(())
+            *self.header = header;
+
+            Ok(()) as Result<_>
+        })();
+
+        // Put header and body back together
+        self.buf.unsplit(body);
+
+        res
     }
 
+    /// Deserializes the BeeGFS message present in the buffer
+    ///
+    /// # Panic
+    /// The function will panic if the buffer has not been filled with data before (e.g. by
+    /// reading from stream or receiving from a socket)
     pub fn deserialize_msg<M: Msg>(&self) -> Result<M> {
-        let mut des = Deserializer::new(
-            &self.ser_msg[Header::LEN..],
-            self.header
-                .as_ref()
-                .as_ref()
-                .expect("Header field must be set by serializing a message or receiving data first")
-                .msg_feature_flags,
-        );
+        let mut des = Deserializer::new(&self.buf[Header::LEN..], self.header.msg_feature_flags);
         M::deserialize(&mut des)
     }
 
+    /// Reads a BeeGFS message from a stream into the buffer
     pub(super) async fn read_from_stream(&mut self, stream: &mut Stream) -> Result<()> {
-        if self.ser_msg.len() < Header::LEN {
-            self.ser_msg.resize(Header::LEN, 0);
+        if self.buf.len() < Header::LEN {
+            self.buf.resize(Header::LEN, 0);
         }
 
-        stream.read_exact(&mut self.ser_msg[0..Header::LEN]).await?;
-        let header = Header::from_buf(&self.ser_msg[0..Header::LEN])?;
+        stream.read_exact(&mut self.buf[0..Header::LEN]).await?;
+        let header = Header::from_buf(&self.buf[0..Header::LEN])?;
         let msg_len = header.msg_len();
-        self.header.replace(header);
 
-        if self.ser_msg.len() != msg_len {
-            self.ser_msg.resize(msg_len, 0);
+        if self.buf.len() != msg_len {
+            self.buf.resize(msg_len, 0);
         }
 
         stream
-            .read_exact(&mut self.ser_msg[Header::LEN..msg_len])
-            .await
-    }
+            .read_exact(&mut self.buf[Header::LEN..msg_len])
+            .await?;
 
-    pub(super) async fn write_to_stream(&self, stream: &mut Stream) -> Result<()> {
-        let msg_len = self.msg_len();
-        stream.write_all(&self.ser_msg[0..msg_len]).await?;
+        *self.header = header;
+
         Ok(())
     }
 
+    /// Writes the BeeGFS message from the buffer to a stream
+    ///
+    /// # Panic
+    /// The function will panic if the buffer has not been filled with data before (e.g. by
+    /// serializing a message)
+    pub(super) async fn write_to_stream(&self, stream: &mut Stream) -> Result<()> {
+        stream
+            .write_all(&self.buf[0..self.header.msg_len()])
+            .await?;
+        Ok(())
+    }
+
+    /// Receives a BeeGFS message from a UDP socket into the buffer
     pub(super) async fn recv_from_socket(&mut self, sock: &Arc<UdpSocket>) -> Result<SocketAddr> {
-        if self.ser_msg.len() != MAX_DATAGRAM_LEN {
-            self.ser_msg.resize(MAX_DATAGRAM_LEN, 0);
+        if self.buf.len() != DATAGRAM_LEN {
+            self.buf.resize(DATAGRAM_LEN, 0);
         }
 
-        match sock.recv_from(&mut self.ser_msg).await {
+        match sock.recv_from(&mut self.buf).await {
             Ok(n) => {
-                let header = Header::from_buf(&self.ser_msg[0..Header::LEN])?;
-                self.ser_msg.truncate(header.msg_len());
-
-                self.header.replace(header);
-
+                let header = Header::from_buf(&self.buf[0..Header::LEN])?;
+                self.buf.truncate(header.msg_len());
+                *self.header = header;
                 Ok(n.1)
             }
             Err(err) => Err(err.into()),
         }
     }
 
+    /// Sends the BeeGFS message in the buffer to a UDP socket
+    ///
+    /// # Panic
+    /// The function will panic if the buffer has not been filled with data before (e.g. by
+    /// serializing a message)
     pub(super) async fn send_to_socket(
         &self,
         sock: &UdpSocket,
         peer_addr: &SocketAddr,
     ) -> Result<()> {
-        let msg_len = self.msg_len();
-        let sent = sock.send_to(&self.ser_msg, peer_addr).await?;
+        if self.buf.len() > DATAGRAM_LEN {
+            bail!(
+                "Datagram to be sent to {peer_addr:?} exceeds maximum length of {DATAGRAM_LEN} \
+                 bytes"
+            );
+        }
 
-        assert_eq!(sent, msg_len);
-
+        sock.send_to(&self.buf, peer_addr).await?;
         Ok(())
     }
 
+    /// The [MsgID] of the serialized BeeGFS message in the buffer
+    ///
+    /// # Panic
+    /// The function will panic if the buffer has not been filled with data before (e.g. by
+    /// reading from stream or receiving from a socket)
     pub fn msg_id(&self) -> MsgID {
-        self.header
-            .as_ref()
-            .as_ref()
-            .expect("Header field must be set by serializing a message or receiving data first")
-            .msg_id
-    }
-
-    fn msg_len(&self) -> usize {
-        self.header
-            .as_ref()
-            .as_ref()
-            .expect("Header field must be set by serializing a message or receiving data first")
-            .msg_len()
-    }
-}
-
-struct SplitBuffers<'a> {
-    header: &'a mut BytesMut,
-    body: BytesMut,
-}
-
-impl<'a> SplitBuffers<'a> {
-    fn from(buf: &'a mut BytesMut) -> Self {
-        if buf.capacity() < Header::LEN {
-            buf.reserve(Header::LEN);
-        }
-
-        let body = buf.split_off(Header::LEN);
-        Self { header: buf, body }
-    }
-}
-
-impl<'a> Drop for SplitBuffers<'a> {
-    fn drop(&mut self) {
-        let body = std::mem::take(&mut self.body);
-        self.header.unsplit(body);
+        self.header.msg_id
     }
 }

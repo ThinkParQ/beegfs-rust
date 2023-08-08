@@ -16,11 +16,18 @@ pub use definitions::*;
 mod header;
 pub(crate) use header::Header;
 
+/// A BeeGFS message
+///
+/// A struct that implements `Msg` represents a BeeGFS message that is compatible with other C/C++
+/// based BeeGFS components.
 pub trait Msg: BeeSerde + std::fmt::Debug + Clone + Send + Sync + 'static {
     /// Message type as defined in NetMessageTypes.h
     const ID: MsgID;
 
-    /// returns the feature flags set built from data
+    /// Returns the feature flags
+    ///
+    /// Feature flags are a u16 field in the message header and are sometimes used to control
+    /// (de-)serialization. This function provides them to the serializer.
     fn build_feature_flags(&self) -> u16 {
         0
     }

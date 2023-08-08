@@ -31,8 +31,7 @@ pub struct Heartbeat {
     // root nodes ID, but on other nodes it is just irrelevant.
     // Can be a Node ID or a BuddyGroup ID
     pub root_num_id: u32,
-    #[bee_serde(as = BoolAsInt<u8>)]
-    pub is_root_mirrored: bool,
+    pub is_root_mirrored: u8,
     pub port: Port,
     /// This is transmitted from other nodes but we decided to just use one port for TCP and UDP in
     /// the future

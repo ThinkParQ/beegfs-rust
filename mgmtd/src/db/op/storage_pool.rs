@@ -1,6 +1,5 @@
 //! Functions for storage pool management
 
-use super::entity::EntityUID;
 use super::*;
 use rusqlite::OptionalExtension;
 

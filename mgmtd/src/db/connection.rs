@@ -31,9 +31,6 @@ pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
     conn.execute_batch(include_str!("schema/schema.sql"))
         .with_context(|| "Creating database schema failed")?;
 
-    conn.execute_batch(include_str!("schema/views.sql"))
-        .with_context(|| "Creating database views failed")?;
-
     Ok(())
 }
 

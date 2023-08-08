@@ -8,7 +8,7 @@ use std::time::Duration;
 /// Represents a node entry.
 #[derive(Clone, Debug)]
 pub struct Node {
-    pub uid: NodeUID,
+    pub uid: EntityUID,
     pub id: NodeID,
     pub node_type: NodeType,
     pub alias: EntityAlias,

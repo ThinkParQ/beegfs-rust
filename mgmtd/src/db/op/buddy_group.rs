@@ -281,7 +281,7 @@ pub fn check_and_swap_buddies(
 pub fn prepare_storage_deletion(
     tx: &mut Transaction,
     id: BuddyGroupID,
-) -> DbResult<(NodeUID, NodeUID)> {
+) -> DbResult<(EntityUID, EntityUID)> {
     if tx.query_row("SELECT COUNT(*) FROM client_nodes", [], |row| {
         row.get::<_, i64>(0)
     })? > 0
@@ -538,7 +538,7 @@ mod test {
 
             let res = super::prepare_storage_deletion(tx, 1.into()).unwrap();
 
-            assert_eq!((NodeUID::from(102001), NodeUID::from(102002)), res);
+            assert_eq!((EntityUID::from(102001), EntityUID::from(102002)), res);
         })
     }
 

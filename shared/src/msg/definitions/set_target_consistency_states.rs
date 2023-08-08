@@ -13,8 +13,7 @@ pub struct SetTargetConsistencyStates {
     #[bee_serde(as = Seq<true, _>)]
     pub states: Vec<TargetConsistencyState>,
     pub ack_id: AckID,
-    #[bee_serde(as = BoolAsInt<u8>)]
-    pub set_online: bool,
+    pub set_online: u8,
 }
 
 impl Msg for SetTargetConsistencyStates {

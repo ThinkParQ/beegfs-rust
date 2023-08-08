@@ -52,14 +52,14 @@ pub trait Request: Send + Sync {
 #[derive(Debug)]
 pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
-    pub(super) msg_buf: &'a mut MsgBuf,
+    pub(super) buf: &'a mut MsgBuf,
 }
 
 #[async_trait]
 impl<'a> Request for StreamRequest<'a> {
     async fn respond(mut self, msg: &impl Msg) -> Result<()> {
-        self.msg_buf.serialize_msg(msg)?;
-        self.msg_buf.write_to_stream(self.stream).await
+        self.buf.serialize_msg(msg)?;
+        self.buf.write_to_stream(self.stream).await
     }
 
     fn authenticate_connection(&mut self) {
@@ -77,11 +77,11 @@ impl<'a> Request for StreamRequest<'a> {
     }
 
     fn deserialize_msg<M: Msg>(&self) -> Result<M> {
-        self.msg_buf.deserialize_msg()
+        self.buf.deserialize_msg()
     }
 
     fn msg_id(&self) -> MsgID {
-        self.msg_buf.msg_id()
+        self.buf.msg_id()
     }
 }
 

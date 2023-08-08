@@ -49,7 +49,7 @@ pub(super) async fn handle(
                     inodes: limit.inodes.unwrap_or_default(),
                     id: limit.quota_id,
                     id_type: msg.id_type,
-                    valid: true,
+                    valid: 1,
                 })
                 .collect();
 

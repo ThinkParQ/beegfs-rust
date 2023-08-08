@@ -4,23 +4,6 @@ use std::fmt::Display;
 use std::num::{ParseIntError, TryFromIntError};
 use std::str::FromStr;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct NodeUID(i64);
-
-impl_newtype_to_sql!(NodeUID => i64);
-
-impl From<i64> for NodeUID {
-    fn from(value: i64) -> Self {
-        Self(value)
-    }
-}
-
-impl Display for NodeUID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 // BeeGFS handles node num ids as u32 in most cases, but there are some messages
 // where meta node ID is reused as target ID, and that is u16... So, in reality,
 // u32 node IDs don't work.

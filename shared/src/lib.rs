@@ -1,4 +1,4 @@
-//! This library provides shared code that can be reused by BeeGFS Rust projects.
+//! This library provides shared code for BeeGFS Rust projects.
 //!
 //! It contains the network [message definitions](msg), [types] to build them
 //! from, the [serializer](bee_serde), [connection](conn) handling and other utilities and
@@ -17,6 +17,7 @@ use std::net::IpAddr;
 // Reexport for convenience
 pub use types::*;
 
+/// Retrieve the systems available network interfaces with their addresses
 pub fn network_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<Nic>> {
     let all_interfaces = pnet_datalink::interfaces();
 

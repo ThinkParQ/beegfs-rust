@@ -1,7 +1,6 @@
 use super::error::*;
 #[cfg(test)]
 use super::test::*;
-use entity::EntityUID;
 use rusqlite::{params, OptionalExtension, Params, Row, Transaction};
 use shared::*;
 use std::ops::RangeBounds;

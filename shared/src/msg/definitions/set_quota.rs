@@ -14,8 +14,7 @@ impl Msg for SetQuota {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetQuotaResp {
-    #[bee_serde(as = BoolAsInt<i32>)]
-    pub result: bool,
+    pub result: i32,
 }
 
 impl Msg for SetQuotaResp {

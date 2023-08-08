@@ -8,9 +8,8 @@ pub struct SetMirrorBuddyGroup {
     pub primary_target_id: TargetID,
     pub secondary_target_id: TargetID,
     pub buddy_group_id: BuddyGroupID,
-    #[bee_serde(as = BoolAsInt<u8>)]
     /// This probably shall allow a group to be updated
-    pub allow_update: bool,
+    pub allow_update: u8,
     pub ack_id: AckID,
 }
 

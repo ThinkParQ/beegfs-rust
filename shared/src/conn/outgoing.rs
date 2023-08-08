@@ -4,7 +4,7 @@ use super::store::Store;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::msg::{self, Msg};
-use crate::{AuthenticationSecret, NodeUID};
+use crate::{AuthenticationSecret, EntityUID};
 use anyhow::{bail, Context, Result};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -15,9 +15,10 @@ use tokio::net::UdpSocket;
 ///
 /// Provides methods for making requests to nodes (streams and datagrams / UDP). Uses [Store]
 /// for storing and obtaining open streams as well as obtaining the addresses belonging to
-/// a given [NodeUID].
+/// a given [EntityUID].
 ///
-/// Meant to be wrapped in an [Arc] and shared between tasks to provide access to communication.
+/// Meant to be wrapped in an [Arc] or another sharable struct and provided to tasks for access to
+/// communication.
 #[derive(Debug)]
 pub struct Pool {
     store: Store,
@@ -40,7 +41,11 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and receives the response.
-    pub async fn request<M: msg::Msg, R: msg::Msg>(&self, node_uid: NodeUID, msg: &M) -> Result<R> {
+    pub async fn request<M: msg::Msg, R: msg::Msg>(
+        &self,
+        node_uid: EntityUID,
+        msg: &M,
+    ) -> Result<R> {
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
         buf.serialize_msg(msg)?;
@@ -53,7 +58,7 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
-    pub async fn send<M: msg::Msg>(&self, node_uid: NodeUID, msg: &M) -> Result<()> {
+    pub async fn send<M: msg::Msg>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
         buf.serialize_msg(msg)?;
@@ -78,7 +83,7 @@ impl Pool {
     /// 3. Pop an open stream from the store, waiting until one gets available.
     async fn comm_stream(
         &self,
-        node_uid: NodeUID,
+        node_uid: EntityUID,
         buf: &mut MsgBuf,
         expect_response: bool,
     ) -> Result<()> {
@@ -174,7 +179,7 @@ impl Pool {
 
     pub async fn broadcast_datagram<M: Msg>(
         &self,
-        peers: impl IntoIterator<Item = NodeUID>,
+        peers: impl IntoIterator<Item = EntityUID>,
         msg: &M,
     ) -> Result<()> {
         let mut buf = self.store.pop_buf().unwrap_or_default();
@@ -195,7 +200,7 @@ impl Pool {
         Ok(())
     }
 
-    pub fn replace_node_addrs(&self, node_uid: NodeUID, new_addrs: impl Into<Arc<[SocketAddr]>>) {
+    pub fn replace_node_addrs(&self, node_uid: EntityUID, new_addrs: impl Into<Arc<[SocketAddr]>>) {
         self.store.replace_node_addrs(node_uid, new_addrs)
     }
 }

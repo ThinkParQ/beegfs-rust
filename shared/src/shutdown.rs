@@ -1,4 +1,4 @@
-//! Provides tooling to gracefully handle app shutdown.
+//! Gracefully handle app shutdown.
 
 use tokio::sync::watch;
 

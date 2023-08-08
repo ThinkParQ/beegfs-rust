@@ -5,8 +5,7 @@ use super::*;
 /// Unused/ignored in the Rust code.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetChannelDirect {
-    #[bee_serde(as = BoolAsInt<i32>)]
-    pub is_direct: bool,
+    pub is_direct: i32,
 }
 
 impl Msg for SetChannelDirect {

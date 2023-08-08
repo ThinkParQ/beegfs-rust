@@ -16,8 +16,6 @@ pub fn with_test_data(op: impl FnOnce(&mut Transaction)) {
     // Setup test data
     conn.execute_batch(include_str!("schema/schema.sql"))
         .unwrap();
-    conn.execute_batch(include_str!("schema/views.sql"))
-        .unwrap();
     conn.execute_batch(include_str!("schema/test_data.sql"))
         .unwrap();
 

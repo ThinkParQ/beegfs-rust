@@ -8,18 +8,18 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct NodeNic {
-    pub node_uid: NodeUID,
+    pub node_uid: EntityUID,
     pub addr: Ipv4Addr,
     pub port: Port,
     pub nic_type: NicType,
     pub alias: EntityAlias,
 }
 
-/// Retrieves all node addresses grouped by NodeUID.
+/// Retrieves all node addresses grouped by EntityUID.
 ///
 /// # Return value
-/// A Vec containing (NodeUID, Vec<SocketAddr>) entries.
-pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(NodeUID, Vec<SocketAddr>)>> {
+/// A Vec containing (EntityUID, Vec<SocketAddr>) entries.
+pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(EntityUID, Vec<SocketAddr>)>> {
     let mut stmt = tx.prepare_cached(
         r#"
         SELECT nn.node_uid, nn.addr, n.port
@@ -32,7 +32,7 @@ pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(NodeUID, Vec<SocketA
     let mut rows = stmt.query([])?;
 
     let mut res = vec![];
-    let mut cur: Option<&mut (NodeUID, Vec<SocketAddr>)> = None;
+    let mut cur: Option<&mut (EntityUID, Vec<SocketAddr>)> = None;
     while let Some(row) = rows.next()? {
         let node_uid = row.get(0)?;
         let addr = SocketAddr::new(row.get::<_, [u8; 4]>(1)?.into(), row.get(2)?);
@@ -70,7 +70,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Arc<
 ///
 /// # Return value
 /// A Vec containing [NodeNic] entries.
-pub fn get_with_node_uid(tx: &mut Transaction, node_uid: NodeUID) -> DbResult<Arc<[NodeNic]>> {
+pub fn get_with_node_uid(tx: &mut Transaction, node_uid: EntityUID) -> DbResult<Arc<[NodeNic]>> {
     fetch(
         tx,
         r#"

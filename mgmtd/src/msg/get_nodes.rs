@@ -54,9 +54,9 @@ pub(super) async fn handle(
                 MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
             },
             is_root_mirrored: match res.2 {
-                MetaRoot::Unknown => false,
-                MetaRoot::Normal(_, _) => false,
-                MetaRoot::Mirrored(_) => true,
+                MetaRoot::Unknown => 0,
+                MetaRoot::Normal(_, _) => 0,
+                MetaRoot::Mirrored(_) => 1,
             },
         },
         Err(err) => {
@@ -65,7 +65,7 @@ pub(super) async fn handle(
             msg::GetNodesResp {
                 nodes: vec![],
                 root_num_id: 0,
-                is_root_mirrored: false,
+                is_root_mirrored: 0,
             }
         }
     }

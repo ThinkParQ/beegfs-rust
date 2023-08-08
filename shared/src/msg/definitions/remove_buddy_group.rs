@@ -8,10 +8,8 @@ pub struct RemoveBuddyGroup {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeTypeServer,
     pub buddy_group_id: BuddyGroupID,
-    #[bee_serde(as = BoolAsInt<u8>)]
-    pub check_only: bool,
-    #[bee_serde(as = BoolAsInt<u8>)]
-    pub force: bool,
+    pub check_only: u8,
+    pub force: u8,
 }
 
 impl Msg for RemoveBuddyGroup {

@@ -11,7 +11,7 @@ use shared::bee_serde::BeeSerde;
 use shared::conn::msg_dispatch::*;
 use shared::conn::Pool;
 use shared::msg::Msg;
-use shared::{log_error_chain, NodeType, NodeUID};
+use shared::{log_error_chain, EntityUID, NodeType};
 use std::net::SocketAddr;
 use std::ops::Deref;
 use std::sync::{Arc, RwLockReadGuard};
@@ -34,9 +34,9 @@ pub(crate) trait AppContext: Clone + Send + Sync + 'static {
     ) -> DbResult<R>;
 
     /// Sends a BeeGFS message via stream and expects a response
-    async fn request<M: Msg, R: Msg>(&self, dest: NodeUID, msg: &M) -> Result<R, anyhow::Error>;
+    async fn request<M: Msg, R: Msg>(&self, dest: EntityUID, msg: &M) -> Result<R, anyhow::Error>;
     /// Sends a BeeGFS message via stream and doesn't expect a response
-    async fn send<M: Msg>(&self, dest: NodeUID, msg: &M) -> Result<(), anyhow::Error>;
+    async fn send<M: Msg>(&self, dest: EntityUID, msg: &M) -> Result<(), anyhow::Error>;
     /// Notifies a collection of nodes via datagram and doesn't expect a response
     async fn notify_nodes(&self, node_types: &'static [NodeType], msg: &impl Msg);
 
@@ -45,7 +45,7 @@ pub(crate) trait AppContext: Clone + Send + Sync + 'static {
     /// Obtains read access to [crate::StaticInfo]
     fn get_static_info(&self) -> &'static crate::StaticInfo;
 
-    fn replace_node_addrs(&self, node_uid: NodeUID, addrs: impl Into<Arc<[SocketAddr]>>);
+    fn replace_node_addrs(&self, node_uid: EntityUID, addrs: impl Into<Arc<[SocketAddr]>>);
 }
 
 /// A collection of Handles used for interacting and accessing the different components of the app.
@@ -113,14 +113,14 @@ impl AppContext for AppHandles {
         self.db.op(op).await
     }
 
-    async fn request<M: Msg, R: Msg>(&self, dest: NodeUID, msg: &M) -> Result<R, anyhow::Error> {
+    async fn request<M: Msg, R: Msg>(&self, dest: EntityUID, msg: &M) -> Result<R, anyhow::Error> {
         log::debug!(target: "mgmtd::msg", "REQUEST to {:?}: {:?}", dest, msg);
         let response = Pool::request(&self.conn_pool, dest, msg).await?;
         log::debug!(target: "mgmtd::msg", "RESPONSE RECEIVED from {:?}: {:?}", dest, msg);
         Ok(response)
     }
 
-    async fn send<M: Msg + BeeSerde>(&self, dest: NodeUID, msg: &M) -> Result<(), anyhow::Error> {
+    async fn send<M: Msg + BeeSerde>(&self, dest: EntityUID, msg: &M) -> Result<(), anyhow::Error> {
         log::debug!(target: "mgmtd::msg", "SEND to {:?}: {:?}", dest, msg);
         Pool::send(&self.conn_pool, dest, msg).await?;
         Ok(())
@@ -161,7 +161,7 @@ impl AppContext for AppHandles {
         self.static_info
     }
 
-    fn replace_node_addrs(&self, node_uid: NodeUID, addrs: impl Into<Arc<[SocketAddr]>>) {
+    fn replace_node_addrs(&self, node_uid: EntityUID, addrs: impl Into<Arc<[SocketAddr]>>) {
         self.conn_pool.replace_node_addrs(node_uid, addrs)
     }
 }

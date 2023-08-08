@@ -49,7 +49,7 @@ pub(super) async fn handle(
                     primary_target_id: msg.primary_target_id,
                     secondary_target_id: msg.secondary_target_id,
                     buddy_group_id: actual_id,
-                    allow_update: false,
+                    allow_update: 0,
                 },
             )
             .await;

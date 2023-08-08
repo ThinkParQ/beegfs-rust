@@ -1,37 +1,46 @@
+//! An async task safe queue based on [VecDeque]
+
 use std::collections::VecDeque;
 use std::sync::Mutex;
 use tokio::sync::Notify;
 
+/// An async task safe queue based on [VecDeque]
 #[derive(Debug)]
 pub struct AsyncQueue<T> {
-    store: Mutex<VecDeque<T>>,
+    queue: Mutex<VecDeque<T>>,
     notification: Notify,
 }
 
 impl<T> AsyncQueue<T> {
+    /// Create a new `AsyncQueue`
     pub fn new() -> Self {
         Self {
-            store: Mutex::new(VecDeque::new()),
+            queue: Mutex::new(VecDeque::new()),
             notification: Notify::new(),
         }
     }
 
+    /// Push an item to the queue
     pub fn push(&self, item: T) {
         {
-            let mut store = self.store.lock().unwrap();
+            let mut store = self.queue.lock().unwrap();
             store.push_back(item);
         }
 
         self.notification.notify_one();
     }
 
+    /// Try to pop an item from the queue
+    ///
+    /// Returns immediately with `None` if the queue is empty.
     pub fn try_pop(&self) -> Option<T> {
         let (item, is_empty) = {
-            let mut store = self.store.lock().unwrap();
-            let item = store.pop_front();
-            (item, store.is_empty())
+            let mut queue = self.queue.lock().unwrap();
+            let item = queue.pop_front();
+            (item, queue.is_empty())
         };
 
+        // Ensure a permit is stored in the notification if the queue is not empty after popping
         if item.is_some() && !is_empty {
             self.notification.notify_one();
         }
@@ -39,6 +48,14 @@ impl<T> AsyncQueue<T> {
         item
     }
 
+    /// Pop an item from the queue asynchronously
+    ///
+    /// The future completes as soon as an item is available in the queue.
+    ///
+    /// Note: Even when being the only waiter, it is not guaranteed to receive the next available
+    /// item. The actual queue is locked after receiving the notification, so, in rare cases,
+    /// another non-async requestor might call `try_pop()` in between and receives the item instead.
+    /// In that case this request is queued up again.
     pub async fn pop(&self) -> T {
         loop {
             self.notification.notified().await;
@@ -121,6 +138,6 @@ mod test {
             t.await.unwrap();
         }
 
-        assert_eq!(0, store.store.lock().unwrap().len());
+        assert_eq!(0, store.queue.lock().unwrap().len());
     }
 }
