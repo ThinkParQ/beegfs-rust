@@ -1,147 +1,25 @@
-use crate::db::{self, Connection};
+//! Program wide config definition and tools for reading and parsing
+
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use shared::parser::integer_with_time_unit;
 use shared::{CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
-use std::sync::{RwLock, RwLockReadGuard};
 use std::time::Duration;
 
-// DYNAMIC CONFIG
-
-pub(crate) trait Field {
-    type Value: Serialize + for<'a> Deserialize<'a> + Clone + Debug + Send + Sync + 'static;
-    const KEY: &'static str;
-
-    fn default() -> Self::Value;
-}
-
-macro_rules! define_config {
-    { $($key:ident: $type:ty = $default_value:expr,)+ } => {
-        $(
-            #[allow(non_camel_case_types)]
-            pub(crate) struct $key {}
-
-            impl Field for $key {
-                type Value = $type;
-                const KEY: &'static str = stringify!($key);
-
-                fn default() -> Self::Value {
-                    $default_value
-                }
-            }
-        )+
-
-        #[derive(Debug)]
-        pub(crate) struct DynamicConfig {
-            $(
-                pub $key: $type,
-            )+
-        }
-
-        impl Default for DynamicConfig {
-            fn default() -> Self {
-                Self {
-                    $(
-                        $key: $default_value,
-                    )+
-                }
-            }
-        }
-
-        impl DynamicConfig {
-            pub(crate) fn set_by_json_str(&mut self, key: &str, json_value: &str) -> serde_json::Result<()> {
-                match key {
-                    $(
-                        stringify!($key) => self.$key = serde_json::from_str(json_value)?,
-                    )+
-                    _ => {}
-                }
-
-                Ok(())
-            }
-        }
-    }
-}
-
-define_config! {
-    registration_enable: bool = true,
-    node_offline_timeout: Duration = Duration::from_secs(180),
-    client_auto_remove_timeout: Duration = Duration::from_secs(30 * 60),
-
-    // Quota
-    quota_enable: bool = false,
-    quota_update_interval: Duration = Duration::from_secs(30),
-
-    quota_user_system_ids_min: Option<QuotaID> = None,
-    quota_user_ids_file: Option<PathBuf> = None,
-    quota_user_ids_range: Option<RangeInclusive<u32>> = None,
-    quota_group_system_ids_min: Option<QuotaID> = None,
-    quota_group_ids_file: Option<PathBuf> = None,
-    quota_group_ids_range: Option<RangeInclusive<u32>> = None,
-
-    // Capacity pools
-    cap_pool_meta_limits: CapPoolLimits = CapPoolLimits {
-        inodes_low: 10 * 1000 * 1000,
-        inodes_emergency: 1000 * 1000,
-        space_low: 10 * 1024 * 1024 * 1024,
-        space_emergency: 3 * 1024 * 1024 * 1024
-    },
-    cap_pool_storage_limits: CapPoolLimits = CapPoolLimits {
-        inodes_low: 10 * 1000 * 1000,
-        inodes_emergency: 1000 * 1000,
-        space_low: 512 * 1024 * 1024 * 1024,
-        space_emergency: 10 * 1024 * 1024 * 1024
-    },
-
-    // Dynamic capacity pools
-    cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits> = None,
-    cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits> = None,
-}
-
+/// Contains the program configuration
+///
+/// Filled by command line flags and config file and provides
+/// access to them for various parts of the program. Meant to be read-only after initialization.
+///
+/// Parameters added here must be set to be updated by either config file or command line or both
+/// below.
 #[derive(Debug)]
-pub(crate) struct ConfigCache {
-    inner: RwLock<DynamicConfig>,
-    db: Connection,
-}
-
-impl ConfigCache {
-    pub(crate) async fn from_db(db: Connection) -> Result<Self> {
-        let config = db.op(db::config::get_all).await?;
-
-        Ok(Self {
-            inner: RwLock::new(config),
-            db,
-        })
-    }
-
-    #[allow(unused)]
-    pub(crate) async fn set<T: Field>(&self, value: T::Value) -> Result<()> {
-        self.inner
-            .write()
-            .expect("Lock writer should never panic")
-            .set_by_json_str(T::KEY, &serde_json::to_string(&value)?)?;
-
-        self.db
-            .op(move |tx| db::config::upsert::<T>(tx, &value))
-            .await?;
-
-        Ok(())
-    }
-
-    pub(crate) fn get(&self) -> RwLockReadGuard<DynamicConfig> {
-        self.inner.read().expect("Lock writer should never panic")
-    }
-}
-
-// STATIC CONFIG
-
-#[derive(Debug)]
-pub struct StaticConfig {
+pub struct Config {
     pub init: bool,
     pub port: Port,
     pub interfaces: Vec<String>,
@@ -151,9 +29,34 @@ pub struct StaticConfig {
     pub auth_enable: bool,
     pub log_target: LogTarget,
     pub log_level: LevelFilter,
+    pub registration_enable: bool,
+    pub node_offline_timeout: Duration,
+    pub client_auto_remove_timeout: Duration,
+
+    // Quota
+    pub quota_enable: bool,
+    pub quota_update_interval: Duration,
+
+    pub quota_user_system_ids_min: Option<QuotaID>,
+    pub quota_user_ids_file: Option<PathBuf>,
+    pub quota_user_ids_range: Option<RangeInclusive<u32>>,
+    pub quota_group_system_ids_min: Option<QuotaID>,
+    pub quota_group_ids_file: Option<PathBuf>,
+    pub quota_group_ids_range: Option<RangeInclusive<u32>>,
+
+    // Capacity pools
+    pub cap_pool_meta_limits: CapPoolLimits,
+    pub cap_pool_storage_limits: CapPoolLimits,
+
+    // Dynamic capacity pools
+    pub cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits>,
+    pub cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits>,
 }
 
-impl Default for StaticConfig {
+/// Sets the default values for the configuration.
+///
+/// Used when the parameter is provided neither by command line nor by config file.
+impl Default for Config {
     fn default() -> Self {
         Self {
             init: false,
@@ -163,23 +66,57 @@ impl Default for StaticConfig {
             db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
             auth_file: "/etc/beegfs/mgmtd.auth".into(),
             auth_enable: true,
-            log_target: LogTarget::Std,
+            log_target: LogTarget::Journald,
             log_level: LevelFilter::Warn,
+
+            registration_enable: true,
+            node_offline_timeout: Duration::from_secs(180),
+            client_auto_remove_timeout: Duration::from_secs(30 * 60),
+
+            // Quota
+            quota_enable: false,
+            quota_update_interval: Duration::from_secs(30),
+
+            quota_user_system_ids_min: None,
+            quota_user_ids_file: None,
+            quota_user_ids_range: None,
+            quota_group_system_ids_min: None,
+            quota_group_ids_file: None,
+            quota_group_ids_range: None,
+
+            // Capacity pools
+            cap_pool_meta_limits: CapPoolLimits {
+                inodes_low: 10 * 1000 * 1000,
+                inodes_emergency: 1000 * 1000,
+                space_low: 10 * 1024 * 1024 * 1024,
+                space_emergency: 3 * 1024 * 1024 * 1024,
+            },
+            cap_pool_storage_limits: CapPoolLimits {
+                inodes_low: 10 * 1000 * 1000,
+                inodes_emergency: 1000 * 1000,
+                space_low: 512 * 1024 * 1024 * 1024,
+                space_emergency: 10 * 1024 * 1024 * 1024,
+            },
+
+            // Dynamic capacity pools
+            cap_pool_dynamic_meta_limits: None,
+            cap_pool_dynamic_storage_limits: None,
         }
     }
 }
 
-// PARSING AND LOADING
-
+// Defines the Clap command line interface. Doc comment for the struct defines title and main help
+// text.
+//
 /// BeeGFS mgmtd Rust prototype
-#[derive(Debug, Default, Parser, Deserialize)]
+#[derive(Debug, Default, Parser)]
 #[command(
     author,
     version,
     rename_all = "kebab-case",
     hide_possible_values = false
 )]
-struct ConfigArgs {
+struct CommandLineArgs {
     //
     // CLI and config file args - can be filled in later from another ConfigArgs if they are
     // still none
@@ -204,7 +141,7 @@ struct ConfigArgs {
     /// Authentication file location [default: /etc/beegfs/mgmtd.auth]
     #[arg(long)]
     auth_file: Option<PathBuf>,
-    /// Log target [default: std]
+    /// Log target [default: journald]
     ///
     /// Sets the logging mechanism to use.
     #[arg(long)]
@@ -221,101 +158,35 @@ struct ConfigArgs {
     #[arg(long)]
     log_level: Option<LogLevel>,
 
-    //
     // CLI only args - we do not parse them from file and also do not update them
     /// Initialialize a new installation, then quit
     #[arg(long)]
-    #[serde(skip)]
     init: bool,
-    /// Config file location [default: /etc/beegfs/mgmtd.toml]
-    #[arg(
-        long,
-        default_value = "/etc/beegfs/mgmtd.toml",
-        hide_default_value = true
-    )]
-    #[serde(skip)]
-    config_file: Option<PathBuf>,
-    /// Dynamic config file location [default:
-    /// /etc/beegfs/mgmtd-dynamic.toml]
-    ///
-    /// Loads the dynamic configuration into the database at startup.
-    #[arg(
-        long,
-        default_value = "/etc/beegfs/mgmtd-dynamic.toml",
-        hide_default_value = true
-    )]
-    #[serde(skip)]
-    dynamic_config_file: Option<PathBuf>,
+    /// Config file location
+    #[arg(long, default_value = "/etc/beegfs/mgmtd.toml")]
+    config_file: PathBuf,
 }
 
-impl ConfigArgs {
-    /// Fill None fields from another source - ignore Some(_) fields
-    /// This means, what is put in first has higher priority
-    fn fill_from(&mut self, other: Self) {
-        if self.port.is_none() {
-            self.port = other.port
-        };
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ConfigFileArgs {
+    port: Option<Port>,
+    interfaces: Option<Vec<String>>,
+    connection_limit: Option<usize>,
+    db_file: Option<PathBuf>,
+    auth_enable: Option<bool>,
+    auth_file: Option<PathBuf>,
+    log_target: Option<LogTarget>,
+    log_level: Option<LogLevel>,
 
-        if self.interfaces.is_none() {
-            self.interfaces = other.interfaces
-        };
-
-        if self.connection_limit.is_none() {
-            self.connection_limit = other.connection_limit
-        };
-
-        if self.db_file.is_none() {
-            self.db_file = other.db_file
-        };
-
-        if self.auth_file.is_none() {
-            self.auth_file = other.auth_file
-        };
-
-        if self.auth_enable.is_none() {
-            self.auth_enable = other.auth_enable
-        };
-
-        if self.log_target.is_none() {
-            self.log_target = other.log_target
-        };
-
-        if self.log_level.is_none() {
-            self.log_level = other.log_level
-        };
-    }
-
-    fn into_config(self) -> StaticConfig {
-        let mut config = StaticConfig {
-            init: self.init,
-            ..StaticConfig::default()
-        };
-
-        config.port = self.port.unwrap_or(config.port);
-        config.interfaces = self.interfaces.unwrap_or(config.interfaces);
-        config.connection_limit = self.connection_limit.unwrap_or(config.connection_limit);
-        config.db_file = self.db_file.unwrap_or(config.db_file);
-        config.auth_file = self.auth_file.unwrap_or(config.auth_file);
-        config.auth_enable = self.auth_enable.unwrap_or(config.auth_enable);
-        config.log_target = self.log_target.unwrap_or(config.log_target);
-        if let Some(l) = self.log_level {
-            config.log_level = l.into();
-        }
-
-        config
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DynamicConfigArgs {
-    registration_enable: bool,
-    #[serde(with = "integer_with_time_unit")]
-    node_offline_timeout: Duration,
-    #[serde(with = "integer_with_time_unit")]
-    client_auto_remove_timeout: Duration,
-    quota_enable: bool,
-    #[serde(with = "integer_with_time_unit")]
-    quota_update_interval: Duration,
+    registration_enable: Option<bool>,
+    #[serde(with = "integer_with_time_unit::optional")]
+    node_offline_timeout: Option<Duration>,
+    #[serde(with = "integer_with_time_unit::optional")]
+    client_auto_remove_timeout: Option<Duration>,
+    quota_enable: Option<bool>,
+    #[serde(with = "integer_with_time_unit::optional")]
+    quota_update_interval: Option<Duration>,
     quota_user_system_ids_min: Option<QuotaID>,
     quota_user_ids_file: Option<PathBuf>,
     quota_user_ids_range_start: Option<u32>,
@@ -324,114 +195,184 @@ pub struct DynamicConfigArgs {
     quota_group_ids_file: Option<PathBuf>,
     quota_group_ids_range_start: Option<u32>,
     quota_group_ids_range_end: Option<u32>,
-    cap_pool_meta_limits: CapPoolLimits,
-    cap_pool_storage_limits: CapPoolLimits,
+    cap_pool_meta_limits: Option<CapPoolLimits>,
+    cap_pool_storage_limits: Option<CapPoolLimits>,
     cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits>,
     cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits>,
 }
 
-impl DynamicConfigArgs {
-    pub async fn apply_to_db(self, db: &db::Connection) -> anyhow::Result<()> {
-        db.op(move |tx| {
-            use db::config::*;
+impl Config {
+    /// Update parameters from the command line parameter struct
+    ///
+    /// Non-Option parameters in this struct are only updates if they are `Some` in
+    /// [[CommandLineArgs]], otherwise they were not given and shall stay as they are.
+    fn update_from_command_line_args(&mut self, args: CommandLineArgs) {
+        self.init = args.init;
+        if let Some(v) = args.port {
+            self.port = v;
+        }
+        if let Some(v) = args.interfaces {
+            self.interfaces = v;
+        }
+        if let Some(v) = args.connection_limit {
+            self.connection_limit = v;
+        }
+        if let Some(v) = args.db_file {
+            self.db_file = v;
+        }
+        if let Some(v) = args.auth_file {
+            self.auth_file = v;
+        }
+        if let Some(v) = args.auth_enable {
+            self.auth_enable = v;
+        }
+        if let Some(v) = args.log_target {
+            self.log_target = v;
+        }
+        if let Some(v) = args.log_level {
+            self.log_level = v.into();
+        }
+    }
 
-            upsert::<registration_enable>(tx, &self.registration_enable)?;
-            upsert::<node_offline_timeout>(tx, &self.node_offline_timeout)?;
-            upsert::<client_auto_remove_timeout>(tx, &self.client_auto_remove_timeout)?;
-            upsert::<quota_enable>(tx, &self.quota_enable)?;
-            upsert::<quota_update_interval>(tx, &self.quota_update_interval)?;
-            upsert::<quota_user_system_ids_min>(tx, &self.quota_user_system_ids_min)?;
-            upsert::<quota_user_ids_file>(tx, &self.quota_user_ids_file)?;
-            upsert::<quota_user_ids_range>(
-                tx,
-                &self
-                    .quota_user_ids_range_start
-                    .map(|start| start..=self.quota_user_ids_range_end.unwrap_or(start)),
-            )?;
-            upsert::<quota_group_system_ids_min>(tx, &self.quota_group_system_ids_min)?;
-            upsert::<quota_group_ids_file>(tx, &self.quota_group_ids_file)?;
-            upsert::<quota_group_ids_range>(
-                tx,
-                &self
-                    .quota_group_ids_range_start
-                    .map(|start| start..=self.quota_group_ids_range_end.unwrap_or(start)),
-            )?;
-            upsert::<cap_pool_meta_limits>(tx, &self.cap_pool_meta_limits)?;
-            upsert::<cap_pool_storage_limits>(tx, &self.cap_pool_storage_limits)?;
-            upsert::<cap_pool_dynamic_meta_limits>(tx, &self.cap_pool_dynamic_meta_limits)?;
-            upsert::<cap_pool_dynamic_storage_limits>(tx, &self.cap_pool_dynamic_storage_limits)?;
+    /// Update parameters from the config file parameter struct
+    ///
+    /// Non-Option parameters in this struct are only updates if they are `Some` in
+    /// [[ConfigFileArgs]], otherwise they were not given and shall stay as they are.
+    fn update_from_config_file_args(&mut self, args: ConfigFileArgs) {
+        if let Some(v) = args.port {
+            self.port = v;
+        }
+        if let Some(v) = args.interfaces {
+            self.interfaces = v;
+        }
+        if let Some(v) = args.connection_limit {
+            self.connection_limit = v;
+        }
+        if let Some(v) = args.db_file {
+            self.db_file = v;
+        }
+        if let Some(v) = args.auth_enable {
+            self.auth_enable = v;
+        }
+        if let Some(v) = args.auth_file {
+            self.auth_file = v;
+        }
+        if let Some(v) = args.log_target {
+            self.log_target = v;
+        }
+        if let Some(v) = args.log_level {
+            self.log_level = v.into();
+        }
 
-            Ok(())
-        })
-        .await?;
+        if let Some(v) = args.registration_enable {
+            self.registration_enable = v;
+        }
+        if let Some(v) = args.node_offline_timeout {
+            self.node_offline_timeout = v;
+        }
+        if let Some(v) = args.client_auto_remove_timeout {
+            self.client_auto_remove_timeout = v;
+        }
+        if let Some(v) = args.quota_enable {
+            self.quota_enable = v;
+        }
+        if let Some(v) = args.quota_update_interval {
+            self.quota_update_interval = v;
+        }
 
-        Ok(())
+        // This (and more below) is actually an Option, so we just replace it
+        //
+        // TODO this does not allow to UNSET this option from command line when given in the config
+        // file. Maybe we should change that
+        self.quota_user_system_ids_min = args.quota_user_system_ids_min;
+        self.quota_user_ids_file = args.quota_user_ids_file;
+        if let (Some(s), Some(e)) = (
+            args.quota_user_ids_range_start,
+            args.quota_user_ids_range_end,
+        ) {
+            self.quota_user_ids_range = Some(s..=e);
+        }
+
+        self.quota_group_system_ids_min = args.quota_group_system_ids_min;
+        self.quota_group_ids_file = args.quota_group_ids_file;
+        if let (Some(s), Some(e)) = (
+            args.quota_group_ids_range_start,
+            args.quota_group_ids_range_end,
+        ) {
+            self.quota_group_ids_range = Some(s..=e);
+        }
+
+        if let Some(v) = args.cap_pool_meta_limits {
+            self.cap_pool_meta_limits = v;
+        }
+        if let Some(v) = args.cap_pool_storage_limits {
+            self.cap_pool_storage_limits = v;
+        }
+
+        self.cap_pool_dynamic_meta_limits = args.cap_pool_dynamic_meta_limits;
+        self.cap_pool_dynamic_storage_limits = args.cap_pool_dynamic_storage_limits;
     }
 }
 
-pub fn load_and_parse() -> Result<(StaticConfig, Option<DynamicConfigArgs>, Vec<String>)> {
+/// Loads and parses configuration.
+///
+/// The following order is used (latter ones overwrite former ones, having higher precedence):
+/// 1. Default config.
+/// 2. Parameters from config file if either present at default location or specified on the command
+///    line
+/// 3. Parameters from given on the command line
+///
+/// # Return value
+///
+/// Returns a tuple consisting of the [[Config]] object and a vec of strings containing log
+/// messages. Since the log system might not  be initialized yet, this allows the caller to log
+/// the messages later.
+pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
     let mut info_log = vec![];
-    let mut args = ConfigArgs::parse();
+    let mut config = Config::default();
+    let command_line_args = CommandLineArgs::parse();
 
-    if let Some(ref file) = args.config_file {
-        match std::fs::read_to_string(file) {
-            Ok(ref toml_config) => {
-                let file_args: ConfigArgs =
-                    toml::from_str(toml_config).with_context(|| "Couldn't parse config file")?;
+    match std::fs::read_to_string(&command_line_args.config_file) {
+        Ok(ref toml_config) => {
+            let config_file_args: ConfigFileArgs =
+                toml::from_str(toml_config).with_context(|| "Could not parse config file")?;
 
-                info_log.push(format!("Loaded node configuration from {file:?}"));
+            info_log.push(format!(
+                "Loaded config file from {:?}",
+                command_line_args.config_file
+            ));
 
-                args.fill_from(file_args);
+            config.update_from_config_file_args(config_file_args);
+        }
+        Err(err) => {
+            if command_line_args.config_file != Path::new("/etc/beegfs/mgmtd.toml") {
+                return Err(err).with_context(|| {
+                    format!(
+                        "Could not open config file at {:?}",
+                        command_line_args.config_file
+                    )
+                });
             }
-            Err(err) => {
-                if file != Path::new("/etc/beegfs/mgmtd.toml") {
-                    return Err(err)
-                        .with_context(|| format!("Could not open config file at {file:?}"));
-                }
 
-                info_log.push("No config file found at default location, ignoring".to_string());
-            }
+            info_log.push("No config file found at default location, ignoring".to_string());
         }
     }
 
-    let dynamic_config = if let Some(ref file) = args.dynamic_config_file {
-        match std::fs::read_to_string(file) {
-            Ok(ref toml_config) => {
-                let config_values: DynamicConfigArgs = toml::from_str(toml_config)
-                    .with_context(|| "Couldn't parse dynamic config file")?;
+    config.update_from_command_line_args(command_line_args);
 
-                info_log.push(format!("Loaded dynamic configuration from {file:?}"));
-
-                Some(config_values)
-            }
-            Err(err) => {
-                if file != Path::new("/etc/beegfs/mgmtd-dynamic.toml") {
-                    return Err(err).with_context(|| {
-                        format!("Could not open dynamic config file at {file:?}")
-                    });
-                }
-
-                info_log
-                    .push("No dynamic config file found at default location, ignoring".to_string());
-
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    Ok((args.into_config(), dynamic_config, info_log))
+    Ok((config, info_log))
 }
 
+/// Custom types for user input
+
+/// Defines where log messages shall be sent to
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
 pub enum LogTarget {
     Std,
     Journald,
 }
 
-// To be able to parse the log level, we need to make our own enum and convert
-// it
+/// Defines the log level
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
 enum LogLevel {
     Off,
@@ -442,6 +383,7 @@ enum LogLevel {
     Trace,
 }
 
+/// Conversion of user given log level into type used by log crate
 impl From<LogLevel> for LevelFilter {
     fn from(value: LogLevel) -> Self {
         match value {

@@ -29,7 +29,8 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
     // If configured, add system User IDS
-    let user_ids_min = ctx.get_config().quota_user_system_ids_min;
+    let user_ids_min = ctx.runtime_info().config.quota_user_system_ids_min;
+
     if let Some(user_ids_min) = user_ids_min {
         system_ids::user_ids()
             .await
@@ -40,7 +41,8 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     }
 
     // If configured, add system Group IDS
-    let group_ids_min = ctx.get_config().quota_group_system_ids_min;
+    let group_ids_min = ctx.runtime_info().config.quota_group_system_ids_min;
+
     if let Some(group_ids_min) = group_ids_min {
         system_ids::group_ids()
             .await
@@ -51,22 +53,22 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     }
 
     // If configured, add user IDs from file
-    if let Some(ref path) = ctx.get_config().quota_user_ids_file {
+    if let Some(ref path) = ctx.runtime_info().config.quota_user_ids_file {
         try_read_quota_ids(path, &mut user_ids)?;
     }
 
     // If configured, add group IDs from file
-    if let Some(ref path) = ctx.get_config().quota_group_ids_file {
+    if let Some(ref path) = ctx.runtime_info().config.quota_group_ids_file {
         try_read_quota_ids(path, &mut group_ids)?;
     }
 
     // If configured, add range based user IDs
-    if let Some(range) = &ctx.get_config().quota_user_ids_range {
+    if let Some(range) = &ctx.runtime_info().config.quota_user_ids_range {
         user_ids.extend(range.clone().map(QuotaID::from));
     }
 
     // If configured, add range based group IDs
-    if let Some(range) = &ctx.get_config().quota_group_ids_range {
+    if let Some(range) = &ctx.runtime_info().config.quota_group_ids_range {
         group_ids.extend(range.clone().map(QuotaID::from));
     }
 

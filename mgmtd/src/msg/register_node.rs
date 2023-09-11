@@ -1,5 +1,4 @@
 use super::*;
-use crate::config::registration_enable;
 use db::entity::EntityType;
 use db::misc::MetaRoot;
 use std::net::SocketAddr;
@@ -20,6 +19,7 @@ pub(super) async fn handle(
 /// Processes incoming node information. Registeres new nodes if config allows it
 pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> NodeID {
     let msg2 = msg.clone();
+    let info = ctx.runtime_info();
 
     let res: Result<_> = try {
         let db_res = ctx
@@ -42,7 +42,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
                     // New node, do additional checks and insert data
 
                     // Check node registration is allowed
-                    if !db::config::get::<registration_enable>(tx)? {
+                    if !info.config.registration_enable {
                         return Err(DbError::other("Registration of new nodes is not allowed"));
                     }
 

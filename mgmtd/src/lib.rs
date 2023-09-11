@@ -14,9 +14,8 @@ mod quota;
 mod timer;
 
 use crate::app_context::AppHandles;
-use crate::config::{DynamicConfigArgs, StaticConfig};
+use crate::config::Config;
 use anyhow::Result;
-use config::ConfigCache;
 use shared::conn::incoming::{listen_tcp, recv_udp};
 use shared::conn::Pool;
 use shared::shutdown::Shutdown;
@@ -27,8 +26,8 @@ use tokio::net::{TcpListener, UdpSocket};
 
 /// Contains information that is obtained at the start of the app and then never changes again.
 #[derive(Debug)]
-pub struct StaticInfo {
-    pub static_config: StaticConfig,
+pub struct RuntimeInfo {
+    pub config: Config,
     pub auth_secret: Option<AuthenticationSecret>,
     pub network_interfaces: Vec<Nic>,
 }
@@ -44,55 +43,37 @@ pub struct StaticInfo {
 /// keeping the shutdown control handle and send a shutdown request when the program shall
 /// be terminated.
 pub async fn start(
-    static_config: StaticConfig,
-    dynamic_config: Option<DynamicConfigArgs>,
+    config: Config,
     auth_secret: Option<AuthenticationSecret>,
     shutdown: Shutdown,
 ) -> Result<()> {
     // Initialization
 
-    let network_interfaces = shared::network_interfaces(static_config.interfaces.as_slice())?;
+    let network_interfaces = shared::network_interfaces(config.interfaces.as_slice())?;
 
     // Static configuration which doesn't change at runtime
-    let static_info = Box::leak(Box::new(StaticInfo {
-        static_config,
+    let info = Box::leak(Box::new(RuntimeInfo {
+        config,
         auth_secret,
         network_interfaces,
     }));
 
-    let db = db::Connection::open(static_info.static_config.db_file.as_path()).await?;
-
-    // Apply the configuration from the dynamic config file to the database
-    if let Some(c) = dynamic_config {
-        c.apply_to_db(&db).await?;
-
-        log::info!("Set system configuration from dynamic config file")
-    }
-
-    // Cache for dynamic configuration
-    let config_cache = ConfigCache::from_db(db.clone()).await?;
+    let db = db::Connection::open(info.config.db_file.as_path()).await?;
 
     // TCP listener for incoming connections
-    let tcp_listener = TcpListener::bind(SocketAddr::new(
-        "0.0.0.0".parse()?,
-        static_info.static_config.port.into(),
-    ))
-    .await?;
+    let tcp_listener =
+        TcpListener::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.port.into())).await?;
 
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(
-        UdpSocket::bind(SocketAddr::new(
-            "0.0.0.0".parse()?,
-            static_info.static_config.port.into(),
-        ))
-        .await?,
+        UdpSocket::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.port.into())).await?,
     );
 
     // Node address store and connection pool
     let conn_pool = Pool::new(
         udp_socket.clone(),
-        static_info.static_config.connection_limit,
-        static_info.auth_secret,
+        info.config.connection_limit,
+        info.auth_secret,
     );
 
     // Fill node addrs store from db
@@ -102,13 +83,13 @@ pub async fn start(
         .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
 
     // Combines all handles for sharing between tasks
-    let app_handles = AppHandles::new(conn_pool, db, config_cache, static_info);
+    let app_handles = AppHandles::new(conn_pool, db, info);
 
     // Listen for incoming TCP connections
     tokio::spawn(listen_tcp(
         tcp_listener,
         app_handles.clone(),
-        static_info.auth_secret.is_some(),
+        info.auth_secret.is_some(),
         shutdown.clone(),
     ));
 

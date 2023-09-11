@@ -18,7 +18,7 @@ pub(super) async fn handle(
                 targets.push(e.target_id);
                 reachability_states.push(db::misc::calc_reachability_state(
                     e.last_contact,
-                    ctx.get_config().node_offline_timeout,
+                    ctx.runtime_info().config.node_offline_timeout,
                 ));
                 consistency_states.push(e.consistency);
             }

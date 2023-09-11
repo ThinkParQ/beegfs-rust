@@ -2,43 +2,112 @@
 #
 # This file configures the BeeGFS management node and can be used as an alternative or together with
 # command line arguments. To use it, specify it using the `--config-file <CONFIG_FILE>` option.
-# Arguments given to the CLI overwrite arguments specified here.
-#
-# This file uses the TOML format (see https://toml.io). Most arguments accepted by the CLI can
-# instead be defined here: They have the same name without the `--` and underscores `_` instead of 
-# `-` (kebab-case). For example, `--db-file` becomes `db_file`.
-#
-# There is an exception: When allowed multiple times on command line, they have to specified as an
-# array here instead and use their plural name (e.g. appending an s).
-# For example, the arguments
-#
-# `--interface eth0 --interface eth1`
-#
-# become
-#
-# interfaces = ["eth0", "eth1"]
-#
-# Some commented out examples for common options can be found below, these are not all of them.
-# Please run the binary with the --help flag to see all available options with detailed explanations
-# and defaults.
+# Arguments given to the CLI overwrite arguments specified here, arguments specified here overwrite
+# the defaults.
+# 
+# 
+
+# Connection and storage configuration
+# These settings can also be made via the CLI. Run `beegfs-mgmtd --help` for more information.
 
 # TCP/UDP port to listen for incoming connections / messages
 # port = 8008
 
-# Network interfaces to use
+# Network interfaces reported to other nodes. 
 # interfaces = ["eth0", "eth1"]
 
 # Maximum number of outgoing connections per node
 # connection_limit = 12
 
-# Location of the SQLite database file
-# db_file = ""
-
 # Enable authentication
 # auth_enable = true
 
 # Location of the file containing the authentication secret
-# auth_file = ""
+# auth_file = "/etc/beegfs/mgmtd.auth"
 
-# Sets the logging mechanism to use.
-# log_target = "std"
+# Location of the SQLite database file
+# db_file = "/var/lib/beegfs/mgmtd.sqlite"
+
+# Log target to use
+# log_target = "journald"
+
+
+# Generic configuration
+
+# Allows registration of new nodes and targets
+# registration_enable = true
+
+# The time after server nodes that send no updates are considered offline.
+# node_offline_timeout = "180s"
+
+# The time after client nodes that send no updates are considered offline and removed from client
+# list.
+# client_auto_remove_timeout = "30m"
+
+# Enables quota check and enforcement
+# quota_enable = false
+
+# Update interval of quota information. Defines how often the management pulls the quota information
+# from all storage nodes, calculates the IDs that exceed the limits and reports them back to the
+# server nodes.
+# quota_update_interval = "30s"
+
+# The following options specify the User/Group IDs to be fetched from storage services for quota
+# checking and enforcement. They are disabled by default and least one needs to be enabled for
+# quota enforcement having any effect. They can be mixed.
+
+# Use the local systems user IDs for the quota check, starting with the given ID.
+# quota_user_system_ids_min = 1000
+
+# File containing numeric user IDs to be used for the quota check. The file must only
+# contain numeric IDs separated by whitespaces.
+# quota_user_ids_file = ""
+
+# Range of user IDs to be used for the quota check.
+# quota_user_ids_range_start = 1000
+# quota_user_ids_range_end = 1000
+
+# Same as above, but for group IDs
+
+# quota_group_system_ids_min = 1000
+# quota_group_ids_file = ""
+# quota_group_ids_range_start = 1000
+# quota_group_ids_range_end = 1000
+
+# Sets the limits / boundaries of the meta capacity pools
+# [cap_pool_meta_limits]
+# inodes_low = "10M"
+# inodes_emergency = "1M"
+# space_low = "10GiB"
+# space_emergency = "3GiB"
+
+# Sets the limits / boundaries of the dynamic meta capacity pools and the thresholds that determine
+# which limits shall be used.
+# [cap_pool_dynamic_meta_limits]
+# inodes_normal_threshold = "10M"
+# inodes_low_threshold = "1M"
+# space_normal_threshold = "10GiB"
+# space_low_threshold = "3GiB"
+# inodes_low = "20M"
+# inodes_emergency = "2M"
+# space_low = "20GiB"
+# space_emergency = "6GiB"
+
+# Sets the limits / boundaries of the storage capacity pools
+# [cap_pool_storage_limits]
+# inodes_low = "10M"
+# inodes_emergency = "1M"
+# space_low = "512GiB"
+# space_emergency = "10GiB"
+
+# Sets the limits / boundaries of the dynamic storage capacity pools and the thresholds that determine
+# which limits shall be used.
+# [cap_pool_dynamic_storage_limits]
+# inodes_normal_threshold = "10M"
+# inodes_low_threshold = "1M"
+# space_normal_threshold = "512GiB"
+# space_low_threshold = "10GiB"
+# inodes_low = "20M"
+# inodes_emergency = "2M"
+# space_low = "1024GiB"
+# space_emergency = "20GiB"

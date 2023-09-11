@@ -5,7 +5,7 @@ pub(super) async fn handle(
     ctx: &impl AppContext,
     req: &mut impl Request,
 ) {
-    if let Some(ref secret) = ctx.get_static_info().auth_secret {
+    if let Some(ref secret) = ctx.runtime_info().auth_secret {
         if secret == &msg.auth_secret {
             req.authenticate_connection();
         } else {

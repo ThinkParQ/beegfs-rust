@@ -215,10 +215,3 @@ INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value) VALUES
     ("group", "space", 1, 1000),
     ("group", "inodes", 1, 1000)
 ;
-
-INSERT INTO config (key, value) VALUES
-    ("key_1", "value_1"),
-    ("key_2", "value_2"),
-    ("key_3", "value_3"),
-    ("key_4", "value_4")
-;

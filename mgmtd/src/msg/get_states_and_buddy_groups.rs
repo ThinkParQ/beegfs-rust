@@ -23,7 +23,7 @@ pub(super) async fn handle(
                         msg::types::CombinedTargetState {
                             reachability: db::misc::calc_reachability_state(
                                 e.last_contact,
-                                ctx.get_config().node_offline_timeout,
+                                ctx.runtime_info().config.node_offline_timeout,
                             ),
                             consistency: e.consistency,
                         },

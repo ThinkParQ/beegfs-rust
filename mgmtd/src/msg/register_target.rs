@@ -6,7 +6,7 @@ pub(super) async fn handle(
     _req: &impl Request,
 ) -> msg::RegisterTargetResp {
     match async move {
-        if !ctx.get_config().registration_enable {
+        if !ctx.runtime_info().config.registration_enable {
             bail!("Registration of new targets is not allowed");
         }
 

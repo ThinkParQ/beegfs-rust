@@ -30,9 +30,9 @@ fn parse(input: &str) -> Result<Duration, ()> {
     Ok(duration)
 }
 
-struct CustomVisitor {}
+struct ValueVisitor {}
 
-impl<'a> Visitor<'a> for CustomVisitor {
+impl<'a> Visitor<'a> for ValueVisitor {
     type Value = Duration;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -50,13 +50,6 @@ impl<'a> Visitor<'a> for CustomVisitor {
         parse(input).map_err(|_| E::invalid_value(Unexpected::Str(input), &self))
     }
 
-    fn visit_u64<E>(self, input: u64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(Duration::from_secs(input))
-    }
-
     // Need to parse signed integer since  the TOML parser always parses as i64
     fn visit_i64<E>(self, input: i64) -> Result<Self::Value, E>
     where
@@ -66,12 +59,12 @@ impl<'a> Visitor<'a> for CustomVisitor {
             .try_into()
             .map_err(|_| E::invalid_value(Unexpected::Signed(input), &self))?;
 
-        self.visit_u64(secs)
+        Ok(Duration::from_secs(secs))
     }
 }
 
 pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Duration, D::Error> {
-    de.deserialize_any(CustomVisitor {})
+    de.deserialize_any(ValueVisitor {})
 }
 
 pub fn serialize<S: Serializer>(input: &Duration, ser: S) -> Result<S::Ok, S::Error> {
@@ -80,12 +73,56 @@ pub fn serialize<S: Serializer>(input: &Duration, ser: S) -> Result<S::Ok, S::Er
     ser.serialize_u64(input.as_secs())
 }
 
+/// (De)serialize an Option<Duration>
+pub mod optional {
+    use super::*;
+
+    struct OptionalValueVisitor {}
+
+    impl<'a> Visitor<'a> for OptionalValueVisitor {
+        type Value = Option<Duration>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(
+                formatter,
+                "a positive integer representing a time span in seconds or a string containing a \
+                 positive integer n with appended time unit in the form \"<n>[[n|u|m]s|m|h|d]\""
+            )
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'a>,
+        {
+            Ok(Some(deserializer.deserialize_any(ValueVisitor {})?))
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Duration>, D::Error> {
+        de.deserialize_option(OptionalValueVisitor {})
+    }
+
+    pub fn serialize<S: Serializer>(input: &Option<Duration>, ser: S) -> Result<S::Ok, S::Error> {
+        match input {
+            Some(input) => ser.serialize_some(input),
+            None => ser.serialize_none(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn basic() {
+    fn parser() {
         assert_eq!(parse("100").unwrap(), Duration::from_secs(100));
         assert_eq!(parse(" 200  ").unwrap(), Duration::from_secs(200));
         assert_eq!(parse("5s").unwrap(), Duration::from_secs(5));

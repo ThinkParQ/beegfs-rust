@@ -19,7 +19,7 @@ fn main() -> Result<(), i32> {
 ///
 /// The binary related setup is made here, before execution is passed to the actual app.
 fn inner_main() -> anyhow::Result<()> {
-    let (static_config, dynamic_config_args, info_log) = mgmtd::config::load_and_parse()?;
+    let (static_config, info_log) = mgmtd::config::load_and_parse()?;
 
     // Initialize logging
     match static_config.log_target {
@@ -73,7 +73,7 @@ fn inner_main() -> anyhow::Result<()> {
     // Run the tokio executor
     rt.block_on(async move {
         // Start the actual daemon
-        start(static_config, dynamic_config_args, auth_secret, shutdown).await?;
+        start(static_config, auth_secret, shutdown).await?;
 
         // Mgmtds systemd unit is set to service type "notify". Here we send out the
         // notification that the service has completed startup and is ready for serving

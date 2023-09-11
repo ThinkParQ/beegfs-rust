@@ -1,6 +1,5 @@
 //! Interfaces and implementations for in-app interaction between tasks or threads.
 
-use crate::config::{ConfigCache, DynamicConfig};
 use crate::db;
 use crate::db::DbResult;
 use crate::msg::dispatch_request;
@@ -14,7 +13,7 @@ use shared::msg::Msg;
 use shared::{log_error_chain, EntityUID, NodeType};
 use std::net::SocketAddr;
 use std::ops::Deref;
-use std::sync::{Arc, RwLockReadGuard};
+use std::sync::Arc;
 
 /// Common interface for interaction with the apps components.
 ///
@@ -40,10 +39,8 @@ pub(crate) trait AppContext: Clone + Send + Sync + 'static {
     /// Notifies a collection of nodes via datagram and doesn't expect a response
     async fn notify_nodes(&self, node_types: &'static [NodeType], msg: &impl Msg);
 
-    /// Obtains read access to the dynamic config struct
-    fn get_config(&self) -> RwLockReadGuard<DynamicConfig>;
     /// Obtains read access to [crate::StaticInfo]
-    fn get_static_info(&self) -> &'static crate::StaticInfo;
+    fn runtime_info(&self) -> &'static crate::RuntimeInfo;
 
     fn replace_node_addrs(&self, node_uid: EntityUID, addrs: impl Into<Arc<[SocketAddr]>>);
 }
@@ -67,15 +64,13 @@ impl AppHandles {
     pub(crate) fn new(
         conn_pool: Pool,
         db: db::Connection,
-        config_cache: ConfigCache,
-        static_info: &'static crate::StaticInfo,
+        static_info: &'static crate::RuntimeInfo,
     ) -> Self {
         Self {
             inner: Arc::new(InnerAppHandles {
                 conn_pool,
                 db,
-                static_info,
-                config_cache,
+                runtime_info: static_info,
             }),
         }
     }
@@ -97,8 +92,7 @@ impl Deref for AppHandles {
 pub(crate) struct InnerAppHandles {
     conn_pool: Pool,
     db: db::Connection,
-    static_info: &'static crate::StaticInfo,
-    config_cache: ConfigCache,
+    runtime_info: &'static crate::RuntimeInfo,
 }
 
 #[async_trait]
@@ -153,12 +147,8 @@ impl AppContext for AppHandles {
         }
     }
 
-    fn get_config(&self) -> RwLockReadGuard<DynamicConfig> {
-        self.config_cache.get()
-    }
-
-    fn get_static_info(&self) -> &'static crate::StaticInfo {
-        self.static_info
+    fn runtime_info(&self) -> &'static crate::RuntimeInfo {
+        self.runtime_info
     }
 
     fn replace_node_addrs(&self, node_uid: EntityUID, addrs: impl Into<Arc<[SocketAddr]>>) {

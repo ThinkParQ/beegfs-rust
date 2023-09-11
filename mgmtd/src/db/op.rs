@@ -7,7 +7,6 @@ use std::ops::RangeBounds;
 
 pub mod buddy_group;
 pub mod cap_pool;
-pub mod config;
 pub mod entity;
 pub mod misc;
 pub mod node;

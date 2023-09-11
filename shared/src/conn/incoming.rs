@@ -91,7 +91,10 @@ async fn read_stream(
         && !stream.authenticated
         && buf.msg_id() != msg::AuthenticateChannel::ID
     {
-        bail!("Unauthenticated stream from {:?}", stream.addr());
+        bail!(
+            "Received message on unauthenticated stream from {:?}",
+            stream.addr()
+        );
     }
 
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to

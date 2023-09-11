@@ -14,8 +14,8 @@ pub(super) async fn handle(
         node_num_id: NodeID::MGMTD,
         root_num_id: 0,
         is_root_mirrored: 0,
-        port: ctx.get_static_info().static_config.port,
-        port_tcp_unused: ctx.get_static_info().static_config.port,
-        nic_list: ctx.get_static_info().network_interfaces.to_vec(),
+        port: ctx.runtime_info().config.port,
+        port_tcp_unused: ctx.runtime_info().config.port,
+        nic_list: ctx.runtime_info().network_interfaces.to_vec(),
     }
 }

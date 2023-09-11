@@ -309,12 +309,6 @@ CREATE TABLE quota_usage (
     PRIMARY KEY (quota_id, id_type, quota_type, target_id)
 ) STRICT;
 
-CREATE TABLE config (
-    key TEXT PRIMARY KEY NOT NULL,
-    value TEXT NOT NULL
-) STRICT, WITHOUT ROWID;
-
-
 
 -- Views
 

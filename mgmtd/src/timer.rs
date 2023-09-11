@@ -21,7 +21,7 @@ pub(crate) fn start_tasks(ctx: impl AppContext, shutdown: Shutdown) {
 /// Deletes client nodes from the database which haven't responded for the configured time.
 async fn delete_stale_clients(ctx: impl AppContext, mut shutdown: Shutdown) {
     loop {
-        let timeout = ctx.get_config().client_auto_remove_timeout;
+        let timeout = ctx.runtime_info().config.client_auto_remove_timeout;
 
         match ctx
             .db_op(move |tx| db::node::delete_stale_clients(tx, timeout))
@@ -47,7 +47,7 @@ async fn delete_stale_clients(ctx: impl AppContext, mut shutdown: Shutdown) {
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
 async fn update_quota(ctx: impl AppContext, mut shutdown: Shutdown) {
     loop {
-        if ctx.get_config().quota_enable {
+        if ctx.runtime_info().config.quota_enable {
             match update_and_distribute(&ctx).await {
                 Ok(_) => {}
                 Err(err) => log_error_chain!(err, "Updating quota failed"),
@@ -55,7 +55,7 @@ async fn update_quota(ctx: impl AppContext, mut shutdown: Shutdown) {
         }
 
         tokio::select! {
-            _ = sleep(ctx.get_config().quota_update_interval) => {}
+            _ = sleep(ctx.runtime_info().config.quota_update_interval) => {}
             _ = shutdown.wait() => { break; }
         }
     }
@@ -74,7 +74,7 @@ async fn switchover(ctx: impl AppContext, mut shutdown: Shutdown) {
             _ = shutdown.wait() => { break; }
         }
 
-        let timeout = ctx.get_config().node_offline_timeout;
+        let timeout = ctx.runtime_info().config.node_offline_timeout;
 
         match ctx
             .db_op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
