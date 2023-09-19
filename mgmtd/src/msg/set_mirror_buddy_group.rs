@@ -1,15 +1,20 @@
 use super::*;
+use shared::types::NodeType;
 
 pub(super) async fn handle(
     msg: msg::SetMirrorBuddyGroup,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::SetMirrorBuddyGroupResp {
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check buddy group doesn't exist
             if db::buddy_group::get_uid(tx, msg.buddy_group_id, msg.node_type)?.is_some() {
-                return Err(DbError::value_exists("buddy group ID", msg.buddy_group_id));
+                bail!(TypedError::value_exists(
+                    "buddy group ID",
+                    msg.buddy_group_id
+                ));
             }
 
             // Check targets exist
@@ -21,7 +26,7 @@ pub(super) async fn handle(
 
             db::buddy_group::insert(
                 tx,
-                if msg.buddy_group_id == BuddyGroupID::ZERO {
+                if msg.buddy_group_id == 0 {
                     None
                 } else {
                     Some(msg.buddy_group_id)
@@ -35,13 +40,14 @@ pub(super) async fn handle(
     {
         Ok(actual_id) => {
             log::info!(
-                "Added new {} buddy group with ID {} (Requested: {})",
+                "Added new {:?} buddy group with ID {} (Requested: {})",
                 msg.node_type,
                 actual_id,
                 msg.buddy_group_id,
             );
 
-            ctx.notify_nodes(
+            notify_nodes(
+                ctx,
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &msg::SetMirrorBuddyGroup {
                     ack_id: "".into(),
@@ -54,7 +60,8 @@ pub(super) async fn handle(
             )
             .await;
 
-            ctx.notify_nodes(
+            notify_nodes(
+                ctx,
                 &[NodeType::Meta],
                 &msg::RefreshCapacityPools { ack_id: "".into() },
             )
@@ -68,18 +75,18 @@ pub(super) async fn handle(
         Err(err) => {
             log_error_chain!(
                 err,
-                "Adding {} buddy group with ID {} failed",
+                "Adding {:?} buddy group with ID {} failed",
                 msg.node_type,
                 msg.buddy_group_id
             );
 
             msg::SetMirrorBuddyGroupResp {
-                result: match err {
-                    DbError::ValueNotFound { .. } => OpsErr::UNKNOWN_TARGET,
-                    DbError::ValueExists { .. } => OpsErr::EXISTS,
+                result: match err.downcast_ref() {
+                    Some(TypedError::ValueNotFound { .. }) => OpsErr::UNKNOWN_TARGET,
+                    Some(TypedError::ValueExists { .. }) => OpsErr::EXISTS,
                     _ => OpsErr::INTERNAL,
                 },
-                buddy_group_id: BuddyGroupID::ZERO,
+                buddy_group_id: 0,
             }
         }
     }

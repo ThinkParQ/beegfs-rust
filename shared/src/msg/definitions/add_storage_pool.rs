@@ -5,7 +5,7 @@ use super::*;
 pub struct AddStoragePool {
     pub pool_id: StoragePoolID,
     #[bee_serde(as = CStr<0>)]
-    pub alias: EntityAlias,
+    pub alias: Vec<u8>,
     #[bee_serde(as = Seq<true, _>)]
     pub move_target_ids: Vec<TargetID>,
     #[bee_serde(as = Seq<true, _>)]
@@ -13,7 +13,7 @@ pub struct AddStoragePool {
 }
 
 impl Msg for AddStoragePool {
-    const ID: MsgID = MsgID(1064);
+    const ID: MsgID = 1064;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -24,5 +24,5 @@ pub struct AddStoragePoolResp {
 }
 
 impl Msg for AddStoragePoolResp {
-    const ID: MsgID = MsgID(1065);
+    const ID: MsgID = 1065;
 }

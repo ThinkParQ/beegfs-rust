@@ -1,21 +1,23 @@
 //! Functionality for fetching and updating quota information from / to nodes and the database.
 
-use crate::app_context::AppContext;
+use crate::context::Context;
 use crate::db;
 use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
-use anyhow::{Context, Result};
-use shared::msg::SetExceededQuotaResp;
-use shared::*;
+use anyhow::{anyhow, Context as AnyhowContext, Result};
+use shared::log_error_chain;
+use shared::msg::{GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp};
+use shared::types::{NodeType, NodeTypeServer, OpsErr, QuotaID};
 use std::collections::HashSet;
 use std::path::Path;
 
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
-pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
+pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     // Fetch quota data from storage daemons
 
     let targets = ctx
-        .db_op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+        .db
+        .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await?;
 
     if !targets.is_empty() {
@@ -29,7 +31,7 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
     // If configured, add system User IDS
-    let user_ids_min = ctx.runtime_info().config.quota_user_system_ids_min;
+    let user_ids_min = ctx.info.config.quota_user_system_ids_min;
 
     if let Some(user_ids_min) = user_ids_min {
         system_ids::user_ids()
@@ -41,7 +43,7 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     }
 
     // If configured, add system Group IDS
-    let group_ids_min = ctx.runtime_info().config.quota_group_system_ids_min;
+    let group_ids_min = ctx.info.config.quota_group_system_ids_min;
 
     if let Some(group_ids_min) = group_ids_min {
         system_ids::group_ids()
@@ -53,22 +55,22 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     }
 
     // If configured, add user IDs from file
-    if let Some(ref path) = ctx.runtime_info().config.quota_user_ids_file {
+    if let Some(ref path) = ctx.info.config.quota_user_ids_file {
         try_read_quota_ids(path, &mut user_ids)?;
     }
 
     // If configured, add group IDs from file
-    if let Some(ref path) = ctx.runtime_info().config.quota_group_ids_file {
+    if let Some(ref path) = ctx.info.config.quota_group_ids_file {
         try_read_quota_ids(path, &mut group_ids)?;
     }
 
     // If configured, add range based user IDs
-    if let Some(range) = &ctx.runtime_info().config.quota_user_ids_range {
+    if let Some(range) = &ctx.info.config.quota_user_ids_range {
         user_ids.extend(range.clone().map(QuotaID::from));
     }
 
     // If configured, add range based group IDs
-    if let Some(range) = &ctx.runtime_info().config.quota_group_ids_range {
+    if let Some(range) = &ctx.info.config.quota_group_ids_range {
         group_ids.extend(range.clone().map(QuotaID::from));
     }
 
@@ -76,17 +78,20 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
     // Sends one request per target to the respective owner node
     // Requesting is done concurrently.
     for t in targets {
-        let pool_id = t.pool_id.try_into()?;
+        let pool_id = t
+            .pool_id
+            .ok_or_else(|| anyhow!("storage targets must have a storage pool assigned"))?;
 
         let ctx2 = ctx.clone();
         let user_ids2 = user_ids.clone();
 
         // Users
         tasks.push(tokio::spawn(async move {
-            let resp: Result<msg::GetQuotaInfoResp> = ctx2
+            let resp: Result<GetQuotaInfoResp> = ctx2
+                .conn
                 .request(
                     t.node_uid,
-                    &msg::GetQuotaInfo::with_user_ids(user_ids2, t.target_id, pool_id),
+                    &GetQuotaInfo::with_user_ids(user_ids2, t.target_id, pool_id),
                 )
                 .await;
 
@@ -108,9 +113,10 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
         // Groups
         tasks.push(tokio::spawn(async move {
             let resp = ctx2
+                .conn
                 .request(
                     t.node_uid,
-                    &msg::GetQuotaInfo::with_group_ids(group_ids2, t.target_id, pool_id),
+                    &GetQuotaInfo::with_group_ids(group_ids2, t.target_id, pool_id),
                 )
                 .await;
 
@@ -133,25 +139,26 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
         let (target_id, resp) = t.await?;
         if let Ok(r) = resp {
             // Insert quota usage data into the database
-            ctx.db_op(move |tx| {
-                db::quota_usage::upsert(
-                    tx,
-                    target_id,
-                    r.quota_entry.into_iter().map(|e| QuotaData {
-                        quota_id: e.id,
-                        id_type: e.id_type,
-                        space: e.space,
-                        inodes: e.inodes,
-                    }),
-                )
-            })
-            .await?;
+            ctx.db
+                .op(move |tx| {
+                    db::quota_usage::upsert(
+                        tx,
+                        target_id,
+                        r.quota_entry.into_iter().map(|e| QuotaData {
+                            quota_id: e.id,
+                            id_type: e.id_type,
+                            space: e.space,
+                            inodes: e.inodes,
+                        }),
+                    )
+                })
+                .await?;
         }
     }
 
     // calculate exceeded quota information and create messages
-    let mut msges: Vec<msg::SetExceededQuota> = vec![];
-    for e in ctx.db_op(db::quota_usage::all_exceeded_quota_ids).await? {
+    let mut msges: Vec<SetExceededQuota> = vec![];
+    for e in ctx.db.op(db::quota_usage::all_exceeded_quota_ids).await? {
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
                 && e.id_type == last.id_type
@@ -162,7 +169,7 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
             }
         }
 
-        msges.push(msg::SetExceededQuota {
+        msges.push(SetExceededQuota {
             pool_id: e.pool_id,
             id_type: e.id_type,
             quota_type: e.quota_type,
@@ -172,7 +179,8 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
 
     // Get all meta and storage nodes
     let (meta_nodes, storage_nodes) = ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             Ok((
                 db::node::get_with_type(tx, NodeType::Meta)?,
                 db::node::get_with_type(tx, NodeType::Storage)?,
@@ -190,7 +198,11 @@ pub(crate) async fn update_and_distribute(ctx: &impl AppContext) -> Result<()> {
         let mut request_fails = 0;
         let mut non_success_count = 0;
         for node in &nodes {
-            match ctx.request::<_, SetExceededQuotaResp>(node.uid, &msg).await {
+            match ctx
+                .conn
+                .request::<_, SetExceededQuotaResp>(node.uid, &msg)
+                .await
+            {
                 Ok(resp) => {
                     if resp.result != OpsErr::SUCCESS {
                         non_success_count += 1;
@@ -227,7 +239,6 @@ fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<(
 
 /// Contains functionality to query the systems user and group database.
 mod system_ids {
-    use shared::QuotaID;
     use std::sync::OnceLock;
     use tokio::sync::{Mutex, MutexGuard};
 
@@ -272,7 +283,7 @@ mod system_ids {
     }
 
     impl Iterator for UserIDIter<'_> {
-        type Item = QuotaID;
+        type Item = u32;
 
         fn next(&mut self) -> Option<Self::Item> {
             unsafe {
@@ -280,7 +291,7 @@ mod system_ids {
                 if passwd.is_null() {
                     None
                 } else {
-                    Some((*passwd).pw_uid.into())
+                    Some((*passwd).pw_uid)
                 }
             }
         }
@@ -317,7 +328,7 @@ mod system_ids {
     }
 
     impl Iterator for GroupIDIter<'_> {
-        type Item = QuotaID;
+        type Item = u32;
 
         fn next(&mut self) -> Option<Self::Item> {
             unsafe {
@@ -325,7 +336,7 @@ mod system_ids {
                 if passwd.is_null() {
                     None
                 } else {
-                    Some((*passwd).gr_gid.into())
+                    Some((*passwd).gr_gid)
                 }
             }
         }

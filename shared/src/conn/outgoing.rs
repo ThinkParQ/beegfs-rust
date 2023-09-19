@@ -4,7 +4,7 @@ use super::store::Store;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::msg::{self, Msg};
-use crate::{AuthenticationSecret, EntityUID};
+use crate::types::{AuthenticationSecret, EntityUID};
 use anyhow::{bail, Context, Result};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -46,6 +46,8 @@ impl Pool {
         node_uid: EntityUID,
         msg: &M,
     ) -> Result<R> {
+        log::debug!(target: "msg", "REQUEST to {:?}: {:?}", node_uid, msg);
+
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
         buf.serialize_msg(msg)?;
@@ -54,11 +56,15 @@ impl Pool {
 
         self.store.push_buf(buf);
 
+        log::debug!(target: "msg", "RESPONSE RECEIVED from {:?}: {:?}", node_uid, resp);
+
         Ok(resp)
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
     pub async fn send<M: msg::Msg>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
+        log::debug!(target: "msg", "SEND to {:?}: {:?}", node_uid, msg);
+
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
         buf.serialize_msg(msg)?;

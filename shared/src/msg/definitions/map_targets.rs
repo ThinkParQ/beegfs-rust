@@ -7,11 +7,12 @@ pub struct MapTargets {
     pub target_ids: HashMap<TargetID, StoragePoolID>,
     #[bee_serde(as = Int<u32>)]
     pub node_id: NodeID,
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for MapTargets {
-    const ID: MsgID = MsgID(1023);
+    const ID: MsgID = 1023;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -22,5 +23,5 @@ pub struct MapTargetsResp {
 }
 
 impl Msg for MapTargetsResp {
-    const ID: MsgID = MsgID(1024);
+    const ID: MsgID = 1024;
 }

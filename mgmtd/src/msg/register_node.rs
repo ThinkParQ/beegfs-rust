@@ -1,12 +1,13 @@
 use super::*;
-use db::entity::EntityType;
+use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
+use shared::types::{EntityType, NodeID, NodeType};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 pub(super) async fn handle(
     msg: msg::RegisterNode,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::RegisterNodeResp {
     let node_id = update(msg, ctx).await;
@@ -17,14 +18,17 @@ pub(super) async fn handle(
 }
 
 /// Processes incoming node information. Registeres new nodes if config allows it
-pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> NodeID {
+pub(super) async fn update(msg: msg::RegisterNode, ctx: &Context) -> NodeID {
     let msg2 = msg.clone();
-    let info = ctx.runtime_info();
+    let info = ctx.info;
 
     let res: Result<_> = try {
         let db_res = ctx
-            .db_op(move |tx| {
-                let node_uid = if msg.node_id == NodeID::ZERO {
+            .db
+            .op(move |tx| {
+                let alias = &std::str::from_utf8(&msg.node_alias)?;
+
+                let node_uid = if msg.node_id == 0 {
                     // No node ID given => new node
                     None
                 } else {
@@ -34,7 +38,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
 
                 let (node_id, node_uid) = if let Some(node_uid) = node_uid {
                     // Existing node, update data
-                    db::entity::update_alias(tx, node_uid, &msg.node_alias)?;
+                    db::entity::update_alias(tx, node_uid, alias)?;
                     db::node::update(tx, node_uid, msg.port)?;
 
                     (msg.node_id, node_uid)
@@ -43,30 +47,29 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
 
                     // Check node registration is allowed
                     if !info.config.registration_enable {
-                        return Err(DbError::other("Registration of new nodes is not allowed"));
+                        bail!("Registration of new nodes is not allowed");
                     }
 
                     // Check alias doesnt exist yet
-                    if db::entity::get_uid(tx, &msg.node_alias)?.is_some() {
-                        return Err(DbError::value_exists("Alias", &msg.node_alias));
+                    if db::entity::get_uid(tx, alias)?.is_some() {
+                        bail!(TypedError::value_exists("Alias", alias));
                     };
 
                     // Services send a 0 value when they want the new node to be assigned an ID
                     // automatically
-                    let node_id = if msg.node_id == NodeID::ZERO {
+                    let node_id = if msg.node_id == 0 {
                         db::misc::find_new_id(
                             tx,
                             &format!("{}_nodes", msg.node_type.as_sql_str()),
                             "node_id",
                             1..=0xFFFF,
                         )?
-                        .into()
                     } else {
                         msg.node_id
                     };
 
                     // Insert new entity and node entry
-                    let node_uid = db::entity::insert(tx, EntityType::Node, &msg.node_alias)?;
+                    let node_uid = db::entity::insert(tx, EntityType::Node, alias)?;
                     db::node::insert(tx, node_id, node_uid, msg.node_type, msg.port)?;
 
                     // if this is a meta node, auto-add a corresponding meta target after the node.
@@ -74,18 +77,22 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
                     // doesn't know about meta targets and expects exactly one
                     // meta target per meta node (with the same ID)
                     if msg.node_type == NodeType::Meta {
-                        db::target::insert_meta(
-                            tx,
-                            u16::from(node_id).into(),
-                            &format!("{}_target", msg.node_alias).into(),
-                        )?;
+                        db::target::insert_meta(tx, node_id, &format!("{alias}_target"))?;
                     }
 
                     (node_id, node_uid)
                 };
 
                 // Update the corresponding nic lists
-                db::node_nic::replace(tx, node_uid, &msg.nics)?;
+                db::node_nic::replace(
+                    tx,
+                    node_uid,
+                    msg.nics.iter().map(|e| ReplaceNic {
+                        nic_type: &e.nic_type,
+                        addr: &e.addr,
+                        name: std::str::from_utf8(&e.name).unwrap_or("INVALID_UTF8"),
+                    }),
+                )?;
 
                 Ok((
                     node_uid,
@@ -100,12 +107,12 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
             })
             .await?;
 
-        ctx.replace_node_addrs(
+        ctx.conn.replace_node_addrs(
             db_res.0,
             msg2.nics
                 .clone()
                 .into_iter()
-                .map(|e| SocketAddr::new(e.addr.into(), msg.port.into()))
+                .map(|e| SocketAddr::new(e.addr.into(), msg.port))
                 .collect::<Arc<_>>(),
         );
 
@@ -115,14 +122,15 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
     match res {
         Ok((_node_uid, node_id, meta_root)) => {
             log::info!(
-                "Processed {} node info from with ID {} (Requested: {})",
+                "Processed {:?} node info from with ID {} (Requested: {})",
                 msg2.node_type,
                 node_id,
                 msg2.node_id,
             );
 
             // notify all nodes
-            ctx.notify_nodes(
+            notify_nodes(
+                ctx,
                 match msg.node_type {
                     NodeType::Meta => &[NodeType::Meta, NodeType::Client],
                     NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
@@ -158,12 +166,12 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &impl AppContext) -> Nod
         Err(err) => {
             log_error_chain!(
                 err,
-                "Processing {} node info for ID {} failed",
+                "Processing {:?} node info for ID {} failed",
                 msg.node_type,
                 msg.node_id,
             );
 
-            NodeID::ZERO
+            0
         }
     }
 }

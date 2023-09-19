@@ -2,11 +2,12 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::GetMirrorBuddyGroups,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::GetMirrorBuddyGroupsResp {
     match ctx
-        .db_op(move |tx| db::buddy_group::get_with_type(tx, msg.node_type))
+        .db
+        .op(move |tx| db::buddy_group::get_with_type(tx, msg.node_type))
         .await
     {
         Ok(groups) => {

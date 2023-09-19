@@ -3,7 +3,7 @@ use shared::msg::types::{QuotaInodeSupport, QuotaQueryType};
 
 pub(super) async fn handle(
     msg: msg::GetQuotaInfo,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::GetQuotaInfoResp {
     // TODO Respect the requested transfer method. Or, at least, query by target, not by storage
@@ -12,10 +12,11 @@ pub(super) async fn handle(
     let pool_id = msg.pool_id;
 
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check pool id exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {
-                return Err(DbError::value_not_found("storage pool ID", msg.pool_id));
+                bail!(TypedError::value_not_found("storage pool ID", msg.pool_id));
             }
 
             let limits = match msg.query_type {

@@ -3,14 +3,15 @@ use crate::db::quota_usage::PoolOrTargetID;
 
 pub(super) async fn handle(
     msg: msg::RequestExceededQuota,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::RequestExceededQuotaResp {
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             let exceeded_ids = db::quota_usage::exceeded_quota_ids(
                 tx,
-                if msg.pool_id != StoragePoolID::ZERO {
+                if msg.pool_id != 0 {
                     PoolOrTargetID::PoolID(msg.pool_id)
                 } else {
                     PoolOrTargetID::TargetID(msg.target_id)

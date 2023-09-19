@@ -7,11 +7,12 @@ pub struct RemoveNode {
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
     pub node_id: NodeID,
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for RemoveNode {
-    const ID: MsgID = MsgID(1013);
+    const ID: MsgID = 1013;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -20,5 +21,5 @@ pub struct RemoveNodeResp {
 }
 
 impl Msg for RemoveNodeResp {
-    const ID: MsgID = MsgID(1014);
+    const ID: MsgID = 1014;
 }

@@ -14,11 +14,12 @@ pub struct ChangeTargetConsistencyStates {
     pub old_states: Vec<TargetConsistencyState>,
     #[bee_serde(as = Seq<true, _>)]
     pub new_states: Vec<TargetConsistencyState>,
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for ChangeTargetConsistencyStates {
-    const ID: MsgID = MsgID(1057);
+    const ID: MsgID = 1057;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -27,5 +28,5 @@ pub struct ChangeTargetConsistencyStatesResp {
 }
 
 impl Msg for ChangeTargetConsistencyStatesResp {
-    const ID: MsgID = MsgID(1058);
+    const ID: MsgID = 1058;
 }

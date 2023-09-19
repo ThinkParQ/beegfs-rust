@@ -12,7 +12,7 @@ pub struct SetStorageTargetInfo {
 }
 
 impl Msg for SetStorageTargetInfo {
-    const ID: MsgID = MsgID(2099);
+    const ID: MsgID = 2099;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -21,5 +21,5 @@ pub struct SetStorageTargetInfoResp {
 }
 
 impl Msg for SetStorageTargetInfoResp {
-    const ID: MsgID = MsgID(2100);
+    const ID: MsgID = 2100;
 }

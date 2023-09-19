@@ -263,15 +263,6 @@ impl<'a> Deserializer<'a> {
         Ok(v)
     }
 
-    pub fn string(&mut self) -> Result<String> {
-        let len = self.u32()? as usize;
-
-        let mut bytes = vec![0; len];
-        self.source_buf.copy_to_slice(&mut bytes);
-
-        Ok(String::from_utf8(bytes)?)
-    }
-
     /// Deserializes a BeeGFS serialized sequence of elements
     ///
     /// "Sequence" is implemented for containers like `std::vector` and `std::list` and works the

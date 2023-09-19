@@ -12,5 +12,5 @@ pub struct PeerInfo {
 }
 
 impl Msg for PeerInfo {
-    const ID: MsgID = MsgID(4011);
+    const ID: MsgID = 4011;
 }

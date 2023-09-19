@@ -34,13 +34,13 @@ pub fn derive_bee_serialize(input: proc_macro::TokenStream) -> proc_macro::Token
 
     // Create and output the actual impl block
     quote! {
-        impl bee_serde::BeeSerde for #name {
-            fn serialize(&self, ser: &mut bee_serde::Serializer<'_>) -> anyhow::Result<()> {
+        impl crate::bee_serde::BeeSerde for #name {
+            fn serialize(&self, ser: &mut crate::bee_serde::Serializer<'_>) -> anyhow::Result<()> {
                 #ser
                 Ok(())
             }
 
-            fn deserialize(des: &mut bee_serde::Deserializer<'_>) -> anyhow::Result<Self> {
+            fn deserialize(des: &mut crate::bee_serde::Deserializer<'_>) -> anyhow::Result<Self> {
                 #des
             }
         }
@@ -150,10 +150,10 @@ fn build_field_actions(field: &Field, index: usize) -> (TokenStream, TokenStream
     } else {
         (
             quote! {
-                bee_serde::BeeSerde::serialize(&#field, ser)?;
+                crate::bee_serde::BeeSerde::serialize(&#field, ser)?;
             },
             quote! {
-                <#target_type as bee_serde::BeeSerde>::deserialize(des)?,
+                <#target_type as crate::bee_serde::BeeSerde>::deserialize(des)?,
             },
         )
     };

@@ -1,21 +1,23 @@
 use super::*;
 use shared::msg::types::CapacityPoolQueryType;
+use shared::types::StoragePoolID;
 
 pub(super) async fn handle(
     msg: msg::GetNodeCapacityPools,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::GetNodeCapacityPoolsResp {
     let pools = match async move {
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
         // either a NodeNUmID, TargetNumID or BuddyGroupID
 
-        let config = &ctx.runtime_info().config;
+        let config = &ctx.info.config;
 
         let result: HashMap<StoragePoolID, Vec<Vec<u16>>> = match msg.query_type {
             CapacityPoolQueryType::Meta => {
                 let res = ctx
-                    .db_op(|tx| {
+                    .db
+                    .op(|tx| {
                         db::cap_pool::for_meta_targets(
                             tx,
                             &config.cap_pool_meta_limits,
@@ -30,11 +32,12 @@ pub(super) async fn handle(
                     target_cap_pools[usize::from(t.cap_pool)].push(t.entity_id);
                 }
 
-                [(StoragePoolID::ZERO, target_cap_pools)].into()
+                [(0, target_cap_pools)].into()
             }
             CapacityPoolQueryType::Storage => {
                 let res = ctx
-                    .db_op(|tx| {
+                    .db
+                    .op(|tx| {
                         db::cap_pool::for_storage_targets(
                             tx,
                             &config.cap_pool_storage_limits,
@@ -59,7 +62,8 @@ pub(super) async fn handle(
 
             CapacityPoolQueryType::MetaMirrored => {
                 let res = ctx
-                    .db_op(|tx| {
+                    .db
+                    .op(|tx| {
                         db::cap_pool::for_meta_buddy_groups(
                             tx,
                             &config.cap_pool_meta_limits,
@@ -73,12 +77,13 @@ pub(super) async fn handle(
                     group_cap_pools[usize::from(g.cap_pool)].push(g.entity_id);
                 }
 
-                [(StoragePoolID::ZERO, group_cap_pools)].into()
+                [(0, group_cap_pools)].into()
             }
 
             CapacityPoolQueryType::StorageMirrored => {
                 let res = ctx
-                    .db_op(|tx| {
+                    .db
+                    .op(|tx| {
                         db::cap_pool::for_storage_buddy_groups(
                             tx,
                             &config.cap_pool_storage_limits,
@@ -102,7 +107,7 @@ pub(super) async fn handle(
             }
         };
 
-        Ok(result) as DbResult<_>
+        Ok(result) as Result<_>
     }
     .await
     {

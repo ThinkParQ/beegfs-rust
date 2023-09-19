@@ -16,13 +16,15 @@ pub fn with_quota_id_range(
     quota_id_range: RangeInclusive<QuotaID>,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-) -> DbResult<Vec<SpaceAndInodeLimits>> {
+) -> Result<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
-        r#"
-        SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-        WHERE quota_id >= ?1 AND quota_id <= ?2 AND pool_id == ?3 AND id_type = ?4
-        "#,
+        sql!(
+            r#"
+            SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
+            WHERE quota_id >= ?1 AND quota_id <= ?2 AND pool_id == ?3 AND id_type = ?4
+            "#
+        ),
         params![
             quota_id_range.start(),
             quota_id_range.end(),
@@ -37,7 +39,7 @@ pub fn with_quota_id_list(
     quota_ids: impl IntoIterator<Item = QuotaID>,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-) -> DbResult<Vec<SpaceAndInodeLimits>> {
+) -> Result<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
         &format!(
@@ -56,7 +58,7 @@ pub fn all(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
-) -> DbResult<Vec<SpaceAndInodeLimits>> {
+) -> Result<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
         r#"
@@ -71,7 +73,7 @@ fn fetch(
     tx: &mut Transaction,
     stmt: &str,
     params: &[&dyn ToSql],
-) -> DbResult<Vec<SpaceAndInodeLimits>> {
+) -> Result<Vec<SpaceAndInodeLimits>> {
     let mut stmt = tx.prepare_cached(stmt)?;
 
     let res = stmt
@@ -90,22 +92,22 @@ fn fetch(
 pub fn update(
     tx: &mut Transaction,
     iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
-) -> DbResult<()> {
-    let mut insert_stmt = tx.prepare_cached(
+) -> Result<()> {
+    let mut insert_stmt = tx.prepare_cached(sql!(
         r#"
         INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value)
         VALUES(?1, ?2, ?3 ,?4 ,?5)
         ON CONFLICT (quota_id, id_type, quota_type, pool_id) DO
         UPDATE SET value = ?5
-        "#,
-    )?;
+        "#
+    ))?;
 
-    let mut delete_stmt = tx.prepare_cached(
+    let mut delete_stmt = tx.prepare_cached(sql!(
         r#"
         DELETE FROM quota_limits
         WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND pool_id == ?4
-        "#,
-    )?;
+        "#
+    ))?;
 
     for l in iter {
         if let Some(space) = l.2.space {
@@ -131,34 +133,34 @@ mod test {
     #[test]
     fn set_get() {
         with_test_data(|tx| {
-            assert_eq!(0, all(tx, 1.into(), QuotaIDType::User).unwrap().len());
+            assert_eq!(0, all(tx, 1, QuotaIDType::User).unwrap().len());
 
             update(
                 tx,
                 [
                     (
                         QuotaIDType::User,
-                        1.into(),
+                        1,
                         SpaceAndInodeLimits {
-                            quota_id: 1000.into(),
+                            quota_id: 1000,
                             space: Some(2000),
                             inodes: None,
                         },
                     ),
                     (
                         QuotaIDType::User,
-                        1.into(),
+                        1,
                         SpaceAndInodeLimits {
-                            quota_id: 1001.into(),
+                            quota_id: 1001,
                             space: None,
                             inodes: Some(2000),
                         },
                     ),
                     (
                         QuotaIDType::User,
-                        1.into(),
+                        1,
                         SpaceAndInodeLimits {
-                            quota_id: 1002.into(),
+                            quota_id: 1002,
                             space: Some(2000),
                             inodes: Some(2000),
                         },
@@ -167,23 +169,18 @@ mod test {
             )
             .unwrap();
 
-            assert_eq!(3, all(tx, 1.into(), QuotaIDType::User).unwrap().len());
+            assert_eq!(3, all(tx, 1, QuotaIDType::User).unwrap().len());
             assert_eq!(
                 2,
-                with_quota_id_range(tx, 900.into()..=1001.into(), 1.into(), QuotaIDType::User)
+                with_quota_id_range(tx, 900..=1001, 1, QuotaIDType::User)
                     .unwrap()
                     .len()
             );
             assert_eq!(
                 2,
-                with_quota_id_list(
-                    tx,
-                    [900.into(), 1000.into(), 1002.into()],
-                    1.into(),
-                    QuotaIDType::User
-                )
-                .unwrap()
-                .len()
+                with_quota_id_list(tx, [900, 1000, 1002], 1, QuotaIDType::User)
+                    .unwrap()
+                    .len()
             );
 
             update(
@@ -191,18 +188,18 @@ mod test {
                 [
                     (
                         QuotaIDType::User,
-                        1.into(),
+                        1,
                         SpaceAndInodeLimits {
-                            quota_id: 1000.into(),
+                            quota_id: 1000,
                             space: Some(2000),
                             inodes: Some(2000),
                         },
                     ),
                     (
                         QuotaIDType::User,
-                        1.into(),
+                        1,
                         SpaceAndInodeLimits {
-                            quota_id: 1001.into(),
+                            quota_id: 1001,
                             space: None,
                             inodes: None,
                         },
@@ -211,7 +208,7 @@ mod test {
             )
             .unwrap();
 
-            assert_eq!(2, all(tx, 1.into(), QuotaIDType::User).unwrap().len());
+            assert_eq!(2, all(tx, 1, QuotaIDType::User).unwrap().len());
         })
     }
 
@@ -228,9 +225,9 @@ mod test {
                 (1..=BENCH_QUOTA_ID_NUM).map(|e| {
                     (
                         QuotaIDType::User,
-                        1.into(),
+                        1,
                         SpaceAndInodeLimits {
-                            quota_id: e.into(),
+                            quota_id: e,
                             space: Some(e.into()),
                             inodes: None,
                         },
@@ -242,13 +239,8 @@ mod test {
 
         b.iter(|| {
             transaction(&mut conn, |tx| {
-                quota_limit::with_quota_id_list(
-                    tx,
-                    (1..=BENCH_QUOTA_ID_NUM).map(|e| e.into()),
-                    1.into(),
-                    QuotaIDType::User,
-                )
-                .unwrap();
+                quota_limit::with_quota_id_list(tx, 1..=BENCH_QUOTA_ID_NUM, 1, QuotaIDType::User)
+                    .unwrap();
             });
 
             counter += 1;
@@ -267,9 +259,9 @@ mod test {
                     (1..=BENCH_QUOTA_ID_NUM).map(|e| {
                         (
                             QuotaIDType::User,
-                            1.into(),
+                            1,
                             SpaceAndInodeLimits {
-                                quota_id: (e + counter).into(),
+                                quota_id: (e + counter),
                                 space: Some((e + counter).into()),
                                 inodes: None,
                             },

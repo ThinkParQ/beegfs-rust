@@ -10,11 +10,12 @@ pub struct SetMirrorBuddyGroup {
     pub buddy_group_id: BuddyGroupID,
     /// This probably shall allow a group to be updated
     pub allow_update: u8,
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for SetMirrorBuddyGroup {
-    const ID: MsgID = MsgID(1045);
+    const ID: MsgID = 1045;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -24,7 +25,7 @@ pub struct SetMirrorBuddyGroupResp {
 }
 
 impl Msg for SetMirrorBuddyGroupResp {
-    const ID: MsgID = MsgID(1046);
+    const ID: MsgID = 1046;
 }
 
 impl BeeSerde for SetMirrorBuddyGroupResp {

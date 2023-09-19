@@ -7,11 +7,10 @@
 //! Rust and interfaces to obtain the data.
 
 mod connection;
-mod error;
 mod op;
 #[cfg(test)]
 mod test;
 
 pub use connection::{initialize, Connection};
-pub use error::*;
 pub use op::*;
+pub use shared::error::*;

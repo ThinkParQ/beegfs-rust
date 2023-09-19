@@ -7,7 +7,7 @@ pub struct RemoveStoragePool {
 }
 
 impl Msg for RemoveStoragePool {
-    const ID: MsgID = MsgID(1071);
+    const ID: MsgID = 1071;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -16,5 +16,5 @@ pub struct RemoveStoragePoolResp {
 }
 
 impl Msg for RemoveStoragePoolResp {
-    const ID: MsgID = MsgID(1072);
+    const ID: MsgID = 1072;
 }

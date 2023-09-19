@@ -40,7 +40,7 @@ pub fn find_new_id<T: FromSql + std::fmt::Display>(
     table: &str,
     field: &str,
     range: RangeInclusive<T>,
-) -> DbResult<T> {
+) -> Result<T> {
     let min = range.start();
     let max = range.end();
 
@@ -82,15 +82,15 @@ pub enum MetaRoot {
 }
 
 /// Retrieves the meta root information of the BeeGFS system.
-pub fn get_meta_root(tx: &mut Transaction) -> DbResult<MetaRoot> {
-    let mut stmt = tx.prepare_cached(
+pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         SELECT mt.node_id, mn.node_uid, ri.buddy_group_id
         FROM root_inode AS ri
         LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
         LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
-        "#,
-    )?;
+        "#
+    ))?;
 
     Ok(
         match stmt
@@ -112,30 +112,34 @@ pub fn get_meta_root(tx: &mut Transaction) -> DbResult<MetaRoot> {
 ///
 /// Gets the meta target with the root inode and moves the root inode to the buddy group which
 /// contains that target as primary target. Then a resync for the secondary target is triggered.
-pub fn enable_metadata_mirroring(tx: &mut Transaction) -> DbResult<()> {
+pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     tx.execute_checked(
-        r#"
-        UPDATE root_inode
-        SET target_id = NULL, buddy_group_id = (
-            SELECT mg.buddy_group_id
-            FROM root_inode AS ri
-            INNER JOIN meta_buddy_groups AS mg ON mg.primary_target_id = ri.target_id
-        )
-        "#,
+        sql!(
+            r#"
+            UPDATE root_inode
+            SET target_id = NULL, buddy_group_id = (
+                SELECT mg.buddy_group_id
+                FROM root_inode AS ri
+                INNER JOIN meta_buddy_groups AS mg ON mg.primary_target_id = ri.target_id
+            )
+            "#
+        ),
         [],
         1..=1,
     )?;
 
     tx.execute_checked(
-        r#"
-        UPDATE targets SET consistency = "needs_resync"
-        WHERE target_uid = (
-            SELECT mt.target_uid
-            FROM root_inode AS ri
-            INNER JOIN meta_buddy_groups AS mg USING(buddy_group_id)
-            INNER JOIN meta_targets AS mt ON mt.target_id = mg.secondary_target_id
-        )
-        "#,
+        sql!(
+            r#"
+            UPDATE targets SET consistency = "needs_resync"
+            WHERE target_uid = (
+                SELECT mt.target_uid
+                FROM root_inode AS ri
+                INNER JOIN meta_buddy_groups AS mg USING(buddy_group_id)
+                INNER JOIN meta_targets AS mt ON mt.target_id = mg.secondary_target_id
+            )
+            "#
+        ),
         [],
         1..=1,
     )?;
@@ -169,12 +173,12 @@ mod test {
     fn meta_root() {
         with_test_data(|tx| {
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(MetaRoot::Normal(1.into(), 101001.into()), meta_root);
+            assert_eq!(MetaRoot::Normal(1, 101001.into()), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap();
 
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(MetaRoot::Mirrored(1.into()), meta_root);
+            assert_eq!(MetaRoot::Mirrored(1), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap_err();
         })

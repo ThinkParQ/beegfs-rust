@@ -30,8 +30,8 @@ impl GetQuotaInfo {
         Self {
             query_type: QuotaQueryType::List,
             id_type: QuotaIDType::Group,
-            id_range_start: QuotaID::ZERO,
-            id_range_end: QuotaID::ZERO,
+            id_range_start: 0,
+            id_range_end: 0,
             id_list: group_ids.drain().collect(),
             transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
             target_id,
@@ -47,8 +47,8 @@ impl GetQuotaInfo {
         Self {
             query_type: QuotaQueryType::List,
             id_type: QuotaIDType::User,
-            id_range_start: QuotaID::ZERO,
-            id_range_end: QuotaID::ZERO,
+            id_range_start: 0,
+            id_range_end: 0,
             id_list: user_ids.drain().collect(),
             transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
             target_id,
@@ -58,7 +58,7 @@ impl GetQuotaInfo {
 }
 
 impl Msg for GetQuotaInfo {
-    const ID: MsgID = MsgID(2097);
+    const ID: MsgID = 2097;
 }
 
 // Custom BeeSerde impl because (de-)serialization actions depend on msg data
@@ -68,12 +68,12 @@ impl BeeSerde for GetQuotaInfo {
         ser.i32(self.id_type.into())?;
 
         if self.query_type == QuotaQueryType::Range {
-            ser.u32(self.id_range_start.into())?;
-            ser.u32(self.id_range_end.into())?;
+            ser.u32(self.id_range_start)?;
+            ser.u32(self.id_range_end)?;
         } else if self.query_type == QuotaQueryType::List {
-            ser.seq(self.id_list.iter(), true, |ser, e| ser.u32((*e).into()))?;
+            ser.seq(self.id_list.iter(), true, |ser, e| ser.u32(*e))?;
         } else if self.query_type == QuotaQueryType::Single {
-            ser.u32(self.id_range_start.into())?;
+            ser.u32(self.id_range_start)?;
         }
 
         ser.u32(self.transfer_method.into())?;
@@ -89,15 +89,15 @@ impl BeeSerde for GetQuotaInfo {
             query_type,
             id_type: des.i32()?.try_into()?,
             id_range_start: match query_type {
-                QuotaQueryType::Range | QuotaQueryType::Single => des.u32()?.into(),
-                _ => QuotaID::ZERO,
+                QuotaQueryType::Range | QuotaQueryType::Single => des.u32()?,
+                _ => 0,
             },
             id_range_end: match query_type {
-                QuotaQueryType::Range => des.u32()?.into(),
-                _ => QuotaID::ZERO,
+                QuotaQueryType::Range => des.u32()?,
+                _ => 0,
             },
             id_list: match query_type {
-                QuotaQueryType::List => des.seq(true, |des| Ok(des.u32()?.into()))?,
+                QuotaQueryType::List => des.seq(true, |des| des.u32())?,
                 _ => vec![],
             },
             transfer_method: des.u32()?.try_into()?,
@@ -116,5 +116,5 @@ pub struct GetQuotaInfoResp {
 }
 
 impl Msg for GetQuotaInfoResp {
-    const ID: MsgID = MsgID(2098);
+    const ID: MsgID = 2098;
 }

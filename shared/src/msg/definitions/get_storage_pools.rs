@@ -5,7 +5,7 @@ use super::*;
 pub struct GetStoragePools {}
 
 impl Msg for GetStoragePools {
-    const ID: MsgID = MsgID(1066);
+    const ID: MsgID = 1066;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -15,5 +15,5 @@ pub struct GetStoragePoolsResp {
 }
 
 impl Msg for GetStoragePoolsResp {
-    const ID: MsgID = MsgID(1067);
+    const ID: MsgID = 1067;
 }

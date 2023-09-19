@@ -3,14 +3,15 @@ use crate::db::quota_limit::SpaceAndInodeLimits;
 
 pub(super) async fn handle(
     msg: msg::SetQuota,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::SetQuotaResp {
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check pool ID exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {
-                return Err(DbError::value_not_found("storage pool ID", msg.pool_id));
+                bail!(TypedError::value_not_found("storage pool ID", msg.pool_id));
             }
 
             db::quota_limit::update(
@@ -42,7 +43,6 @@ pub(super) async fn handle(
         }
 
         Err(err) => {
-            err.as_ref();
             log_error_chain!(err, "Setting quota for storage pool {} failed", msg.pool_id);
 
             msg::SetQuotaResp { result: 0 }

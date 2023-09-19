@@ -7,5 +7,5 @@ pub struct AuthenticateChannel {
 }
 
 impl Msg for AuthenticateChannel {
-    const ID: MsgID = MsgID(4007);
+    const ID: MsgID = 4007;
 }

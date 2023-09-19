@@ -15,17 +15,17 @@ pub struct DefaultLimits {
 }
 
 /// Retrieves the default limits for the given storage pool ID.
-pub fn get_with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> DbResult<DefaultLimits> {
+pub fn get_with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
     storage_pool::get_uid(tx, pool_id)?
-        .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
+        .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
 
-    let mut stmt = tx.prepare_cached(
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
         FROM quota_default_limits_combined_v
         WHERE pool_id = ?1
-        "#,
-    )?;
+        "#
+    ))?;
 
     let limits = stmt
         .query_row(params![pool_id], |row| {
@@ -50,16 +50,16 @@ pub fn upsert(
     id_type: QuotaIDType,
     quota_type: QuotaType,
     value: u64,
-) -> DbResult<()> {
-    let mut stmt = tx.prepare_cached(
+) -> Result<()> {
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value)
         VALUES (?1, ?2, ?3, ?4)
         ON CONFLICT (id_type, quota_type, pool_id) DO
         UPDATE SET value = ?4
         WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
-        "#,
-    )?;
+        "#
+    ))?;
 
     stmt.execute(params![id_type, quota_type, pool_id, value])?;
 
@@ -74,16 +74,16 @@ pub fn delete(
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
     quota_type: QuotaType,
-) -> DbResult<()> {
+) -> Result<()> {
     storage_pool::get_uid(tx, pool_id)?
-        .ok_or_else(|| DbError::value_not_found("storage pool ID", pool_id))?;
+        .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
 
-    let mut stmt = tx.prepare_cached(
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         DELETE FROM quota_default_limits
         WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
-        "#,
-    )?;
+        "#
+    ))?;
 
     stmt.execute(params![id_type, quota_type, pool_id])?;
 
@@ -97,24 +97,24 @@ mod test {
     #[test]
     fn set_get() {
         with_test_data(|tx| {
-            let defaults = super::get_with_pool_id(tx, 1.into()).unwrap();
+            let defaults = super::get_with_pool_id(tx, 1).unwrap();
 
             assert_eq!(Some(1000), defaults.user_space_limit);
             assert_eq!(Some(1000), defaults.user_inodes_limit);
             assert_eq!(Some(1000), defaults.group_space_limit);
             assert_eq!(Some(1000), defaults.group_inodes_limit);
 
-            let defaults = super::get_with_pool_id(tx, 2.into()).unwrap();
+            let defaults = super::get_with_pool_id(tx, 2).unwrap();
 
             assert_eq!(None, defaults.user_space_limit);
             assert_eq!(None, defaults.user_inodes_limit);
             assert_eq!(None, defaults.group_space_limit);
             assert_eq!(None, defaults.group_inodes_limit);
 
-            super::delete(tx, 1.into(), QuotaIDType::User, QuotaType::Space).unwrap();
-            super::upsert(tx, 1.into(), QuotaIDType::User, QuotaType::Inodes, 2000).unwrap();
+            super::delete(tx, 1, QuotaIDType::User, QuotaType::Space).unwrap();
+            super::upsert(tx, 1, QuotaIDType::User, QuotaType::Inodes, 2000).unwrap();
 
-            let defaults = super::get_with_pool_id(tx, 1.into()).unwrap();
+            let defaults = super::get_with_pool_id(tx, 1).unwrap();
 
             assert_eq!(None, defaults.user_space_limit);
             assert_eq!(Some(2000), defaults.user_inodes_limit);

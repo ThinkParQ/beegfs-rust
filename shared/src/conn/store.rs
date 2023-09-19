@@ -1,7 +1,7 @@
 use super::async_queue::AsyncQueue;
 use crate::conn::stream::Stream;
 use crate::conn::MsgBuf;
-use crate::EntityUID;
+use crate::types::EntityUID;
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;

@@ -7,7 +7,7 @@ use super::*;
 pub struct HeartbeatRequest {}
 
 impl Msg for HeartbeatRequest {
-    const ID: MsgID = MsgID(1019);
+    const ID: MsgID = 1019;
 }
 
 /// Updates a node with the given information.
@@ -22,9 +22,9 @@ pub struct Heartbeat {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
     #[bee_serde(as = CStr<0>)]
-    pub node_alias: EntityAlias,
+    pub node_alias: Vec<u8>,
     #[bee_serde(as = CStr<4>)]
-    pub ack_id: AckID,
+    pub ack_id: Vec<u8>,
     #[bee_serde(as = Int<u32>)]
     pub node_num_id: NodeID,
     // The root info is only relevant when sent from meta nodes. There it must contain the meta
@@ -41,5 +41,5 @@ pub struct Heartbeat {
 }
 
 impl Msg for Heartbeat {
-    const ID: MsgID = MsgID(1020);
+    const ID: MsgID = 1020;
 }

@@ -11,19 +11,19 @@ pub struct Node {
     pub uid: EntityUID,
     pub id: NodeID,
     pub node_type: NodeType,
-    pub alias: EntityAlias,
+    pub alias: String,
     pub port: Port,
 }
 
 /// Retrieve a list of nodes filtered by node type.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Vec<Node>> {
-    let mut stmt = tx.prepare_cached(
+pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         SELECT node_uid, node_id, node_type, alias, port
         FROM all_nodes_v
         WHERE node_type = ?1
-        "#,
-    )?;
+        "#
+    ))?;
 
     let res = stmt
         .query_map([node_type], |row| {
@@ -48,10 +48,10 @@ pub fn get_uid(
     tx: &mut Transaction,
     node_id: NodeID,
     node_type: NodeType,
-) -> DbResult<Option<EntityUID>> {
+) -> Result<Option<EntityUID>> {
     let res: Option<EntityUID> = tx
         .query_row_cached(
-            "SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2",
+            sql!("SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2"),
             params![node_id, node_type],
             |row| row.get(0),
         )
@@ -60,20 +60,31 @@ pub fn get_uid(
     Ok(res)
 }
 
+/// Checks if a node with the given UID exists
+pub fn is_uid(tx: &mut Transaction, node_uid: EntityUID) -> Result<bool> {
+    let count: i64 = tx.query_row_cached(
+        sql!("SELECT COUNT(*) FROM nodes WHERE node_uid = ?1"),
+        params![node_uid],
+        |row| row.get(0),
+    )?;
+
+    Ok(count > 0)
+}
+
 /// Delete client nodes with a last contact time bigger than `timeout`.
 ///
 /// # Return value
 /// Returns the number of deleted clients.
-pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> DbResult<usize> {
+pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
     let affected = {
-        let mut stmt = tx.prepare_cached(
+        let mut stmt = tx.prepare_cached(sql!(
             r#"
             DELETE FROM nodes
             WHERE
                 DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
                 AND node_uid IN (SELECT node_uid FROM client_nodes)
-            "#,
-        )?;
+            "#
+        ))?;
         stmt.execute(params![timeout.as_secs()])?
     };
 
@@ -87,20 +98,28 @@ pub fn insert(
     node_uid: EntityUID,
     node_type: NodeType,
     new_port: Port,
-) -> DbResult<()> {
+) -> Result<()> {
     tx.execute_cached(
-        r#"
-        INSERT INTO nodes (node_uid, node_type, port, last_contact)
-        VALUES (?1, ?2, ?3, DATETIME('now'))
-        "#,
+        sql!(
+            r#"
+            INSERT INTO nodes (node_uid, node_type, port, last_contact)
+            VALUES (?1, ?2, ?3, DATETIME('now'))
+            "#
+        ),
         params![node_uid, node_type, new_port],
     )?;
 
     tx.execute_cached(
-        &format!(
-            "INSERT INTO {}_nodes (node_id, node_uid) VALUES (?1, ?2)",
-            node_type.as_sql_str(),
-        ),
+        match node_type {
+            NodeType::Meta => sql!("INSERT INTO meta_nodes (node_id, node_uid) VALUES (?1, ?2)"),
+            NodeType::Storage => {
+                sql!("INSERT INTO storage_nodes (node_id, node_uid) VALUES (?1, ?2)")
+            }
+            NodeType::Client => {
+                sql!("INSERT INTO client_nodes (node_id, node_uid) VALUES (?1, ?2)")
+            }
+            NodeType::Management => bail!("Can not insert management node"),
+        },
         params![node_id, node_uid],
     )?;
 
@@ -108,9 +127,9 @@ pub fn insert(
 }
 
 /// Updates a node in the database.
-pub fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> DbResult<()> {
+pub fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> Result<()> {
     tx.execute_checked_cached(
-        "UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2",
+        sql!("UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2"),
         params![new_port, node_uid],
         1..=1,
     )?;
@@ -146,7 +165,7 @@ pub fn update_last_contact_for_targets(
 /// Delete a node from the database.
 pub fn delete(tx: &mut Transaction, node_uid: EntityUID) -> rusqlite::Result<usize> {
     tx.execute_checked_cached(
-        "DELETE FROM nodes WHERE node_uid = ?1",
+        sql!("DELETE FROM nodes WHERE node_uid = ?1"),
         params![node_uid],
         1..=1,
     )
@@ -155,18 +174,17 @@ pub fn delete(tx: &mut Transaction, node_uid: EntityUID) -> rusqlite::Result<usi
 #[cfg(test)]
 mod test {
     use super::*;
-    use entity::EntityType;
 
     #[test]
     fn insert_get_delete() {
         with_test_data(|tx| {
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
-            let node_uid = entity::insert(tx, EntityType::Node, &"new_node".into()).unwrap();
-            let node_uid2 = entity::insert(tx, EntityType::Node, &"new_node2".into()).unwrap();
+            let node_uid = entity::insert(tx, EntityType::Node, "new_node").unwrap();
+            let node_uid2 = entity::insert(tx, EntityType::Node, "new_node2").unwrap();
 
-            insert(tx, 1234.into(), node_uid, NodeType::Meta, 10000.into()).unwrap();
-            insert(tx, 1234.into(), node_uid2, NodeType::Meta, 10000.into()).unwrap_err();
-            insert(tx, 1235.into(), node_uid, NodeType::Meta, 10000.into()).unwrap_err();
+            insert(tx, 1234, node_uid, NodeType::Meta, 10000).unwrap();
+            insert(tx, 1234, node_uid2, NodeType::Meta, 10000).unwrap_err();
+            insert(tx, 1235, node_uid, NodeType::Meta, 10000).unwrap_err();
             assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
 
             delete(tx, node_uid).unwrap();
@@ -202,8 +220,7 @@ mod test {
     #[test]
     fn update_last_contact_for_targets() {
         with_test_data(|tx| {
-            super::update_last_contact_for_targets(tx, &[1.into(), 2.into()], NodeTypeServer::Meta)
-                .unwrap();
+            super::update_last_contact_for_targets(tx, &[1, 2], NodeTypeServer::Meta).unwrap();
         })
     }
 }

@@ -15,7 +15,7 @@ pub struct SetExceededQuota {
 }
 
 impl Msg for SetExceededQuota {
-    const ID: MsgID = MsgID(2077);
+    const ID: MsgID = 2077;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -24,5 +24,5 @@ pub struct SetExceededQuotaResp {
 }
 
 impl Msg for SetExceededQuotaResp {
-    const ID: MsgID = MsgID(2078);
+    const ID: MsgID = 2078;
 }

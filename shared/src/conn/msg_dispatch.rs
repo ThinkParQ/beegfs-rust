@@ -1,7 +1,6 @@
 use super::msg_buf::MsgBuf;
 use super::stream::Stream;
-use crate::msg::Msg;
-use crate::MsgID;
+use crate::msg::{Msg, MsgID};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::fmt::Debug;
@@ -14,30 +13,6 @@ use tokio::net::UdpSocket;
 #[async_trait]
 pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
     async fn dispatch_request(&self, chn: impl Request) -> Result<()>;
-}
-
-/// Enables a object to issue a response message (or not).
-///
-/// This allows to take different actions when sending a response based on the (msg) type.
-#[async_trait]
-pub trait ResponseMsg {
-    async fn respond(rcc: impl Request, msg: &Self) -> Result<()>;
-}
-
-/// Do nothing response when the type is ()
-#[async_trait]
-impl ResponseMsg for () {
-    async fn respond(_rcc: impl Request, _msg: &Self) -> Result<()> {
-        Ok(())
-    }
-}
-
-/// Forward to the Controllers response call for all Msg based types
-#[async_trait]
-impl<M: Msg> ResponseMsg for M {
-    async fn respond(rcc: impl Request, msg: &Self) -> Result<()> {
-        rcc.respond(msg).await
-    }
 }
 
 #[async_trait]

@@ -4,8 +4,12 @@
 //! from, the [serializer](bee_serde), [connection](conn) handling and other utilities and
 //! definitions.
 
+#[macro_use]
+mod impl_macros;
+
 pub mod bee_serde;
 pub mod conn;
+pub mod error;
 pub mod journald_logger;
 pub mod msg;
 pub mod parser;
@@ -13,12 +17,19 @@ pub mod shutdown;
 pub mod types;
 
 use anyhow::{bail, Result};
-use std::net::IpAddr;
-// Reexport for convenience
-pub use types::*;
+use std::net::{IpAddr, Ipv4Addr};
+
+#[derive(Debug, Clone)]
+pub struct NetworkAddr {
+    pub addr: Ipv4Addr,
+    pub name: String,
+}
 
 /// Retrieve the systems available network interfaces with their addresses
-pub fn network_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<Nic>> {
+///
+/// Only interfaces matching one of the given names in `filter` will be returned, unless the list
+/// is empty.
+pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr>> {
     let all_interfaces = pnet_datalink::interfaces();
 
     for f in filter {
@@ -37,10 +48,9 @@ pub fn network_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<Nic>> {
 
         for ip in interface.ips {
             if let IpAddr::V4(ipv4) = ip.ip() {
-                filtered_nics.push(Nic {
+                filtered_nics.push(NetworkAddr {
                     addr: ipv4,
-                    alias: interface.name.as_str().into(),
-                    nic_type: NicType::Ethernet,
+                    name: interface.name.clone(),
                 });
             }
         }
@@ -49,14 +59,15 @@ pub fn network_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<Nic>> {
     Ok(filtered_nics)
 }
 
-/// Logs any error that implements `AsRef<&dyn std::error::Error>` with additional context and its
-/// sources.
+/// Stringifies any Error that implements `AsRef<&dyn std::error::Error>` with additional context
+/// and its sources.
 #[macro_export]
-macro_rules! log_error_chain {
+macro_rules! error_chain {
     ($err:expr, $fmt:expr $(,$arg:expr)* $(,)?) => {{
         use std::fmt::Write;
 
         let mut err_string = String::new();
+        write!(err_string, "{}", format_args!($fmt, $($arg,)*)).ok();
 
         let mut current_source: Option<&dyn std::error::Error> = Some($err.as_ref());
         while let Some(source) = current_source {
@@ -64,6 +75,15 @@ macro_rules! log_error_chain {
             current_source = source.source();
         }
 
-        log::error!("{}{}", format_args!($fmt, $($arg,)*), err_string);
+        err_string
     }};
+}
+
+/// Logs any error that implements `AsRef<&dyn std::error::Error>` with additional context and its
+/// sources.
+#[macro_export]
+macro_rules! log_error_chain {
+    ($err:expr, $fmt:expr $(,$arg:expr)* $(,)?) => {
+        log::error!("{}", $crate::error_chain!($err, $fmt, $($arg,)*));
+    };
 }

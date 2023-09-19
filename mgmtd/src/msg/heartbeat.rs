@@ -1,10 +1,6 @@
 use super::*;
 
-pub(super) async fn handle(
-    msg: msg::Heartbeat,
-    ctx: &impl AppContext,
-    _req: &impl Request,
-) -> msg::Ack {
+pub(super) async fn handle(msg: msg::Heartbeat, ctx: &Context, _req: &impl Request) -> msg::Ack {
     let _ = register_node::update(
         msg::RegisterNode {
             instance_version: msg.instance_version,

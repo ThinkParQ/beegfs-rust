@@ -1,15 +1,17 @@
 use super::*;
+use shared::types::QuotaType;
 
 pub(super) async fn handle(
     msg: msg::SetDefaultQuota,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::SetDefaultQuotaResp {
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check pool ID exists
             if db::storage_pool::get_uid(tx, msg.pool_id)?.is_none() {
-                return Err(DbError::value_not_found("storage pool ID", msg.pool_id));
+                bail!(TypedError::value_not_found("storage pool ID", msg.pool_id));
             }
 
             match msg.space {

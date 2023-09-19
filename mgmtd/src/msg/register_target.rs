@@ -2,26 +2,26 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::RegisterTarget,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::RegisterTargetResp {
     match async move {
-        if !ctx.runtime_info().config.registration_enable {
+        if !ctx.info.config.registration_enable {
             bail!("Registration of new targets is not allowed");
         }
 
-        Ok(ctx
-            .db_op(move |tx| {
+        ctx.db
+            .op(move |tx| {
                 db::target::insert_or_ignore_storage(
                     tx,
                     match msg.target_id {
-                        TargetID::ZERO => None,
+                        0 => None,
                         n => Some(n),
                     },
-                    &msg.alias,
+                    std::str::from_utf8(&msg.alias)?,
                 )
             })
-            .await?)
+            .await
     }
     .await
     {
@@ -31,7 +31,7 @@ pub(super) async fn handle(
         }
         Err(err) => {
             log_error_chain!(err, "Registering storage target {} failed", msg.target_id);
-            msg::RegisterTargetResp { id: TargetID::ZERO }
+            msg::RegisterTargetResp { id: 0 }
         }
     }
 }

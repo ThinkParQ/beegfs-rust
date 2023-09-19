@@ -8,8 +8,8 @@ homepage = "https://www.beegfs.io"
 publish = false
 
 [dependencies]
-bee_macro = { path = "../bee_macro" }
-hsieh = { path = "../hsieh" }
+bee_serde_derive = { path = "bee_serde_derive" }
+hsieh = { path = "hsieh" }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -17,7 +17,8 @@ bytes = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "~0"
 regex = "~1"
-rusqlite = { workspace = true }
+# Rusqlite support is only needed when the SQlite impls are required => optional
+rusqlite = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -26,3 +27,6 @@ tokio = { workspace = true, features = [
     "time",
     "rt-multi-thread",
 ] }
+
+[features]
+rusqlite = ["dep:rusqlite"]

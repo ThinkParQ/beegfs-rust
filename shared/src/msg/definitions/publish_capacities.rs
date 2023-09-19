@@ -6,9 +6,10 @@ use super::*;
 /// if very up to date values are needed on demand (which they aren't at the moment).
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct PublishCapacities {
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for PublishCapacities {
-    const ID: MsgID = MsgID(1059);
+    const ID: MsgID = 1059;
 }

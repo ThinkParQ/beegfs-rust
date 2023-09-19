@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::RefreshCapacityPools,
-    _ctx: &impl AppContext,
+    _ctx: &Context,
     _req: &impl Request,
 ) -> msg::Ack {
     // This message is superfluos and therefore ignored. It is meant to tell the

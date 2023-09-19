@@ -8,7 +8,7 @@ pub struct GetStatesAndBuddyGroups {
 }
 
 impl Msg for GetStatesAndBuddyGroups {
-    const ID: MsgID = MsgID(1053);
+    const ID: MsgID = 1053;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -20,5 +20,5 @@ pub struct GetStatesAndBuddyGroupsResp {
 }
 
 impl Msg for GetStatesAndBuddyGroupsResp {
-    const ID: MsgID = MsgID(1054);
+    const ID: MsgID = 1054;
 }

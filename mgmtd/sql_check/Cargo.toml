@@ -1,0 +1,15 @@
+[package]
+name = "sql_check"
+version = "0.1.0"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+description = "Management SQL query checker"
+homepage = "https://www.beegfs.io"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "~2", features = ["parsing"] }
+rusqlite = { workspace = true, features = ["bundled"] }

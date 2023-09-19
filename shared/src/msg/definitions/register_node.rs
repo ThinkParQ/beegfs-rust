@@ -10,7 +10,7 @@ pub struct RegisterNode {
     /// Unused
     pub nic_list_version: u64,
     #[bee_serde(as = CStr<0>)]
-    pub node_alias: EntityAlias,
+    pub node_alias: Vec<u8>,
     #[bee_serde(as = Seq<false, _>)]
     pub nics: Vec<Nic>,
     #[bee_serde(as = Int<i32>)]
@@ -26,7 +26,7 @@ pub struct RegisterNode {
 }
 
 impl Msg for RegisterNode {
-    const ID: MsgID = MsgID(1039);
+    const ID: MsgID = 1039;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -36,5 +36,5 @@ pub struct RegisterNodeResp {
 }
 
 impl Msg for RegisterNodeResp {
-    const ID: MsgID = MsgID(1040);
+    const ID: MsgID = 1040;
 }

@@ -1,7 +1,8 @@
 use anyhow::Context;
 use mgmtd::config::LogTarget;
 use mgmtd::start;
-use shared::{journald_logger, shutdown, AuthenticationSecret};
+use shared::types::AuthenticationSecret;
+use shared::{journald_logger, shutdown};
 use std::backtrace::Backtrace;
 use std::panic;
 use tokio::signal::ctrl_c;

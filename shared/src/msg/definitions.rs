@@ -1,51 +1,77 @@
 use super::*;
 use anyhow::Result;
 
-macro_rules! msg_modules {
-    ($($mod:ident,)*) => {
-        $(
-            mod $mod;
-            pub use $mod::*;
-        )*
-    };
-}
-
-msg_modules! {
-    ack,
-    add_storage_pool,
-    authenticate_channel,
-    change_target_consistency_states,
-    generic_response,
-    get_default_quota,
-    get_mirror_buddy_groups,
-    get_node_capacity_pools,
-    get_nodes,
-    get_quota_info,
-    get_states_and_buddy_groups,
-    get_storage_pools,
-    get_target_mappings,
-    get_target_states,
-    heartbeat,
-    map_targets,
-    modify_storage_pool,
-    peer_info,
-    publish_capacities,
-    refresh_capacity_pools,
-    refresh_storage_pools,
-    refresh_target_states,
-    register_node,
-    register_target,
-    remove_buddy_group,
-    remove_node,
-    remove_storage_pool,
-    request_exceeded_quota,
-    set_channel_direct,
-    set_default_quota,
-    set_exceeded_quota,
-    set_metadata_mirroring,
-    set_mirror_buddy_group,
-    set_quota,
-    set_target_consistency_states,
-    set_storage_target_info,
-    unmap_target,
-}
+mod ack;
+pub use ack::*;
+mod add_storage_pool;
+pub use add_storage_pool::*;
+mod authenticate_channel;
+pub use authenticate_channel::*;
+mod change_target_consistency_states;
+pub use change_target_consistency_states::*;
+mod generic_response;
+pub use generic_response::*;
+mod get_default_quota;
+pub use get_default_quota::*;
+mod get_mirror_buddy_groups;
+pub use get_mirror_buddy_groups::*;
+mod get_node_capacity_pools;
+pub use get_node_capacity_pools::*;
+mod get_nodes;
+pub use get_nodes::*;
+mod get_quota_info;
+pub use get_quota_info::*;
+mod get_states_and_buddy_groups;
+pub use get_states_and_buddy_groups::*;
+mod get_storage_pools;
+pub use get_storage_pools::*;
+mod get_target_mappings;
+pub use get_target_mappings::*;
+mod get_target_states;
+pub use get_target_states::*;
+mod heartbeat;
+pub use heartbeat::*;
+mod map_targets;
+pub use map_targets::*;
+mod modify_storage_pool;
+pub use modify_storage_pool::*;
+mod peer_info;
+pub use peer_info::*;
+mod publish_capacities;
+pub use publish_capacities::*;
+mod refresh_capacity_pools;
+pub use refresh_capacity_pools::*;
+mod refresh_storage_pools;
+pub use refresh_storage_pools::*;
+mod refresh_target_states;
+pub use refresh_target_states::*;
+mod register_node;
+pub use register_node::*;
+mod register_target;
+pub use register_target::*;
+mod remove_buddy_group;
+pub use remove_buddy_group::*;
+mod remove_node;
+pub use remove_node::*;
+mod remove_storage_pool;
+pub use remove_storage_pool::*;
+mod request_exceeded_quota;
+pub use request_exceeded_quota::*;
+mod set_channel_direct;
+pub use set_channel_direct::*;
+mod set_default_quota;
+pub use set_default_quota::*;
+mod set_exceeded_quota;
+pub use set_exceeded_quota::*;
+mod set_metadata_mirroring;
+pub use set_metadata_mirroring::*;
+mod set_mirror_buddy_group;
+pub use set_mirror_buddy_group::*;
+mod set_quota;
+pub use set_quota::*;
+mod set_target_consistency_states;
+pub use set_target_consistency_states::*;
+mod set_storage_target_info;
+pub use set_storage_target_info::*;
+mod unmap_target;
+pub use unmap_target::*;

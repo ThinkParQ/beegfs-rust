@@ -8,7 +8,7 @@ pub struct GetTargetStates {
 }
 
 impl Msg for GetTargetStates {
-    const ID: MsgID = MsgID(1049);
+    const ID: MsgID = 1049;
 }
 
 /// Contains three Vecs containing the requested mapping
@@ -25,5 +25,5 @@ pub struct GetTargetStatesResp {
 }
 
 impl Msg for GetTargetStatesResp {
-    const ID: MsgID = MsgID(1050);
+    const ID: MsgID = 1050;
 }

@@ -29,7 +29,7 @@ pub fn for_meta_targets(
     tx: &mut Transaction,
     cap_pool_meta_limits: &CapPoolLimits,
     cap_pool_dynamic_meta_limits: Option<&CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+) -> Result<Vec<EntityWithCapPool>> {
     select(
         tx,
         include_str!("cap_pool/select_meta_targets.sql"),
@@ -43,7 +43,7 @@ pub fn for_storage_targets(
     tx: &mut Transaction,
     cap_pool_storage_limits: &CapPoolLimits,
     cap_pool_dynamic_storage_limits: Option<&CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+) -> Result<Vec<EntityWithCapPool>> {
     select(
         tx,
         include_str!("cap_pool/select_storage_targets.sql"),
@@ -57,7 +57,7 @@ pub fn for_meta_buddy_groups(
     tx: &mut Transaction,
     cap_pool_meta_limits: &CapPoolLimits,
     cap_pool_dynamic_meta_limits: Option<&CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+) -> Result<Vec<EntityWithCapPool>> {
     select(
         tx,
         include_str!("cap_pool/select_meta_buddy_groups.sql"),
@@ -71,7 +71,7 @@ pub fn for_storage_buddy_groups(
     tx: &mut Transaction,
     cap_pool_storage_limits: &CapPoolLimits,
     cap_pool_dynamic_storage_limits: Option<&CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+) -> Result<Vec<EntityWithCapPool>> {
     select(
         tx,
         include_str!("cap_pool/select_storage_buddy_groups.sql"),
@@ -89,7 +89,7 @@ fn select(
     select_entities: &str,
     limits: &CapPoolLimits,
     dynamic_limits: Option<&CapPoolDynamicLimits>,
-) -> DbResult<Vec<EntityWithCapPool>> {
+) -> Result<Vec<EntityWithCapPool>> {
     let dynamic_limits = match dynamic_limits {
         Some(dl) => Cow::Borrowed(dl),
         None => Cow::Owned(CapPoolDynamicLimits {
@@ -286,7 +286,7 @@ mod test {
                     pools
                         .into_iter()
                         // Only members of storage pool 1 have a spread in the test data
-                        .filter(|e| e.pool_id == 1.into())
+                        .filter(|e| e.pool_id == 1)
                         .all(|e| e.cap_pool == set.2),
                     "Case #{i}"
                 );
@@ -303,7 +303,7 @@ mod test {
                     pools
                         .into_iter()
                         // Only members of storage pool 1 have a spread in the test data
-                        .filter(|e| e.pool_id == 1.into())
+                        .filter(|e| e.pool_id == 1)
                         .all(|e| e.cap_pool == set.2),
                     "Case #{i}"
                 );

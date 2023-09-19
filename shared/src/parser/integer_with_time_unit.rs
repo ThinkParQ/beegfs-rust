@@ -1,3 +1,6 @@
+/// Custom serde parser for integers with time (like `"10s"`)
+///
+/// Meant for command line argument and config file parsing.
 use regex::Regex;
 use serde::de::{Unexpected, Visitor};
 use serde::{Deserializer, Serializer};
@@ -6,6 +9,7 @@ use std::time::Duration;
 
 static REGEX: OnceLock<Regex> = OnceLock::new();
 
+/// Parses a time string in the form `<int>[ns|us|ms|s|m|h|d]` into a [Duration]
 fn parse(input: &str) -> Result<Duration, ()> {
     let regex = REGEX
         .get_or_init(|| Regex::new(r"^(\d+) *(([num]?s|[mhd])?)$").expect("Regex must be valid"));

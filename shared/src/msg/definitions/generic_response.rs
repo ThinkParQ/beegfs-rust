@@ -9,5 +9,5 @@ pub struct GenericResponse {
 }
 
 impl Msg for GenericResponse {
-    const ID: MsgID = MsgID(4009);
+    const ID: MsgID = 4009;
 }

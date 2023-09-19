@@ -12,22 +12,22 @@ pub struct NodeNic {
     pub addr: Ipv4Addr,
     pub port: Port,
     pub nic_type: NicType,
-    pub alias: EntityAlias,
+    pub name: String,
 }
 
 /// Retrieves all node addresses grouped by EntityUID.
 ///
 /// # Return value
 /// A Vec containing (EntityUID, Vec<SocketAddr>) entries.
-pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(EntityUID, Vec<SocketAddr>)>> {
-    let mut stmt = tx.prepare_cached(
+pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketAddr>)>> {
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         SELECT nn.node_uid, nn.addr, n.port
         FROM node_nics AS nn
         INNER JOIN nodes AS n USING(node_uid)
         ORDER BY nn.node_uid ASC
-        "#,
-    )?;
+        "#
+    ))?;
 
     let mut rows = stmt.query([])?;
 
@@ -38,6 +38,7 @@ pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(EntityUID, Vec<Socke
         let addr = SocketAddr::new(row.get::<_, [u8; 4]>(1)?.into(), row.get(2)?);
 
         if cur.is_some() && cur.as_ref().unwrap().0 == node_uid {
+            #[allow(clippy::unnecessary_unwrap)]
             cur.as_mut().unwrap().1.push(addr);
         } else {
             res.push((node_uid, vec![addr]));
@@ -52,16 +53,18 @@ pub fn get_all_addrs(tx: &mut Transaction) -> DbResult<Vec<(EntityUID, Vec<Socke
 ///
 /// # Return value
 /// A Vec containing [NodeNic] entries.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Arc<[NodeNic]>> {
+pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
     fetch(
         tx,
-        r#"
-        SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-        FROM node_nics AS nn
-        INNER JOIN nodes AS n USING(node_uid)
-        WHERE n.node_type = ?1
-        ORDER BY nn.node_uid ASC
-        "#,
+        sql!(
+            r#"
+            SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+            FROM node_nics AS nn
+            INNER JOIN nodes AS n USING(node_uid)
+            WHERE n.node_type = ?1
+            ORDER BY nn.node_uid ASC
+            "#
+        ),
         params![node_type],
     )
 }
@@ -70,20 +73,22 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> DbResult<Arc<
 ///
 /// # Return value
 /// A Vec containing [NodeNic] entries.
-pub fn get_with_node_uid(tx: &mut Transaction, node_uid: EntityUID) -> DbResult<Arc<[NodeNic]>> {
+pub fn get_with_node_uid(tx: &mut Transaction, node_uid: EntityUID) -> Result<Arc<[NodeNic]>> {
     fetch(
         tx,
-        r#"
-        SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-        FROM node_nics AS nn
-        INNER JOIN nodes AS n USING(node_uid)
-        WHERE n.node_uid = ?1
-        "#,
+        sql!(
+            r#"
+            SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+            FROM node_nics AS nn
+            INNER JOIN nodes AS n USING(node_uid)
+            WHERE n.node_uid = ?1
+            "#
+        ),
         params![node_uid],
     )
 }
 
-fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> DbResult<Arc<[NodeNic]>> {
+fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> Result<Arc<[NodeNic]>> {
     let mut stmt = tx.prepare_cached(stmt)?;
 
     let nics = stmt
@@ -93,7 +98,7 @@ fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> DbResult<Ar
                 addr: row.get::<_, [u8; 4]>(1)?.into(),
                 port: row.get(2)?,
                 nic_type: row.get(3)?,
-                alias: row.get(4)?,
+                name: row.get(4)?,
             })
         })?
         .try_collect()?;
@@ -101,22 +106,32 @@ fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> DbResult<Ar
     Ok(nics)
 }
 
-/// Replaces all node nics for the given node by UID.
-pub fn replace(tx: &mut Transaction, node_uid: EntityUID, nics: &[Nic]) -> DbResult<()> {
-    tx.execute_cached("DELETE FROM node_nics WHERE node_uid = ?1", [node_uid])?;
+#[derive(Debug)]
+pub struct ReplaceNic<'a> {
+    pub nic_type: &'a NicType,
+    pub addr: &'a Ipv4Addr,
+    pub name: &'a str,
+}
 
-    let mut stmt = tx.prepare_cached(
-        "INSERT INTO node_nics (node_uid, nic_type, addr, name)
-        VALUES (?1, ?2, ?3, ?4)",
+/// Replaces all node nics for the given node by UID.
+// TODO Accept fitting structure, so we don't have to provide unused port anymore
+pub fn replace<'a>(
+    tx: &mut Transaction,
+    node_uid: EntityUID,
+    nics: impl IntoIterator<Item = ReplaceNic<'a>>,
+) -> Result<()> {
+    tx.execute_cached(
+        sql!("DELETE FROM node_nics WHERE node_uid = ?1"),
+        [node_uid],
     )?;
 
+    let mut stmt = tx.prepare_cached(sql!(
+        "INSERT INTO node_nics (node_uid, nic_type, addr, name)
+        VALUES (?1, ?2, ?3, ?4)"
+    ))?;
+
     for nic in nics {
-        stmt.execute(params![
-            node_uid,
-            nic.nic_type,
-            nic.addr.octets(),
-            nic.alias
-        ])?;
+        stmt.execute(params![node_uid, nic.nic_type, nic.addr.octets(), nic.name])?;
     }
 
     Ok(())
@@ -149,7 +164,7 @@ mod test {
             let nics = super::get_with_node_uid(tx, 102001.into()).unwrap();
             assert_eq!(4, nics.len());
 
-            super::replace(tx, 102001.into(), &[]).unwrap();
+            super::replace(tx, 102001.into(), []).unwrap();
 
             let nics = super::get_with_node_uid(tx, 102001.into()).unwrap();
             assert_eq!(0, nics.len());
@@ -157,10 +172,10 @@ mod test {
             super::replace(
                 tx,
                 102001.into(),
-                &[Nic {
-                    addr: Ipv4Addr::new(1, 2, 3, 4),
-                    alias: "test".into(),
-                    nic_type: NicType::Ethernet,
+                [ReplaceNic {
+                    addr: &Ipv4Addr::new(1, 2, 3, 4),
+                    name: "test",
+                    nic_type: &NicType::Ethernet,
                 }],
             )
             .unwrap();

@@ -7,7 +7,7 @@ pub struct UnmapTarget {
 }
 
 impl Msg for UnmapTarget {
-    const ID: MsgID = MsgID(1027);
+    const ID: MsgID = 1027;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -16,5 +16,5 @@ pub struct UnmapTargetResp {
 }
 
 impl Msg for UnmapTargetResp {
-    const ID: MsgID = MsgID(1028);
+    const ID: MsgID = 1028;
 }

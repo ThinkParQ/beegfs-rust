@@ -6,7 +6,7 @@ use super::*;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModifyStoragePool {
     pub pool_id: StoragePoolID,
-    pub alias: Option<EntityAlias>,
+    pub alias: Option<Vec<u8>>,
     pub add_target_ids: Vec<TargetID>,
     pub remove_target_ids: Vec<TargetID>,
     pub add_buddy_group_ids: Vec<BuddyGroupID>,
@@ -22,7 +22,7 @@ impl ModifyStoragePool {
 }
 
 impl Msg for ModifyStoragePool {
-    const ID: MsgID = MsgID(1068);
+    const ID: MsgID = 1068;
 
     fn build_feature_flags(&self) -> u16 {
         let mut flags = 0;
@@ -88,7 +88,7 @@ impl BeeSerde for ModifyStoragePool {
         Ok(Self {
             pool_id: StoragePoolID::deserialize(des)?,
             alias: if flags & Self::HAS_DESC != 0 {
-                Some(des.cstr(0)?.try_into()?)
+                Some(des.cstr(0)?)
             } else {
                 None
             },
@@ -122,5 +122,5 @@ pub struct ModifyStoragePoolResp {
 }
 
 impl Msg for ModifyStoragePoolResp {
-    const ID: MsgID = MsgID(1069);
+    const ID: MsgID = 1069;
 }

@@ -8,7 +8,7 @@ pub struct GetNodes {
 }
 
 impl Msg for GetNodes {
-    const ID: MsgID = MsgID(1017);
+    const ID: MsgID = 1017;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -23,5 +23,5 @@ pub struct GetNodesResp {
 }
 
 impl Msg for GetNodesResp {
-    const ID: MsgID = MsgID(1018);
+    const ID: MsgID = 1018;
 }

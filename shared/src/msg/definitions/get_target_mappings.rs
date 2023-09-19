@@ -5,7 +5,7 @@ use super::*;
 pub struct GetTargetMappings {}
 
 impl Msg for GetTargetMappings {
-    const ID: MsgID = MsgID(1025);
+    const ID: MsgID = 1025;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub struct GetTargetMappingsResp {
 }
 
 impl Msg for GetTargetMappingsResp {
-    const ID: MsgID = MsgID(1026);
+    const ID: MsgID = 1026;
 }
 
 impl BeeSerde for GetTargetMappingsResp {

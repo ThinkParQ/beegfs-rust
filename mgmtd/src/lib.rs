@@ -6,20 +6,23 @@
 #![feature(try_blocks)]
 #![feature(slice_group_by)]
 
-mod app_context;
 pub mod config;
+mod context;
 pub mod db;
+// mod grpc;
 mod msg;
 mod quota;
 mod timer;
+mod types;
 
-use crate::app_context::AppHandles;
 use crate::config::Config;
+use crate::context::Context;
 use anyhow::Result;
 use shared::conn::incoming::{listen_tcp, recv_udp};
 use shared::conn::Pool;
 use shared::shutdown::Shutdown;
-use shared::{AuthenticationSecret, Nic};
+use shared::types::AuthenticationSecret;
+use shared::NetworkAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
@@ -29,7 +32,7 @@ use tokio::net::{TcpListener, UdpSocket};
 pub struct RuntimeInfo {
     pub config: Config,
     pub auth_secret: Option<AuthenticationSecret>,
-    pub network_interfaces: Vec<Nic>,
+    pub network_addrs: Vec<NetworkAddr>,
 }
 
 /// Starts the management service.
@@ -49,24 +52,24 @@ pub async fn start(
 ) -> Result<()> {
     // Initialization
 
-    let network_interfaces = shared::network_interfaces(config.interfaces.as_slice())?;
+    let network_interfaces = shared::ethernet_interfaces(config.interfaces.as_slice())?;
 
     // Static configuration which doesn't change at runtime
     let info = Box::leak(Box::new(RuntimeInfo {
         config,
         auth_secret,
-        network_interfaces,
+        network_addrs: network_interfaces,
     }));
 
     let db = db::Connection::open(info.config.db_file.as_path()).await?;
 
     // TCP listener for incoming connections
     let tcp_listener =
-        TcpListener::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.port.into())).await?;
+        TcpListener::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.beegfs_port)).await?;
 
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(
-        UdpSocket::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.port.into())).await?,
+        UdpSocket::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.beegfs_port)).await?,
     );
 
     // Node address store and connection pool
@@ -83,21 +86,24 @@ pub async fn start(
         .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
 
     // Combines all handles for sharing between tasks
-    let app_handles = AppHandles::new(conn_pool, db, info);
+    let ctx = Context::new(conn_pool, db, info);
 
     // Listen for incoming TCP connections
     tokio::spawn(listen_tcp(
         tcp_listener,
-        app_handles.clone(),
+        ctx.clone(),
         info.auth_secret.is_some(),
         shutdown.clone(),
     ));
 
     // Recv UDP datagrams
-    tokio::spawn(recv_udp(udp_socket, app_handles.clone(), shutdown.clone()));
+    tokio::spawn(recv_udp(udp_socket, ctx.clone(), shutdown.clone()));
 
     // Run the timers
-    timer::start_tasks(app_handles, shutdown);
+    timer::start_tasks(ctx.clone(), shutdown.clone());
+
+    // Start gRPC service
+    // tokio::spawn(grpc::serve(ctx, shutdown));
 
     Ok(())
 }

@@ -1,15 +1,17 @@
 use super::*;
+use shared::types::{NodeType, NodeTypeServer};
 
 pub(super) async fn handle(
     msg: msg::UnmapTarget,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::UnmapTargetResp {
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check given target ID exists
             db::target::get_uid(tx, msg.target_id, NodeTypeServer::Storage)?
-                .ok_or_else(|| DbError::value_not_found("target ID", msg.target_id))?;
+                .ok_or_else(|| TypedError::value_not_found("target ID", msg.target_id))?;
 
             db::target::delete_storage(tx, msg.target_id)
         })
@@ -18,7 +20,8 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Removed storage target {}", msg.target_id,);
 
-            ctx.notify_nodes(
+            notify_nodes(
+                ctx,
                 &[NodeType::Meta],
                 &msg::RefreshCapacityPools { ack_id: "".into() },
             )

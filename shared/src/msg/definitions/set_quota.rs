@@ -9,7 +9,7 @@ pub struct SetQuota {
 }
 
 impl Msg for SetQuota {
-    const ID: MsgID = MsgID(2075);
+    const ID: MsgID = 2075;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -18,5 +18,5 @@ pub struct SetQuotaResp {
 }
 
 impl Msg for SetQuotaResp {
-    const ID: MsgID = MsgID(2076);
+    const ID: MsgID = 2076;
 }

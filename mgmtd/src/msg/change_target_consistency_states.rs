@@ -1,8 +1,9 @@
 use super::*;
+use shared::types::NodeType;
 
 pub(super) async fn handle(
     msg: msg::ChangeTargetConsistencyStates,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::ChangeTargetConsistencyStatesResp {
     // msg.old_states is currently completely ignored. If something reports a non-GOOD state, I see
@@ -10,7 +11,8 @@ pub(super) async fn handle(
     // whatever nodes think their old state was doesn't matter.
 
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check given target IDs exist
             db::target::validate_ids(tx, &msg.target_ids, msg.node_type)?;
 
@@ -30,12 +32,13 @@ pub(super) async fn handle(
     {
         Ok(changed) => {
             log::info!(
-                "Updated target consistency states for {} nodes",
+                "Updated target consistency states for {:?} nodes",
                 msg.node_type
             );
 
             if changed {
-                ctx.notify_nodes(
+                notify_nodes(
+                    ctx,
                     &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                     &msg::RefreshTargetStates { ack_id: "".into() },
                 )
@@ -49,7 +52,7 @@ pub(super) async fn handle(
         Err(err) => {
             log_error_chain!(
                 err,
-                "Updating target consistency states for {} nodes failed",
+                "Updating target consistency states for {:?} nodes failed",
                 msg.node_type
             );
 

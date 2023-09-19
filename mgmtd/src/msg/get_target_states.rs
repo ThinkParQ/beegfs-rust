@@ -2,11 +2,12 @@ use super::*;
 
 pub(super) async fn handle(
     msg: msg::GetTargetStates,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::GetTargetStatesResp {
     match ctx
-        .db_op(move |tx| db::target::get_with_type(tx, msg.node_type))
+        .db
+        .op(move |tx| db::target::get_with_type(tx, msg.node_type))
         .await
     {
         Ok(res) => {
@@ -18,7 +19,7 @@ pub(super) async fn handle(
                 targets.push(e.target_id);
                 reachability_states.push(db::misc::calc_reachability_state(
                     e.last_contact,
-                    ctx.runtime_info().config.node_offline_timeout,
+                    ctx.info.config.node_offline_timeout,
                 ));
                 consistency_states.push(e.consistency);
             }
@@ -32,7 +33,7 @@ pub(super) async fn handle(
         Err(err) => {
             log_error_chain!(
                 err,
-                "Getting target states for {} nodes failed",
+                "Getting target states for {:?} nodes failed",
                 msg.node_type,
             );
 

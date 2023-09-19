@@ -1,14 +1,15 @@
-use crate::bee_serde::{self, *};
-use crate::impl_enum_to_int;
-use crate::types::*;
-use anyhow::Result;
-use bee_macro::BeeSerde;
+/// Helper types for BeeGFS message definitions
+///
+/// The types in here are supposed to used only as part of BeeGFS message definitions.
+use super::*;
+use anyhow::{bail, Result};
 use std::collections::HashMap;
+use std::net::Ipv4Addr;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct Node {
     #[bee_serde(as = CStr<0>)]
-    pub alias: EntityAlias,
+    pub alias: Vec<u8>,
     #[bee_serde(as = Seq<false, _>)]
     pub nic_list: Vec<Nic>,
     #[bee_serde(as = Int<u32>)]
@@ -45,7 +46,7 @@ pub struct TargetInfo {
 pub struct StoragePool {
     pub id: StoragePoolID,
     #[bee_serde(as = CStr<0>)]
-    pub alias: EntityAlias,
+    pub alias: Vec<u8>,
     #[bee_serde(as = Seq<true, _>)]
     pub targets: Vec<TargetID>,
     #[bee_serde(as = Seq<true, _>)]
@@ -242,3 +243,48 @@ impl_enum_to_int!(QuotaQueryType,
     List => 3,
     All => 4
 );
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Nic {
+    pub addr: Ipv4Addr,
+    pub name: Vec<u8>,
+    pub nic_type: NicType,
+}
+
+impl Default for Nic {
+    fn default() -> Self {
+        Self {
+            addr: Ipv4Addr::UNSPECIFIED,
+            name: Default::default(),
+            nic_type: Default::default(),
+        }
+    }
+}
+
+impl BeeSerde for Nic {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        ser.u32(u32::from_le_bytes(self.addr.octets()))?;
+
+        if self.name.len() > 16 {
+            bail!("Nic alias can not be longer than 16 bytes");
+        }
+        ser.bytes(self.name.as_ref())?;
+        ser.zeroes(16 - self.name.len())?;
+
+        ser.u8(self.nic_type.into())?;
+        ser.zeroes(3)?;
+        Ok(())
+    }
+
+    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
+        let s = Self {
+            addr: des.u32()?.to_le_bytes().into(),
+            name: des.bytes(16)?,
+            nic_type: des.u8()?.try_into()?,
+        };
+
+        des.skip(3)?;
+
+        Ok(s)
+    }
+}

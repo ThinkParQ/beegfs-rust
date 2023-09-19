@@ -1,17 +1,19 @@
 use super::*;
+use shared::types::{NodeType, NodeTypeServer};
 
 pub(super) async fn handle(
     msg: msg::MapTargets,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::MapTargetsResp {
     let target_ids = msg.target_ids.keys().copied().collect::<Vec<_>>();
 
     match ctx
-        .db_op(move |tx| {
+        .db
+        .op(move |tx| {
             // Check node ID exists
             if db::node::get_uid(tx, msg.node_id, NodeType::Storage)?.is_none() {
-                return Err(DbError::value_not_found("node ID", msg.node_id));
+                bail!(TypedError::value_not_found("node ID", msg.node_id));
             }
 
             // Check all target IDs exist
@@ -27,7 +29,8 @@ pub(super) async fn handle(
             log::info!("Mapped {} storage targets to node {}", updated, msg.node_id);
 
             // TODO only do it with successful ones
-            ctx.notify_nodes(
+            notify_nodes(
+                ctx,
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &msg::MapTargets {
                     target_ids: msg.target_ids.clone(),

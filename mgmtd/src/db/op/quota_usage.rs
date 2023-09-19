@@ -16,28 +16,28 @@ pub fn exceeded_quota_ids(
     pool_or_target_id: PoolOrTargetID,
     id_type: QuotaIDType,
     quota_type: QuotaType,
-) -> DbResult<Vec<QuotaID>> {
+) -> Result<Vec<QuotaID>> {
     // Quota is calculated per pool, so if a target ID is given, use its assigned pools ID.
     let pool_id = match pool_or_target_id {
         PoolOrTargetID::PoolID(pool_id) => pool_id,
         PoolOrTargetID::TargetID(target_id) => {
-            let mut stmt = tx.prepare_cached(
+            let mut stmt = tx.prepare_cached(sql!(
                 r#"
                 SELECT pool_id FROM storage_targets WHERE target_id = ?1
-                "#,
-            )?;
+                "#
+            ))?;
 
             stmt.query_row([target_id], |row| row.get(0))?
         }
     };
 
-    let mut stmt = tx.prepare_cached(
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         SELECT DISTINCT quota_id
         FROM exceeded_quota_v
         WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
-        "#,
-    )?;
+        "#
+    ))?;
 
     let ids = stmt
         .query_map(params![id_type, quota_type, pool_id], |row| row.get(0))?
@@ -61,13 +61,13 @@ pub struct ExceededQuotaEntry {
 ///
 /// Since an ID can exceed more than one of the four limits and also on multiple storage pools, it
 /// can be returned more than once (with the respective information stored in [ExceededQuotaEntry]).
-pub fn all_exceeded_quota_ids(tx: &mut Transaction) -> DbResult<Vec<ExceededQuotaEntry>> {
-    let mut stmt = tx.prepare_cached(
+pub fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
+    let mut stmt = tx.prepare_cached(sql!(
         r#"
         SELECT quota_id, id_type, quota_type, pool_id
         FROM exceeded_quota_v
-        "#,
-    )?;
+        "#
+    ))?;
 
     let res = stmt
         .query_map([], |row| {
@@ -97,22 +97,22 @@ pub fn upsert(
     tx: &mut Transaction,
     target_id: TargetID,
     data: impl IntoIterator<Item = QuotaData>,
-) -> DbResult<()> {
-    let mut insert_stmt = tx.prepare_cached(
+) -> Result<()> {
+    let mut insert_stmt = tx.prepare_cached(sql!(
         r#"
         INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
         VALUES (?1, ?2, ?3 ,?4 ,?5)
         ON CONFLICT (quota_id, id_type, quota_type, target_id) DO
         UPDATE SET value = ?5
-        "#,
-    )?;
+        "#
+    ))?;
 
-    let mut delete_stmt = tx.prepare_cached(
+    let mut delete_stmt = tx.prepare_cached(sql!(
         r#"
         DELETE FROM quota_usage
         WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND target_id = ?4
-        "#,
-    )?;
+        "#
+    ))?;
 
     for d in data {
         match d.space {
@@ -155,22 +155,22 @@ mod test {
         with_test_data(|tx| {
             upsert(
                 tx,
-                1.into(),
+                1,
                 [
                     QuotaData {
-                        quota_id: 1000.into(),
+                        quota_id: 1000,
                         id_type: QuotaIDType::User,
                         space: 2000,
                         inodes: 0,
                     },
                     QuotaData {
-                        quota_id: 1001.into(),
+                        quota_id: 1001,
                         id_type: QuotaIDType::User,
                         space: 2000,
                         inodes: 2000,
                     },
                     QuotaData {
-                        quota_id: 1002.into(),
+                        quota_id: 1002,
                         id_type: QuotaIDType::User,
                         space: 0,
                         inodes: 2000,
@@ -183,7 +183,7 @@ mod test {
                 2,
                 exceeded_quota_ids(
                     tx,
-                    PoolOrTargetID::PoolID(1.into()),
+                    PoolOrTargetID::PoolID(1),
                     QuotaIDType::User,
                     QuotaType::Space,
                 )
@@ -195,7 +195,7 @@ mod test {
                 2,
                 exceeded_quota_ids(
                     tx,
-                    PoolOrTargetID::PoolID(1.into()),
+                    PoolOrTargetID::PoolID(1),
                     QuotaIDType::User,
                     QuotaType::Inodes,
                 )
@@ -207,9 +207,9 @@ mod test {
 
             upsert(
                 tx,
-                1.into(),
+                1,
                 [QuotaData {
-                    quota_id: 1001.into(),
+                    quota_id: 1001,
                     id_type: QuotaIDType::User,
                     space: 0,
                     inodes: 500,

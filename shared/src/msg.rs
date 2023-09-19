@@ -1,10 +1,9 @@
 //! BeeGFS network message definitions
 
-use crate::bee_serde;
 use crate::bee_serde::*;
 use crate::types::*;
 use anyhow::Result;
-use bee_macro::BeeSerde;
+use bee_serde_derive::BeeSerde;
 use std::collections::{HashMap, HashSet};
 
 pub mod types;
@@ -13,8 +12,10 @@ use types::*;
 mod definitions;
 pub use definitions::*;
 
-mod header;
-pub(crate) use header::Header;
+pub mod header;
+
+/// The BeeGFS message ID as defined in `NetMsgTypes.h`
+pub type MsgID = u16;
 
 /// A BeeGFS message
 ///

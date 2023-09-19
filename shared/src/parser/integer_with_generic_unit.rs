@@ -1,3 +1,6 @@
+/// Custom serde parser for integers with arbitrary units (like `"10kiB"`)
+///
+/// Meant for command line argument and config file parsing.
 use regex::Regex;
 use serde::de::{Unexpected, Visitor};
 use serde::{Deserializer, Serializer};
@@ -5,6 +8,12 @@ use std::sync::OnceLock;
 
 static REGEX: OnceLock<Regex> = OnceLock::new();
 
+/// Parses a string in the form `<int>[kMGTPE][i]<unit>` into an integer.
+///
+/// Takes the given integer and multiplies it according to the given SI suffix, using base 10
+/// (`10k` becomes 10000). When the `[i]` is given, base 2 is used (`10kiB` becomes 10240).
+///
+/// The `<unit>` suffix is ignored and can be anything or be omitted.
 fn parse(input: &str) -> Result<u64, ()> {
     let regex = REGEX.get_or_init(|| {
         Regex::new(r"^(\d+) *([kMGTPE]?i?)[[:alpha:]]*$").expect("Regex must be valid")

@@ -13,7 +13,7 @@ pub struct RemoveBuddyGroup {
 }
 
 impl Msg for RemoveBuddyGroup {
-    const ID: MsgID = MsgID(1060);
+    const ID: MsgID = 1060;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -22,5 +22,5 @@ pub struct RemoveBuddyGroupResp {
 }
 
 impl Msg for RemoveBuddyGroupResp {
-    const ID: MsgID = MsgID(1061);
+    const ID: MsgID = 1061;
 }

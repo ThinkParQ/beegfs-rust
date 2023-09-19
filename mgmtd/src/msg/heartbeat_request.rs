@@ -1,8 +1,10 @@
 use super::*;
+use shared::msg::types::Nic;
+use shared::types::{NodeType, MGMTD_ID};
 
 pub(super) async fn handle(
     _msg: msg::HeartbeatRequest,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::Heartbeat {
     msg::Heartbeat {
@@ -11,11 +13,20 @@ pub(super) async fn handle(
         node_type: NodeType::Management,
         node_alias: "Management".into(),
         ack_id: "".into(),
-        node_num_id: NodeID::MGMTD,
+        node_num_id: MGMTD_ID,
         root_num_id: 0,
         is_root_mirrored: 0,
-        port: ctx.runtime_info().config.port,
-        port_tcp_unused: ctx.runtime_info().config.port,
-        nic_list: ctx.runtime_info().network_interfaces.to_vec(),
+        port: ctx.info.config.beegfs_port,
+        port_tcp_unused: ctx.info.config.beegfs_port,
+        nic_list: ctx
+            .info
+            .network_addrs
+            .iter()
+            .map(|e| Nic {
+                addr: e.addr,
+                name: e.name.clone().into_bytes(),
+                nic_type: shared::types::NicType::Ethernet,
+            })
+            .collect(),
     }
 }

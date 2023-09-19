@@ -8,7 +8,7 @@ pub struct GetMirrorBuddyGroups {
 }
 
 impl Msg for GetMirrorBuddyGroups {
-    const ID: MsgID = MsgID(1047);
+    const ID: MsgID = 1047;
 }
 
 /// Response with requested buddy groups along with their assigned targets.
@@ -25,5 +25,5 @@ pub struct GetMirrorBuddyGroupsResp {
 }
 
 impl Msg for GetMirrorBuddyGroupsResp {
-    const ID: MsgID = MsgID(1048);
+    const ID: MsgID = 1048;
 }

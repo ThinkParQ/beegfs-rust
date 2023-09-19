@@ -6,9 +6,10 @@ use super::*;
 /// Incoming Acks can just be ignored.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct Ack {
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for Ack {
-    const ID: MsgID = MsgID(4003);
+    const ID: MsgID = 4003;
 }

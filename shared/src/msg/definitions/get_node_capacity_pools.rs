@@ -8,7 +8,7 @@ pub struct GetNodeCapacityPools {
 }
 
 impl Msg for GetNodeCapacityPools {
-    const ID: MsgID = MsgID(1021);
+    const ID: MsgID = 1021;
 }
 
 /// Response containing node capacity bool mapping
@@ -21,7 +21,7 @@ pub struct GetNodeCapacityPoolsResp {
 }
 
 impl Msg for GetNodeCapacityPoolsResp {
-    const ID: MsgID = MsgID(1022);
+    const ID: MsgID = 1022;
 }
 
 // Custom BeeSerde impl because nested sequences / maps are not supported by the macro

@@ -1,15 +1,16 @@
 //! Contains timers executing periodic tasks.
 
-use crate::app_context::AppContext;
+use crate::context::Context;
 use crate::db::{self};
 use crate::quota::update_and_distribute;
 use shared::shutdown::Shutdown;
-use shared::{log_error_chain, msg, NodeType};
+use shared::types::NodeType;
+use shared::{log_error_chain, msg};
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
 /// Starts the timed tasks.
-pub(crate) fn start_tasks(ctx: impl AppContext, shutdown: Shutdown) {
+pub(crate) fn start_tasks(ctx: Context, shutdown: Shutdown) {
     // TODO send out timer based RefreshTargetStates notification if a reachability
     // state changed ?
 
@@ -19,12 +20,13 @@ pub(crate) fn start_tasks(ctx: impl AppContext, shutdown: Shutdown) {
 }
 
 /// Deletes client nodes from the database which haven't responded for the configured time.
-async fn delete_stale_clients(ctx: impl AppContext, mut shutdown: Shutdown) {
+async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
     loop {
-        let timeout = ctx.runtime_info().config.client_auto_remove_timeout;
+        let timeout = ctx.info.config.client_auto_remove_timeout;
 
         match ctx
-            .db_op(move |tx| db::node::delete_stale_clients(tx, timeout))
+            .db
+            .op(move |tx| db::node::delete_stale_clients(tx, timeout))
             .await
         {
             Ok(affected) => {
@@ -45,9 +47,9 @@ async fn delete_stale_clients(ctx: impl AppContext, mut shutdown: Shutdown) {
 }
 
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
-async fn update_quota(ctx: impl AppContext, mut shutdown: Shutdown) {
+async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
     loop {
-        if ctx.runtime_info().config.quota_enable {
+        if ctx.info.config.quota_enable {
             match update_and_distribute(&ctx).await {
                 Ok(_) => {}
                 Err(err) => log_error_chain!(err, "Updating quota failed"),
@@ -55,7 +57,7 @@ async fn update_quota(ctx: impl AppContext, mut shutdown: Shutdown) {
         }
 
         tokio::select! {
-            _ = sleep(ctx.runtime_info().config.quota_update_interval) => {}
+            _ = sleep(ctx.info.config.quota_update_interval) => {}
             _ = shutdown.wait() => { break; }
         }
     }
@@ -64,7 +66,7 @@ async fn update_quota(ctx: impl AppContext, mut shutdown: Shutdown) {
 }
 
 /// Finds buddy groups with switchover condition, swaps them and notifies nodes.
-async fn switchover(ctx: impl AppContext, mut shutdown: Shutdown) {
+async fn switchover(ctx: Context, mut shutdown: Shutdown) {
     let mut timer = tokio::time::interval(Duration::from_secs(10));
     timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -74,10 +76,11 @@ async fn switchover(ctx: impl AppContext, mut shutdown: Shutdown) {
             _ = shutdown.wait() => { break; }
         }
 
-        let timeout = ctx.runtime_info().config.node_offline_timeout;
+        let timeout = ctx.info.config.node_offline_timeout;
 
         match ctx
-            .db_op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
+            .db
+            .op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
             .await
         {
             Ok(swapped) => {
@@ -86,7 +89,8 @@ async fn switchover(ctx: impl AppContext, mut shutdown: Shutdown) {
                         "A switchover was triggered for the following buddy groups: {swapped:?}"
                     );
 
-                    ctx.notify_nodes(
+                    crate::msg::notify_nodes(
+                        &ctx,
                         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                         &msg::RefreshTargetStates { ack_id: "".into() },
                     )

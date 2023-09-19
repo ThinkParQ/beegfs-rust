@@ -3,13 +3,14 @@
 //! This is the heart of managment as is dispatches the incoming requests (coming from the
 //! connection pool), takes appropriate action in the matching handler and provides a response.
 
-use crate::app_context::AppContext;
+use crate::context::Context;
 use crate::db;
-use crate::db::{DbError, DbResult};
+use crate::db::TypedError;
 use anyhow::{bail, Result};
 use shared::conn::msg_dispatch::*;
-use shared::msg::{self, GenericResponse, Msg};
-use shared::*;
+use shared::msg::{GenericResponse, Msg};
+use shared::types::{NodeType, OpsErr, TRY_AGAIN};
+use shared::{log_error_chain, msg};
 use std::collections::HashMap;
 
 mod ack;
@@ -74,30 +75,24 @@ mod unmap_target;
 ///
 /// If the function returns nothing (`()`), no response will be sent. Make sure this matches the
 /// expecation of the requester.
-pub(crate) async fn dispatch_request(
-    ctx: &impl AppContext,
-    mut req: impl Request,
-) -> anyhow::Result<()> {
-    // This macro creates the dispatching match statement
+pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> anyhow::Result<()> {
+    /// This macro creates the dispatching match statement
+    ///
+    /// Expects a comma separated list of dispatch directives in the following form:
+    /// ```ignore
+    /// dispatch_msg!(
+    ///     path::to::IncomingMsg => handle_module => path::to::ResponseMsg,
+    ///     path::to::AnotherMsg => handle_module, // No response
+    /// );
+    /// ```
     macro_rules! dispatch_msg {
-        ($($msg_type:path => $handle_mod:ident),* $(,)?) => {
+        ($($msg_type:path => $handle_mod:ident $(=> $resp_msg_type:path)? ),* $(,)?) => {
             // Match on the message ID provided by the request
             match req.msg_id() {
                 $(
                     <$msg_type>::ID => {
-                        // Deserialize into the specified BeeGFS message
-                        let des: $msg_type = req.deserialize_msg()?;
-                        log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
-
-                        #[allow(clippy::unnecessary_mut_passed)]
-                        // Call the specified handler and receive the response
-                        // The response can be `()`, in which case no response will be sent
-                        let response = $handle_mod::handle(des, ctx, &mut req).await;
-
-                        log::debug!("PROCESSED from {:?}. Responding: {:?}", req.addr(), response);
-
-                        // Process the response (or non-response) using the ResponseMsg helper
-                        ResponseMsg::respond(req, &response).await
+                        // Messages with and without a response need separate handling
+                        dispatch_msg!(@HANDLE $msg_type, $handle_mod, $($resp_msg_type)?);
                     }
                 ),*
 
@@ -108,60 +103,112 @@ pub(crate) async fn dispatch_request(
                     // Signal to the caller that the msg is not handled. The generic response
                     // doesnt have a code for this case, so we just send `TRY_AGAIN` with an
                     // appropriate description.
-                    ResponseMsg::respond(req, &GenericResponse {
-                        code: GenericResponseCode::TRY_AGAIN,
+                    req.respond(&GenericResponse {
+                        code: TRY_AGAIN,
                         description: "Unhandled msg".into(),
                     }).await?;
 
                     Ok(())
                 }
             }
-        }
+        };
+
+        // Handle messages with a response
+        (@HANDLE $msg_type:path, $handle_mod:ident, $resp_msg_type:path) => {
+            // Deserialize into the specified BeeGFS message
+            let des: $msg_type = req.deserialize_msg()?;
+            log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
+
+
+            // Call the specified handler and receive the response
+            let response: $resp_msg_type = $handle_mod::handle(des, ctx, &mut req).await;
+
+            log::debug!("PROCESSED from {:?}. Responding: {:?}", req.addr(), response);
+
+            // Process the response
+            return req.respond(&response).await;
+        };
+
+        // Handle messages without a response
+        (@HANDLE $msg_type:path, $handle_mod:ident, ) => {
+            // Deserialize into the specified BeeGFS message
+            let des: $msg_type = req.deserialize_msg()?;
+            log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
+
+            // No response
+            $handle_mod::handle(des, ctx, &mut req).await;
+
+            log::debug!("PROCESSED from {:?}", req.addr());
+
+            return Ok(());
+        };
     }
 
     // Defines the concrete message to be handled by which handler. See function description for
     // details.
     dispatch_msg!(
         // TCP
-        msg::RegisterNode => register_node,
-        msg::RemoveNode => remove_node,
-        msg::GetNodes => get_nodes,
-        msg::RegisterTarget => register_target,
-        msg::MapTargets => map_targets,
-        msg::GetTargetMappings => get_target_mappings,
-        msg::GetTargetStates => get_target_states,
-        msg::GetStoragePools => get_storage_pools,
-        msg::GetStatesAndBuddyGroups => get_states_and_buddy_groups,
-        msg::GetNodeCapacityPools => get_node_capacity_pools,
-        msg::ChangeTargetConsistencyStates => change_target_consistency_states,
-        msg::SetStorageTargetInfo => set_storage_target_info,
-        msg::RequestExceededQuota => request_exceeded_quota,
-        msg::GetMirrorBuddyGroups => get_mirror_buddy_groups,
+        msg::RegisterNode => register_node => msg::RegisterNodeResp,
+        msg::RemoveNode => remove_node  => msg::RemoveNodeResp,
+        msg::GetNodes => get_nodes => msg::GetNodesResp ,
+        msg::RegisterTarget => register_target => msg::RegisterTargetResp ,
+        msg::MapTargets => map_targets => msg::MapTargetsResp ,
+        msg::GetTargetMappings => get_target_mappings => msg::GetTargetMappingsResp ,
+        msg::GetTargetStates => get_target_states => msg::GetTargetStatesResp ,
+        msg::GetStoragePools => get_storage_pools => msg::GetStoragePoolsResp ,
+        msg::GetStatesAndBuddyGroups => get_states_and_buddy_groups => msg::GetStatesAndBuddyGroupsResp ,
+        msg::GetNodeCapacityPools => get_node_capacity_pools => msg::GetNodeCapacityPoolsResp ,
+        msg::ChangeTargetConsistencyStates => change_target_consistency_states => msg::ChangeTargetConsistencyStatesResp ,
+        msg::SetStorageTargetInfo => set_storage_target_info => msg::SetStorageTargetInfoResp ,
+        msg::RequestExceededQuota => request_exceeded_quota => msg::RequestExceededQuotaResp ,
+        msg::GetMirrorBuddyGroups => get_mirror_buddy_groups => msg::GetMirrorBuddyGroupsResp ,
         msg::SetChannelDirect => set_channel_direct,
         msg::PeerInfo => peer_info,
-        msg::AddStoragePool => add_storage_pool,
-        msg::ModifyStoragePool => modify_storage_pool,
-        msg::RemoveStoragePool => remove_storage_pool,
-        msg::UnmapTarget => unmap_target,
-        msg::SetDefaultQuota => set_default_quota,
-        msg::GetDefaultQuota => get_default_quota,
-        msg::SetQuota => set_quota,
-        msg::GetQuotaInfo => get_quota_info,
+        msg::AddStoragePool => add_storage_pool => msg::AddStoragePoolResp ,
+        msg::ModifyStoragePool => modify_storage_pool => msg::ModifyStoragePoolResp ,
+        msg::RemoveStoragePool => remove_storage_pool => msg::RemoveStoragePoolResp ,
+        msg::UnmapTarget => unmap_target => msg::UnmapTargetResp ,
+        msg::SetDefaultQuota => set_default_quota => msg::SetDefaultQuotaResp ,
+        msg::GetDefaultQuota => get_default_quota => msg::GetDefaultQuotaResp ,
+        msg::SetQuota => set_quota => msg::SetQuotaResp ,
+        msg::GetQuotaInfo => get_quota_info => msg::GetQuotaInfoResp ,
         msg::AuthenticateChannel => authenticate_channel,
-        // msg::SetConfig => set_config,
-        // msg::GetConfig => get_config,
-        msg::SetMirrorBuddyGroup => set_mirror_buddy_group,
-        msg::RemoveBuddyGroup => remove_buddy_group,
-        msg::SetMetadataMirroring => set_metadata_mirroring,
-        msg::SetTargetConsistencyStates => set_target_consistency_states,
+        msg::SetMirrorBuddyGroup => set_mirror_buddy_group => msg::SetMirrorBuddyGroupResp ,
+        msg::RemoveBuddyGroup => remove_buddy_group => msg::RemoveBuddyGroupResp ,
+        msg::SetMetadataMirroring => set_metadata_mirroring => msg::SetMetadataMirroringResp ,
+        msg::SetTargetConsistencyStates => set_target_consistency_states => msg::SetTargetConsistencyStatesResp ,
 
         // UDP
-        msg::Heartbeat => heartbeat,
-        msg::HeartbeatRequest => heartbeat_request,
-        msg::RefreshCapacityPools => refresh_capacity_pools,
+        msg::Heartbeat => heartbeat => msg::Ack ,
+        msg::HeartbeatRequest => heartbeat_request => msg::Heartbeat,
+        msg::RefreshCapacityPools => refresh_capacity_pools => msg::Ack ,
         msg::Ack => ack,
         msg::RemoveNodeResp => remove_node_resp,
         msg::MapTargetsResp => map_targets_resp,
         msg::SetMirrorBuddyGroupResp => set_mirror_buddy_group_resp,
     )
+}
+
+pub async fn notify_nodes(ctx: &Context, node_types: &'static [NodeType], msg: &impl Msg) {
+    log::debug!(target: "mgmtd::msg", "NOTIFICATION to {:?}: {:?}",
+            node_types, msg);
+
+    if let Err(err) = async {
+        for t in node_types {
+            let nodes = ctx.db.op(move |tx| db::node::get_with_type(tx, *t)).await?;
+
+            ctx.conn
+                .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)
+                .await?;
+        }
+
+        Ok(()) as Result<_>
+    }
+    .await
+    {
+        log_error_chain!(
+            err,
+            "Notification msg could not be send to all nodes: {msg:?}"
+        );
+    }
 }

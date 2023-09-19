@@ -1,16 +1,18 @@
 use super::*;
 use shared::msg::types::{BuddyGroupCapacityPools, TargetCapacityPools};
+use shared::types::{BuddyGroupID, NodeID, TargetID};
 
 pub(super) async fn handle(
     _msg: msg::GetStoragePools,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::GetStoragePoolsResp {
     let pools = match async move {
-        let config = &ctx.runtime_info().config;
+        let config = &ctx.info.config;
 
         let (targets, pools, buddy_groups) = ctx
-            .db_op(move |tx| {
+            .db
+            .op(move |tx| {
                 let pools = db::storage_pool::get_all(tx)?;
                 let targets = db::cap_pool::for_storage_targets(
                     tx,
@@ -49,7 +51,7 @@ pub(super) async fn handle(
                 // Only collect targets belonging to the current pool
                 for target in targets.iter().filter(|t| t.pool_id == pool.pool_id) {
                     let cap_pool_i: usize = target.cap_pool.into();
-                    let target_id: TargetID = target.entity_id.into();
+                    let target_id: TargetID = target.entity_id;
 
                     target_map.insert(target_id, target.node_id);
                     target_cap_pools[cap_pool_i].push(target_id);
@@ -66,13 +68,13 @@ pub(super) async fn handle(
 
                 // Only collect buddy groups belonging to the current pool
                 for group in buddy_groups.iter().filter(|g| g.pool_id == pool.pool_id) {
-                    buddy_group_vec.push(group.entity_id.into());
-                    buddy_group_cap_pools[usize::from(group.cap_pool)].push(group.entity_id.into());
+                    buddy_group_vec.push(group.entity_id);
+                    buddy_group_cap_pools[usize::from(group.cap_pool)].push(group.entity_id);
                 }
 
                 Ok(msg::types::StoragePool {
                     id: pool.pool_id,
-                    alias: pool.alias,
+                    alias: pool.alias.into_bytes(),
                     targets: target_map.keys().cloned().collect(),
                     buddy_groups: buddy_group_vec,
                     target_cap_pools: TargetCapacityPools {
@@ -85,7 +87,7 @@ pub(super) async fn handle(
                     },
                 })
             })
-            .try_collect::<Vec<msg::types::StoragePool>>() as DbResult<_>
+            .try_collect::<Vec<msg::types::StoragePool>>() as Result<_>
     }
     .await
     {

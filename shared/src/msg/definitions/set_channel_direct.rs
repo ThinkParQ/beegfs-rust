@@ -9,5 +9,5 @@ pub struct SetChannelDirect {
 }
 
 impl Msg for SetChannelDirect {
-    const ID: MsgID = MsgID(4001);
+    const ID: MsgID = 4001;
 }

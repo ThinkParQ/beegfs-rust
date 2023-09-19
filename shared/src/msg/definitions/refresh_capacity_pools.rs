@@ -6,9 +6,10 @@ use super::*;
 /// sent with this message.
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RefreshCapacityPools {
-    pub ack_id: AckID,
+    #[bee_serde(as = CStr<0>)]
+    pub ack_id: Vec<u8>,
 }
 
 impl Msg for RefreshCapacityPools {
-    const ID: MsgID = MsgID(1035);
+    const ID: MsgID = 1035;
 }

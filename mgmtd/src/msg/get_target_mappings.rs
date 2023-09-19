@@ -1,12 +1,14 @@
 use super::*;
+use shared::types::NodeTypeServer;
 
 pub(super) async fn handle(
     _msg: msg::GetTargetMappings,
-    ctx: &impl AppContext,
+    ctx: &Context,
     _req: &impl Request,
 ) -> msg::GetTargetMappingsResp {
     match ctx
-        .db_op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+        .db
+        .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await
     {
         Ok(res) => msg::GetTargetMappingsResp {

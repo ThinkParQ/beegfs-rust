@@ -1,11 +1,12 @@
 //! Program wide config definition and tools for reading and parsing
 
+use crate::types::{CapPoolDynamicLimits, CapPoolLimits};
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::Deserialize;
 use shared::parser::integer_with_time_unit;
-use shared::{CapPoolDynamicLimits, CapPoolLimits, Port, QuotaID};
+use shared::types::{Port, QuotaID};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -21,7 +22,8 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct Config {
     pub init: bool,
-    pub port: Port,
+    pub beegfs_port: Port,
+    pub grpc_port: Port,
     pub interfaces: Vec<String>,
     pub connection_limit: usize,
     pub db_file: PathBuf,
@@ -60,7 +62,8 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             init: false,
-            port: 8008.into(),
+            beegfs_port: 8008,
+            grpc_port: 8010,
             interfaces: vec![],
             connection_limit: 12,
             db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
@@ -120,9 +123,12 @@ struct CommandLineArgs {
     //
     // CLI and config file args - can be filled in later from another ConfigArgs if they are
     // still none
-    /// Sets the port (TCP and UDP) to listen on [default: 8008]
-    #[arg(long, short = 'p')]
-    port: Option<Port>,
+    /// Sets the BeeGFS port (TCP and UDP) to listen on [default: 8008]
+    #[arg(long)]
+    beegfs_port: Option<Port>,
+    /// Sets the gRPC port (TCP) to listen on [default: 8010]
+    #[arg(long)]
+    grpc_port: Option<Port>,
     /// Network interfaces reported to other nodes for incoming communication
     ///
     /// Can be specified multiple times. If not given, all suitable interfaces
@@ -170,7 +176,8 @@ struct CommandLineArgs {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct ConfigFileArgs {
-    port: Option<Port>,
+    beegfs_port: Option<Port>,
+    grpc_port: Option<Port>,
     interfaces: Option<Vec<String>>,
     connection_limit: Option<usize>,
     db_file: Option<PathBuf>,
@@ -208,8 +215,11 @@ impl Config {
     /// [[CommandLineArgs]], otherwise they were not given and shall stay as they are.
     fn update_from_command_line_args(&mut self, args: CommandLineArgs) {
         self.init = args.init;
-        if let Some(v) = args.port {
-            self.port = v;
+        if let Some(v) = args.beegfs_port {
+            self.beegfs_port = v;
+        }
+        if let Some(v) = args.grpc_port {
+            self.grpc_port = v;
         }
         if let Some(v) = args.interfaces {
             self.interfaces = v;
@@ -239,8 +249,11 @@ impl Config {
     /// Non-Option parameters in this struct are only updates if they are `Some` in
     /// [[ConfigFileArgs]], otherwise they were not given and shall stay as they are.
     fn update_from_config_file_args(&mut self, args: ConfigFileArgs) {
-        if let Some(v) = args.port {
-            self.port = v;
+        if let Some(v) = args.beegfs_port {
+            self.beegfs_port = v;
+        }
+        if let Some(v) = args.grpc_port {
+            self.grpc_port = v;
         }
         if let Some(v) = args.interfaces {
             self.interfaces = v;

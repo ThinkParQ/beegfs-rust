@@ -5,7 +5,7 @@ use super::*;
 pub struct SetMetadataMirroring {}
 
 impl Msg for SetMetadataMirroring {
-    const ID: MsgID = MsgID(2069);
+    const ID: MsgID = 2069;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -14,5 +14,5 @@ pub struct SetMetadataMirroringResp {
 }
 
 impl Msg for SetMetadataMirroringResp {
-    const ID: MsgID = MsgID(2070);
+    const ID: MsgID = 2070;
 }

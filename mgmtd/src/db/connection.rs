@@ -1,7 +1,7 @@
 //! Connection abstraction and functions to initialize the database
 
 use super::*;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::config::DbConfig;
 use rusqlite::{OpenFlags, Transaction};
 use std::fmt::Debug;
@@ -15,11 +15,11 @@ pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
         bail!("Database file {path:?} already exists");
     }
 
-    std::fs::create_dir_all(path.as_ref().parent().ok_or_else(|| {
-        DbError::other(format!(
-            "Could not determine parent folder of database file {path:?}"
-        ))
-    })?)?;
+    std::fs::create_dir_all(
+        path.as_ref().parent().ok_or_else(|| {
+            anyhow!("Could not determine parent folder of database file {path:?}")
+        })?,
+    )?;
 
     std::fs::File::create(&path)
         .with_context(|| format!("Creating database file {path:?} failed"))?;
@@ -62,12 +62,12 @@ impl Connection {
     /// Database access is provided using a single thread, so blocking or heavy computation must be
     /// avoided.
     pub async fn op<
-        T: Send + 'static + FnOnce(&mut Transaction) -> DbResult<R>,
+        T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>,
         R: Send + 'static,
     >(
         &self,
         op: T,
-    ) -> DbResult<R> {
+    ) -> Result<R> {
         self.conn
             .call(move |conn| {
                 let mut tx = conn.transaction()?;
@@ -81,7 +81,7 @@ impl Connection {
 }
 
 /// Sets connection parameters on an SQLite connection.
-pub fn setup_connection(conn: &rusqlite::Connection) -> DbResult<()> {
+pub fn setup_connection(conn: &rusqlite::Connection) -> Result<()> {
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
     conn.pragma_update(None, "journal_mode", "DELETE")?;
