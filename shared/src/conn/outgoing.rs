@@ -3,6 +3,7 @@ use super::msg_buf::MsgBuf;
 use super::store::Store;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
+use crate::msg::authenticate_channel::AuthenticateChannel;
 use crate::msg::{self, Msg};
 use crate::types::{AuthenticationSecret, EntityUID};
 use anyhow::{bail, Context, Result};
@@ -128,7 +129,7 @@ impl Pool {
                             // The provided buffer contains the actual message to be sent later -
                             // obtain an additional one for the auth message
                             let mut auth_buf = self.store.pop_buf().unwrap_or_default();
-                            auth_buf.serialize_msg(&msg::AuthenticateChannel { auth_secret })?;
+                            auth_buf.serialize_msg(&AuthenticateChannel { auth_secret })?;
                             auth_buf
                                 .write_to_stream(stream.as_mut())
                                 .await
@@ -223,7 +224,7 @@ pub async fn request_by_addr<M: Msg, R: Msg>(
     let mut buf = MsgBuf::default();
 
     if let Some(auth_secret) = auth_secret {
-        buf.serialize_msg(&msg::AuthenticateChannel { auth_secret })?;
+        buf.serialize_msg(&AuthenticateChannel { auth_secret })?;
         buf.write_to_stream(&mut stream).await?;
     }
 
@@ -247,7 +248,7 @@ pub async fn send_by_addr<M: Msg>(
     let mut buf = MsgBuf::default();
 
     if let Some(auth_secret) = auth_secret {
-        buf.serialize_msg(&msg::AuthenticateChannel { auth_secret })?;
+        buf.serialize_msg(&AuthenticateChannel { auth_secret })?;
         buf.write_to_stream(&mut stream).await?;
     }
 

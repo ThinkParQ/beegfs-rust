@@ -1,11 +1,13 @@
 use super::*;
+use shared::msg::refresh_capacity_pools::RefreshCapacityPools;
+use shared::msg::unmap_target::{UnmapTarget, UnmapTargetResp};
 use shared::types::{NodeType, NodeTypeServer};
 
 pub(super) async fn handle(
-    msg: msg::UnmapTarget,
+    msg: UnmapTarget,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::UnmapTargetResp {
+) -> UnmapTargetResp {
     match ctx
         .db
         .op(move |tx| {
@@ -23,18 +25,18 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta],
-                &msg::RefreshCapacityPools { ack_id: "".into() },
+                &RefreshCapacityPools { ack_id: "".into() },
             )
             .await;
 
-            msg::UnmapTargetResp {
+            UnmapTargetResp {
                 result: OpsErr::SUCCESS,
             }
         }
         Err(err) => {
             log_error_chain!(err, "Unmapping storage target {} failed", msg.target_id);
 
-            msg::UnmapTargetResp {
+            UnmapTargetResp {
                 result: OpsErr::INTERNAL,
             }
         }

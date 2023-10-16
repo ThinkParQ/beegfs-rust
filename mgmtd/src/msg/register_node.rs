@@ -1,24 +1,26 @@
 use super::*;
 use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
+use shared::msg::heartbeat::Heartbeat;
+use shared::msg::register_node::{RegisterNode, RegisterNodeResp};
 use shared::types::{EntityType, NodeID, NodeType};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 pub(super) async fn handle(
-    msg: msg::RegisterNode,
+    msg: RegisterNode,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::RegisterNodeResp {
+) -> RegisterNodeResp {
     let node_id = update(msg, ctx).await;
 
-    msg::RegisterNodeResp {
+    RegisterNodeResp {
         node_num_id: node_id,
     }
 }
 
 /// Processes incoming node information. Registeres new nodes if config allows it
-pub(super) async fn update(msg: msg::RegisterNode, ctx: &Context) -> NodeID {
+pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
     let msg2 = msg.clone();
     let info = ctx.info;
 
@@ -137,7 +139,7 @@ pub(super) async fn update(msg: msg::RegisterNode, ctx: &Context) -> NodeID {
                     NodeType::Client => &[NodeType::Meta],
                     _ => &[],
                 },
-                &msg::Heartbeat {
+                &Heartbeat {
                     instance_version: 0,
                     nic_list_version: 0,
                     node_type: msg2.node_type,

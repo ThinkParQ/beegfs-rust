@@ -1,11 +1,12 @@
 use super::*;
+use shared::msg::set_default_quota::{SetDefaultQuota, SetDefaultQuotaResp};
 use shared::types::QuotaType;
 
 pub(super) async fn handle(
-    msg: msg::SetDefaultQuota,
+    msg: SetDefaultQuota,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::SetDefaultQuotaResp {
+) -> SetDefaultQuotaResp {
     match ctx
         .db
         .op(move |tx| {
@@ -53,7 +54,7 @@ pub(super) async fn handle(
                 msg.id_type,
                 msg.pool_id,
             );
-            msg::SetDefaultQuotaResp { result: 1 }
+            SetDefaultQuotaResp { result: 1 }
         }
 
         Err(err) => {
@@ -63,7 +64,7 @@ pub(super) async fn handle(
                 msg.id_type,
                 msg.pool_id
             );
-            msg::SetDefaultQuotaResp { result: 0 }
+            SetDefaultQuotaResp { result: 0 }
         }
     }
 }

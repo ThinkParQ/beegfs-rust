@@ -49,3 +49,14 @@ impl BeeSerde for GetNodeCapacityPoolsResp {
         })
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum CapacityPoolQueryType {
+    #[default]
+    Meta,
+    Storage,
+    MetaMirrored,
+    StorageMirrored,
+}
+
+impl_enum_to_int!(CapacityPoolQueryType, Meta => 0, Storage => 1, MetaMirrored => 2, StorageMirrored => 3);

@@ -1,11 +1,8 @@
 use super::*;
+use shared::msg::map_targets::{MapTargets, MapTargetsResp};
 use shared::types::{NodeType, NodeTypeServer};
 
-pub(super) async fn handle(
-    msg: msg::MapTargets,
-    ctx: &Context,
-    _req: &impl Request,
-) -> msg::MapTargetsResp {
+pub(super) async fn handle(msg: MapTargets, ctx: &Context, _req: &impl Request) -> MapTargetsResp {
     let target_ids = msg.target_ids.keys().copied().collect::<Vec<_>>();
 
     match ctx
@@ -32,7 +29,7 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                &msg::MapTargets {
+                &MapTargets {
                     target_ids: msg.target_ids.clone(),
                     node_id: msg.node_id,
                     ack_id: "".into(),
@@ -45,7 +42,7 @@ pub(super) async fn handle(
             // return success. If at least one fails, we fail the whole operation and send back an
             // empty result (see below). The storage handles this as errors. This mechanism is
             // supposed to go away later anyway, so this solution is fine.
-            msg::MapTargetsResp {
+            MapTargetsResp {
                 results: msg
                     .target_ids
                     .into_iter()
@@ -56,7 +53,7 @@ pub(super) async fn handle(
         Err(err) => {
             log_error_chain!(err, "Mapping storage targets failed");
 
-            msg::MapTargetsResp {
+            MapTargetsResp {
                 results: HashMap::new(),
             }
         }

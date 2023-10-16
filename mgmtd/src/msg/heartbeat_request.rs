@@ -1,13 +1,13 @@
 use super::*;
-use shared::msg::types::Nic;
+use shared::msg::heartbeat::{Heartbeat, HeartbeatRequest, Nic};
 use shared::types::{NodeType, MGMTD_ID};
 
 pub(super) async fn handle(
-    _msg: msg::HeartbeatRequest,
+    _msg: HeartbeatRequest,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::Heartbeat {
-    msg::Heartbeat {
+) -> Heartbeat {
+    Heartbeat {
         instance_version: 0,
         nic_list_version: 0,
         node_type: NodeType::Management,

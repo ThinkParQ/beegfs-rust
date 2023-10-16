@@ -3,9 +3,10 @@
 use crate::context::Context;
 use crate::db::{self};
 use crate::quota::update_and_distribute;
+use shared::log_error_chain;
+use shared::msg::refresh_target_states::RefreshTargetStates;
 use shared::shutdown::Shutdown;
 use shared::types::NodeType;
-use shared::{log_error_chain, msg};
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
@@ -92,7 +93,7 @@ async fn switchover(ctx: Context, mut shutdown: Shutdown) {
                     crate::msg::notify_nodes(
                         &ctx,
                         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                        &msg::RefreshTargetStates { ack_id: "".into() },
+                        &RefreshTargetStates { ack_id: "".into() },
                     )
                     .await;
                 }

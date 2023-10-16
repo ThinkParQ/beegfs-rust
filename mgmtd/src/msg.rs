@@ -8,9 +8,10 @@ use crate::db;
 use crate::db::TypedError;
 use anyhow::{bail, Result};
 use shared::conn::msg_dispatch::*;
-use shared::msg::{GenericResponse, Msg};
-use shared::types::{NodeType, OpsErr, TRY_AGAIN};
-use shared::{log_error_chain, msg};
+use shared::log_error_chain;
+use shared::msg::generic_response::{GenericResponse, TRY_AGAIN};
+use shared::msg::{Msg, OpsErr};
+use shared::types::NodeType;
 use std::collections::HashMap;
 
 mod ack;
@@ -56,7 +57,7 @@ mod unmap_target;
 /// Concrete messages to handle must be added into the macro call within this function like this:
 /// ```ignore
 /// ...
-/// msg::SomeMessage => some_message_handle_module,
+/// def::SomeMessage => some_message_handle_module,
 /// ...
 /// ```
 ///
@@ -65,10 +66,10 @@ mod unmap_target;
 ///
 /// ```ignore
 /// pub(super) async fn handle(
-///     msg: msg::SomeMessage,
+///     msg: def::SomeMessage,
 ///     ctx: &impl AppContext,
 ///     req: &impl Request,
-/// ) -> msg::SomeMessageResponse {
+/// ) -> def::SomeMessageResponse {
 ///     // Handling code
 /// }
 /// ```
@@ -144,48 +145,50 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         };
     }
 
+    use shared::msg as def;
+
     // Defines the concrete message to be handled by which handler. See function description for
     // details.
     dispatch_msg!(
         // TCP
-        msg::RegisterNode => register_node => msg::RegisterNodeResp,
-        msg::RemoveNode => remove_node  => msg::RemoveNodeResp,
-        msg::GetNodes => get_nodes => msg::GetNodesResp ,
-        msg::RegisterTarget => register_target => msg::RegisterTargetResp ,
-        msg::MapTargets => map_targets => msg::MapTargetsResp ,
-        msg::GetTargetMappings => get_target_mappings => msg::GetTargetMappingsResp ,
-        msg::GetTargetStates => get_target_states => msg::GetTargetStatesResp ,
-        msg::GetStoragePools => get_storage_pools => msg::GetStoragePoolsResp ,
-        msg::GetStatesAndBuddyGroups => get_states_and_buddy_groups => msg::GetStatesAndBuddyGroupsResp ,
-        msg::GetNodeCapacityPools => get_node_capacity_pools => msg::GetNodeCapacityPoolsResp ,
-        msg::ChangeTargetConsistencyStates => change_target_consistency_states => msg::ChangeTargetConsistencyStatesResp ,
-        msg::SetStorageTargetInfo => set_storage_target_info => msg::SetStorageTargetInfoResp ,
-        msg::RequestExceededQuota => request_exceeded_quota => msg::RequestExceededQuotaResp ,
-        msg::GetMirrorBuddyGroups => get_mirror_buddy_groups => msg::GetMirrorBuddyGroupsResp ,
-        msg::SetChannelDirect => set_channel_direct,
-        msg::PeerInfo => peer_info,
-        msg::AddStoragePool => add_storage_pool => msg::AddStoragePoolResp ,
-        msg::ModifyStoragePool => modify_storage_pool => msg::ModifyStoragePoolResp ,
-        msg::RemoveStoragePool => remove_storage_pool => msg::RemoveStoragePoolResp ,
-        msg::UnmapTarget => unmap_target => msg::UnmapTargetResp ,
-        msg::SetDefaultQuota => set_default_quota => msg::SetDefaultQuotaResp ,
-        msg::GetDefaultQuota => get_default_quota => msg::GetDefaultQuotaResp ,
-        msg::SetQuota => set_quota => msg::SetQuotaResp ,
-        msg::GetQuotaInfo => get_quota_info => msg::GetQuotaInfoResp ,
-        msg::AuthenticateChannel => authenticate_channel,
-        msg::SetMirrorBuddyGroup => set_mirror_buddy_group => msg::SetMirrorBuddyGroupResp ,
-        msg::RemoveBuddyGroup => remove_buddy_group => msg::RemoveBuddyGroupResp ,
-        msg::SetMetadataMirroring => set_metadata_mirroring => msg::SetMetadataMirroringResp ,
-        msg::SetTargetConsistencyStates => set_target_consistency_states => msg::SetTargetConsistencyStatesResp ,
+        def::register_node::RegisterNode => register_node => def::register_node::RegisterNodeResp,
+        def::remove_node::RemoveNode => remove_node  => def::remove_node::RemoveNodeResp,
+        def::get_nodes::GetNodes => get_nodes => def::get_nodes::GetNodesResp ,
+        def::register_target::RegisterTarget => register_target => def::register_target::RegisterTargetResp ,
+        def::map_targets::MapTargets => map_targets => def::map_targets::MapTargetsResp ,
+        def::get_target_mappings::GetTargetMappings => get_target_mappings => def::get_target_mappings::GetTargetMappingsResp ,
+        def::get_target_states::GetTargetStates => get_target_states => def::get_target_states::GetTargetStatesResp ,
+        def::get_storage_pools::GetStoragePools => get_storage_pools => def::get_storage_pools::GetStoragePoolsResp ,
+        def::get_states_and_buddy_groups::GetStatesAndBuddyGroups => get_states_and_buddy_groups => def::get_states_and_buddy_groups::GetStatesAndBuddyGroupsResp ,
+        def::get_node_capacity_pools::GetNodeCapacityPools => get_node_capacity_pools => def::get_node_capacity_pools::GetNodeCapacityPoolsResp ,
+        def::change_target_consistency_states::ChangeTargetConsistencyStates => change_target_consistency_states => def::change_target_consistency_states::ChangeTargetConsistencyStatesResp ,
+        def::set_storage_target_info::SetStorageTargetInfo => set_storage_target_info => def::set_storage_target_info::SetStorageTargetInfoResp ,
+        def::request_exceeded_quota::RequestExceededQuota => request_exceeded_quota => def::request_exceeded_quota::RequestExceededQuotaResp ,
+        def::get_mirror_buddy_groups::GetMirrorBuddyGroups => get_mirror_buddy_groups => def::get_mirror_buddy_groups::GetMirrorBuddyGroupsResp ,
+        def::set_channel_direct::SetChannelDirect => set_channel_direct,
+        def::peer_info::PeerInfo => peer_info,
+        def::add_storage_pool::AddStoragePool => add_storage_pool => def::add_storage_pool::AddStoragePoolResp ,
+        def::modify_storage_pool::ModifyStoragePool => modify_storage_pool => def::modify_storage_pool::ModifyStoragePoolResp ,
+        def::remove_storage_pool::RemoveStoragePool => remove_storage_pool => def::remove_storage_pool::RemoveStoragePoolResp ,
+        def::unmap_target::UnmapTarget => unmap_target => def::unmap_target::UnmapTargetResp ,
+        def::set_default_quota::SetDefaultQuota => set_default_quota => def::set_default_quota::SetDefaultQuotaResp ,
+        def::get_default_quota::GetDefaultQuota => get_default_quota => def::get_default_quota::GetDefaultQuotaResp ,
+        def::set_quota::SetQuota => set_quota => def::set_quota::SetQuotaResp ,
+        def::get_quota_info::GetQuotaInfo => get_quota_info => def::get_quota_info::GetQuotaInfoResp ,
+        def::authenticate_channel::AuthenticateChannel => authenticate_channel,
+        def::set_mirror_buddy_group::SetMirrorBuddyGroup => set_mirror_buddy_group => def::set_mirror_buddy_group::SetMirrorBuddyGroupResp ,
+        def::remove_buddy_group::RemoveBuddyGroup => remove_buddy_group => def::remove_buddy_group::RemoveBuddyGroupResp ,
+        def::set_metadata_mirroring::SetMetadataMirroring => set_metadata_mirroring => def::set_metadata_mirroring::SetMetadataMirroringResp ,
+        def::set_target_consistency_states::SetTargetConsistencyStates => set_target_consistency_states => def::set_target_consistency_states::SetTargetConsistencyStatesResp ,
 
         // UDP
-        msg::Heartbeat => heartbeat => msg::Ack ,
-        msg::HeartbeatRequest => heartbeat_request => msg::Heartbeat,
-        msg::RefreshCapacityPools => refresh_capacity_pools => msg::Ack ,
-        msg::Ack => ack,
-        msg::RemoveNodeResp => remove_node_resp,
-        msg::MapTargetsResp => map_targets_resp,
-        msg::SetMirrorBuddyGroupResp => set_mirror_buddy_group_resp,
+        def::heartbeat::Heartbeat => heartbeat => def::ack::Ack ,
+        def::heartbeat::HeartbeatRequest => heartbeat_request => def::heartbeat::Heartbeat,
+        def::refresh_capacity_pools::RefreshCapacityPools => refresh_capacity_pools => def::ack::Ack ,
+        def::ack::Ack => ack,
+        def::remove_node::RemoveNodeResp => remove_node_resp,
+        def::map_targets::MapTargetsResp => map_targets_resp,
+        def::set_mirror_buddy_group::SetMirrorBuddyGroupResp => set_mirror_buddy_group_resp,
     )
 }
 

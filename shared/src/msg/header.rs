@@ -1,5 +1,6 @@
 /// Defines the BeeGFS message header
 use super::*;
+use crate::bee_serde::Deserializer;
 use anyhow::bail;
 
 /// The BeeGFS message header

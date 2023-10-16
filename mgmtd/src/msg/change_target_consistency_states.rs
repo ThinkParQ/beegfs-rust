@@ -1,11 +1,12 @@
 use super::*;
-use shared::types::NodeType;
+use shared::msg::change_target_consistency_states::*;
+use shared::msg::refresh_target_states::RefreshTargetStates;
 
 pub(super) async fn handle(
-    msg: msg::ChangeTargetConsistencyStates,
+    msg: ChangeTargetConsistencyStates,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::ChangeTargetConsistencyStatesResp {
+) -> ChangeTargetConsistencyStatesResp {
     // msg.old_states is currently completely ignored. If something reports a non-GOOD state, I see
     // no apparent reason to that the old state matches before setting. We have the authority,
     // whatever nodes think their old state was doesn't matter.
@@ -40,12 +41,12 @@ pub(super) async fn handle(
                 notify_nodes(
                     ctx,
                     &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                    &msg::RefreshTargetStates { ack_id: "".into() },
+                    &RefreshTargetStates { ack_id: "".into() },
                 )
                 .await;
             }
 
-            msg::ChangeTargetConsistencyStatesResp {
+            ChangeTargetConsistencyStatesResp {
                 result: OpsErr::SUCCESS,
             }
         }
@@ -56,7 +57,7 @@ pub(super) async fn handle(
                 msg.node_type
             );
 
-            msg::ChangeTargetConsistencyStatesResp {
+            ChangeTargetConsistencyStatesResp {
                 result: OpsErr::INTERNAL,
             }
         }

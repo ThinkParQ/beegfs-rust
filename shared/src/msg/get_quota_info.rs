@@ -118,3 +118,61 @@ pub struct GetQuotaInfoResp {
 impl Msg for GetQuotaInfoResp {
     const ID: MsgID = 2098;
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum GetQuotaInfoTransferMethod {
+    #[default]
+    AllTargetsOneRequest = 0,
+    AllTargetsOneRequestPerTarget = 1,
+    SingleTarget = 2,
+}
+
+impl_enum_to_int!(GetQuotaInfoTransferMethod,
+    AllTargetsOneRequest => 0,
+    AllTargetsOneRequestPerTarget => 1,
+    SingleTarget => 2
+);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum QuotaInodeSupport {
+    #[default]
+    Unknown,
+    AllBlockDevices,
+    SomeBlockDevices,
+    NoBlockDevices,
+}
+
+impl_enum_to_int!(QuotaInodeSupport,
+    Unknown => 0,
+    AllBlockDevices => 1,
+    SomeBlockDevices => 2,
+    NoBlockDevices => 3
+);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum QuotaQueryType {
+    #[default]
+    None,
+    Single,
+    Range,
+    List,
+    All,
+}
+
+impl_enum_to_int!(QuotaQueryType,
+    None => 0,
+    Single => 1,
+    Range => 2,
+    List => 3,
+    All => 4
+);
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct QuotaEntry {
+    pub space: u64,
+    pub inodes: u64,
+    pub id: QuotaID,
+    #[bee_serde(as = Int<i32>)]
+    pub id_type: QuotaIDType,
+    pub valid: u8,
+}

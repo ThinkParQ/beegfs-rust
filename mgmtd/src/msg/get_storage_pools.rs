@@ -1,12 +1,14 @@
 use super::*;
-use shared::msg::types::{BuddyGroupCapacityPools, TargetCapacityPools};
+use shared::msg::get_storage_pools::{
+    BuddyGroupCapacityPools, GetStoragePools, GetStoragePoolsResp, StoragePool, TargetCapacityPools,
+};
 use shared::types::{BuddyGroupID, NodeID, TargetID};
 
 pub(super) async fn handle(
-    _msg: msg::GetStoragePools,
+    _msg: GetStoragePools,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetStoragePoolsResp {
+) -> GetStoragePoolsResp {
     let pools = match async move {
         let config = &ctx.info.config;
 
@@ -29,7 +31,7 @@ pub(super) async fn handle(
             })
             .await?;
 
-        // Build the data structures msg::GetStoragePool wants, per pool
+        // Build the data structures GetStoragePool wants, per pool
         pools
             .into_iter()
             .map(|pool| {
@@ -72,7 +74,7 @@ pub(super) async fn handle(
                     buddy_group_cap_pools[usize::from(group.cap_pool)].push(group.entity_id);
                 }
 
-                Ok(msg::types::StoragePool {
+                Ok(StoragePool {
                     id: pool.pool_id,
                     alias: pool.alias.into_bytes(),
                     targets: target_map.keys().cloned().collect(),
@@ -87,7 +89,7 @@ pub(super) async fn handle(
                     },
                 })
             })
-            .try_collect::<Vec<msg::types::StoragePool>>() as Result<_>
+            .try_collect::<Vec<StoragePool>>() as Result<_>
     }
     .await
     {
@@ -98,5 +100,5 @@ pub(super) async fn handle(
         }
     };
 
-    msg::GetStoragePoolsResp { pools }
+    GetStoragePoolsResp { pools }
 }

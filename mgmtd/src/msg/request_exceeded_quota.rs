@@ -1,11 +1,13 @@
 use super::*;
 use crate::db::quota_usage::PoolOrTargetID;
+use shared::msg::request_exceeded_quota::{RequestExceededQuota, RequestExceededQuotaResp};
+use shared::msg::set_exceeded_quota::SetExceededQuota;
 
 pub(super) async fn handle(
-    msg: msg::RequestExceededQuota,
+    msg: RequestExceededQuota,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::RequestExceededQuotaResp {
+) -> RequestExceededQuotaResp {
     match ctx
         .db
         .op(move |tx| {
@@ -20,7 +22,7 @@ pub(super) async fn handle(
                 msg.quota_type,
             )?;
 
-            Ok(msg::SetExceededQuota {
+            Ok(SetExceededQuota {
                 pool_id: msg.pool_id,
                 id_type: msg.id_type,
                 quota_type: msg.quota_type,
@@ -29,7 +31,7 @@ pub(super) async fn handle(
         })
         .await
     {
-        Ok(inner) => msg::RequestExceededQuotaResp {
+        Ok(inner) => RequestExceededQuotaResp {
             result: OpsErr::SUCCESS,
             inner,
         },
@@ -40,9 +42,9 @@ pub(super) async fn handle(
                 msg.pool_id,
                 msg.target_id
             );
-            msg::RequestExceededQuotaResp {
+            RequestExceededQuotaResp {
                 result: OpsErr::INTERNAL,
-                inner: msg::SetExceededQuota::default(),
+                inner: SetExceededQuota::default(),
             }
         }
     }

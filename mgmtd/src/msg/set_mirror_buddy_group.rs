@@ -1,11 +1,13 @@
 use super::*;
+use shared::msg::refresh_capacity_pools::RefreshCapacityPools;
+use shared::msg::set_mirror_buddy_group::{SetMirrorBuddyGroup, SetMirrorBuddyGroupResp};
 use shared::types::NodeType;
 
 pub(super) async fn handle(
-    msg: msg::SetMirrorBuddyGroup,
+    msg: SetMirrorBuddyGroup,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::SetMirrorBuddyGroupResp {
+) -> SetMirrorBuddyGroupResp {
     match ctx
         .db
         .op(move |tx| {
@@ -49,7 +51,7 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                &msg::SetMirrorBuddyGroup {
+                &SetMirrorBuddyGroup {
                     ack_id: "".into(),
                     node_type: msg.node_type,
                     primary_target_id: msg.primary_target_id,
@@ -63,11 +65,11 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta],
-                &msg::RefreshCapacityPools { ack_id: "".into() },
+                &RefreshCapacityPools { ack_id: "".into() },
             )
             .await;
 
-            msg::SetMirrorBuddyGroupResp {
+            SetMirrorBuddyGroupResp {
                 result: OpsErr::SUCCESS,
                 buddy_group_id: actual_id,
             }
@@ -80,7 +82,7 @@ pub(super) async fn handle(
                 msg.buddy_group_id
             );
 
-            msg::SetMirrorBuddyGroupResp {
+            SetMirrorBuddyGroupResp {
                 result: match err.downcast_ref() {
                     Some(TypedError::ValueNotFound { .. }) => OpsErr::UNKNOWN_TARGET,
                     Some(TypedError::ValueExists { .. }) => OpsErr::EXISTS,

@@ -1,13 +1,9 @@
 use super::*;
 use db::misc::MetaRoot;
-use shared::msg::types::Nic;
+use shared::msg::get_nodes::{GetNodes, GetNodesResp, Nic, Node};
 use shared::types::NodeType;
 
-pub(super) async fn handle(
-    msg: msg::GetNodes,
-    ctx: &Context,
-    _req: &impl Request,
-) -> msg::GetNodesResp {
+pub(super) async fn handle(msg: GetNodes, ctx: &Context, _req: &impl Request) -> GetNodesResp {
     match ctx
         .db
         .op(move |tx| {
@@ -24,11 +20,11 @@ pub(super) async fn handle(
         })
         .await
     {
-        Ok(res) => msg::GetNodesResp {
+        Ok(res) => GetNodesResp {
             nodes: res
                 .0
                 .into_iter()
-                .map(|n| msg::types::Node {
+                .map(|n| Node {
                     alias: n.alias.into_bytes(),
                     num_id: n.id,
                     nic_list: res
@@ -65,7 +61,7 @@ pub(super) async fn handle(
         Err(err) => {
             log_error_chain!(err, "Getting {:?} node list failed", msg.node_type);
 
-            msg::GetNodesResp {
+            GetNodesResp {
                 nodes: vec![],
                 root_num_id: 0,
                 is_root_mirrored: 0,

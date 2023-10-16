@@ -1,11 +1,13 @@
 use super::*;
-use shared::msg::types::{QuotaInodeSupport, QuotaQueryType};
+use shared::msg::get_quota_info::{
+    GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, QuotaQueryType,
+};
 
 pub(super) async fn handle(
-    msg: msg::GetQuotaInfo,
+    msg: GetQuotaInfo,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetQuotaInfoResp {
+) -> GetQuotaInfoResp {
     // TODO Respect the requested transfer method. Or, at least, query by target, not by storage
     // pool (since this and only this is used by ctl for the request).
 
@@ -45,7 +47,7 @@ pub(super) async fn handle(
 
             let res = limits
                 .into_iter()
-                .map(|limit| msg::types::QuotaEntry {
+                .map(|limit| QuotaEntry {
                     space: limit.space.unwrap_or_default(),
                     inodes: limit.inodes.unwrap_or_default(),
                     id: limit.quota_id,
@@ -58,7 +60,7 @@ pub(super) async fn handle(
         })
         .await
     {
-        Ok(data) => msg::GetQuotaInfoResp {
+        Ok(data) => GetQuotaInfoResp {
             quota_inode_support: QuotaInodeSupport::Unknown,
             quota_entry: data,
         },
@@ -69,7 +71,7 @@ pub(super) async fn handle(
                 pool_id,
             );
 
-            msg::GetQuotaInfoResp {
+            GetQuotaInfoResp {
                 quota_inode_support: QuotaInodeSupport::Unknown,
                 quota_entry: vec![],
             }

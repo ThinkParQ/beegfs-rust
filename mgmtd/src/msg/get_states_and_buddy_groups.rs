@@ -1,10 +1,13 @@
 use super::*;
+use shared::msg::get_states_and_buddy_groups::{
+    BuddyGroup, CombinedTargetState, GetStatesAndBuddyGroups, GetStatesAndBuddyGroupsResp,
+};
 
 pub(super) async fn handle(
-    msg: msg::GetStatesAndBuddyGroups,
+    msg: GetStatesAndBuddyGroups,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetStatesAndBuddyGroupsResp {
+) -> GetStatesAndBuddyGroupsResp {
     match ctx
         .db
         .op(move |tx| {
@@ -21,7 +24,7 @@ pub(super) async fn handle(
                 .map(|e| {
                     (
                         e.target_id,
-                        msg::types::CombinedTargetState {
+                        CombinedTargetState {
                             reachability: db::misc::calc_reachability_state(
                                 e.last_contact,
                                 ctx.info.config.node_offline_timeout,
@@ -32,13 +35,13 @@ pub(super) async fn handle(
                 })
                 .collect();
 
-            msg::GetStatesAndBuddyGroupsResp {
+            GetStatesAndBuddyGroupsResp {
                 groups: groups
                     .into_iter()
                     .map(|e| {
                         (
                             e.id,
-                            msg::types::BuddyGroup {
+                            BuddyGroup {
                                 primary_target_id: e.primary_target_id,
                                 secondary_target_id: e.secondary_target_id,
                             },
@@ -55,7 +58,7 @@ pub(super) async fn handle(
                 msg.node_type,
             );
 
-            msg::GetStatesAndBuddyGroupsResp {
+            GetStatesAndBuddyGroupsResp {
                 groups: HashMap::new(),
                 states: HashMap::new(),
             }

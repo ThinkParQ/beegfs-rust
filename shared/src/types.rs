@@ -26,31 +26,6 @@ pub type QuotaID = u32;
 pub const MGMTD_ID: NodeID = 1;
 pub const DEFAULT_STORAGE_POOL: StoragePoolID = 1;
 
-/// Matches the `FhgfsOpsErr` value from the BeeGFS C/C++ codebase.
-///
-/// Since this is a struct, not an enum, it allows for all possible values, not only the ones
-/// defined as constants.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
-pub struct OpsErr(i32);
-
-impl OpsErr {
-    pub const SUCCESS: Self = Self(0);
-    pub const INTERNAL: Self = Self(1);
-    pub const UNKNOWN_NODE: Self = Self(5);
-    pub const EXISTS: Self = Self(7);
-    pub const NOTEMPTY: Self = Self(13);
-    pub const UNKNOWN_TARGET: Self = Self(15);
-    pub const INVAL: Self = Self(20);
-    pub const AGAIN: Self = Self(22);
-    pub const UNKNOWN_POOL: Self = Self(30);
-}
-
-/// The BeeGFS generic response code
-pub type GenericResponseCode = i32;
-pub const TRY_AGAIN: GenericResponseCode = 0;
-pub const INDIRECT_COMM_ERR: GenericResponseCode = 1;
-pub const NEW_SEQ_NO_BASE: GenericResponseCode = 2;
-
 /// The entity type.
 #[derive(Clone, Debug)]
 pub enum EntityType {
@@ -66,51 +41,6 @@ impl_enum_to_sql_str!(EntityType,
     BuddyGroup => "buddy_group",
     StoragePool => "storage_pool",
 );
-
-/// The BeeGFS authentication secret
-///
-/// Sent by the `AuthenticateChannel` message to authenticate a connection.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct AuthenticationSecret(i64);
-
-impl AuthenticationSecret {
-    pub fn from_bytes(str: impl AsRef<[u8]>) -> Self {
-        let (high, low) = str.as_ref().split_at(str.as_ref().len() / 2);
-        let high = hsieh::hash(high) as i64;
-        let low = hsieh::hash(low) as i64;
-
-        let hash = (high << 32) | low;
-
-        Self(hash)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum NicType {
-    #[default]
-    Ethernet,
-    Sdp,
-    Rdma,
-}
-
-impl_enum_to_int!(NicType, Ethernet => 0, Sdp => 1, Rdma => 2);
-impl_enum_to_sql_str!(NicType, Ethernet => "ethernet", Sdp => "sdp", Rdma => "rdma");
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum CapacityPool {
-    Normal,
-    Low,
-    Emergency,
-}
-
-impl CapacityPool {
-    pub fn lowest(cap_pool_1: Self, cap_pool_2: Self) -> Self {
-        std::cmp::max(cap_pool_1, cap_pool_2)
-    }
-}
-
-impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
-impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum NodeType {
@@ -158,6 +88,33 @@ impl_enum_to_sql_str!(NodeTypeServer,
     Meta => "meta",
     Storage => "storage"
 );
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum NicType {
+    #[default]
+    Ethernet,
+    Sdp,
+    Rdma,
+}
+
+impl_enum_to_int!(NicType, Ethernet => 0, Sdp => 1, Rdma => 2);
+impl_enum_to_sql_str!(NicType, Ethernet => "ethernet", Sdp => "sdp", Rdma => "rdma");
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CapacityPool {
+    Normal,
+    Low,
+    Emergency,
+}
+
+impl CapacityPool {
+    pub fn lowest(cap_pool_1: Self, cap_pool_2: Self) -> Self {
+        std::cmp::max(cap_pool_1, cap_pool_2)
+    }
+}
+
+impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
+impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaIDType {
@@ -243,5 +200,23 @@ impl BeeSerde for TargetReachabilityState {
 
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         des.u8()?.try_into()
+    }
+}
+
+/// The BeeGFS authentication secret
+///
+/// Sent by the `AuthenticateChannel` message to authenticate a connection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct AuthenticationSecret(i64);
+
+impl AuthenticationSecret {
+    pub fn from_bytes(str: impl AsRef<[u8]>) -> Self {
+        let (high, low) = str.as_ref().split_at(str.as_ref().len() / 2);
+        let high = hsieh::hash(high) as i64;
+        let low = hsieh::hash(low) as i64;
+
+        let hash = (high << 32) | low;
+
+        Self(hash)
     }
 }

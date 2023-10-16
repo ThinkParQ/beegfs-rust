@@ -1,11 +1,8 @@
 use super::*;
+use shared::msg::remove_node::{RemoveNode, RemoveNodeResp};
 use shared::types::NodeType;
 
-pub(super) async fn handle(
-    msg: msg::RemoveNode,
-    ctx: &Context,
-    _req: &impl Request,
-) -> msg::RemoveNodeResp {
+pub(super) async fn handle(msg: RemoveNode, ctx: &Context, _req: &impl Request) -> RemoveNodeResp {
     match ctx
         .db
         .op(move |tx| {
@@ -28,14 +25,14 @@ pub(super) async fn handle(
                     NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                     _ => &[],
                 },
-                &msg::RemoveNode {
+                &RemoveNode {
                     ack_id: "".into(),
                     ..msg
                 },
             )
             .await;
 
-            msg::RemoveNodeResp {
+            RemoveNodeResp {
                 result: OpsErr::SUCCESS,
             }
         }
@@ -47,7 +44,7 @@ pub(super) async fn handle(
                 msg.node_id
             );
 
-            msg::RemoveNodeResp {
+            RemoveNodeResp {
                 result: OpsErr::INTERNAL,
             }
         }

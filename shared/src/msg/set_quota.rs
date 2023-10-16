@@ -1,4 +1,5 @@
 use super::*;
+pub use crate::msg::get_quota_info::QuotaEntry;
 
 /// Used by the server nodes to set quota usage information on the management
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]

@@ -1,13 +1,13 @@
 use super::*;
 use anyhow::bail;
-use shared::msg::RemoveBuddyGroupResp;
+use shared::msg::remove_buddy_group::{RemoveBuddyGroup, RemoveBuddyGroupResp};
 use shared::types::NodeTypeServer;
 
 pub(super) async fn handle(
-    msg: msg::RemoveBuddyGroup,
+    msg: RemoveBuddyGroup,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::RemoveBuddyGroupResp {
+) -> RemoveBuddyGroupResp {
     match async {
         if msg.node_type != NodeTypeServer::Storage {
             bail!("Can only remove storage buddy groups");
@@ -42,7 +42,7 @@ pub(super) async fn handle(
     }
     .await
     {
-        Ok(_) => msg::RemoveBuddyGroupResp {
+        Ok(_) => RemoveBuddyGroupResp {
             result: OpsErr::SUCCESS,
         },
         Err(err) => {
@@ -53,7 +53,7 @@ pub(super) async fn handle(
                 msg.buddy_group_id
             );
 
-            msg::RemoveBuddyGroupResp {
+            RemoveBuddyGroupResp {
                 result: match err.downcast_ref::<TypedError>() {
                     Some(TypedError::ValueNotFound { .. }) => OpsErr::UNKNOWN_TARGET,
                     Some(_) | None => OpsErr::INTERNAL,

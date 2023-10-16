@@ -1,12 +1,14 @@
 use super::*;
-use shared::msg::types::CapacityPoolQueryType;
+use shared::msg::get_node_capacity_pools::{
+    CapacityPoolQueryType, GetNodeCapacityPools, GetNodeCapacityPoolsResp,
+};
 use shared::types::StoragePoolID;
 
 pub(super) async fn handle(
-    msg: msg::GetNodeCapacityPools,
+    msg: GetNodeCapacityPools,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetNodeCapacityPoolsResp {
+) -> GetNodeCapacityPoolsResp {
     let pools = match async move {
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
         // either a NodeNUmID, TargetNumID or BuddyGroupID
@@ -123,5 +125,5 @@ pub(super) async fn handle(
         }
     };
 
-    msg::GetNodeCapacityPoolsResp { pools }
+    GetNodeCapacityPoolsResp { pools }
 }

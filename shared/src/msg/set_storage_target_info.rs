@@ -23,3 +23,19 @@ pub struct SetStorageTargetInfoResp {
 impl Msg for SetStorageTargetInfoResp {
     const ID: MsgID = 2100;
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
+pub struct TargetInfo {
+    pub target_id: TargetID,
+    #[bee_serde(as = CStr<4>)]
+    pub path: Vec<u8>,
+    #[bee_serde(as = Int<i64>)]
+    pub total_space: u64,
+    #[bee_serde(as = Int<i64>)]
+    pub free_space: u64,
+    #[bee_serde(as = Int<i64>)]
+    pub total_inodes: u64,
+    #[bee_serde(as = Int<i64>)]
+    pub free_inodes: u64,
+    pub consistency_state: TargetConsistencyState,
+}

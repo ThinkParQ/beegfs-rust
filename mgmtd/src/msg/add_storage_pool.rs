@@ -1,11 +1,13 @@
 use super::*;
+use shared::msg::add_storage_pool::*;
+use shared::msg::refresh_storage_pools::RefreshStoragePools;
 use shared::types::{EntityType, NodeType, NodeTypeServer};
 
 pub(super) async fn handle(
-    msg: msg::AddStoragePool,
+    msg: AddStoragePool,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::AddStoragePoolResp {
+) -> AddStoragePoolResp {
     match ctx
         .db
         .op(move |tx| {
@@ -54,11 +56,11 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta, NodeType::Storage],
-                &msg::RefreshStoragePools { ack_id: "".into() },
+                &RefreshStoragePools { ack_id: "".into() },
             )
             .await;
 
-            msg::AddStoragePoolResp {
+            AddStoragePoolResp {
                 result: OpsErr::SUCCESS,
                 pool_id: actual_id,
             }
@@ -66,7 +68,7 @@ pub(super) async fn handle(
         Err(err) => {
             log_error_chain!(err, "Adding storage pool with ID {} failed", msg.pool_id);
 
-            msg::AddStoragePoolResp {
+            AddStoragePoolResp {
                 result: match err.downcast_ref() {
                     Some(TypedError::ValueExists { .. }) => OpsErr::EXISTS,
                     _ => OpsErr::INTERNAL,

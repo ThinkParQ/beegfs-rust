@@ -1,11 +1,13 @@
 use super::*;
+use shared::msg::modify_storage_pool::{ModifyStoragePool, ModifyStoragePoolResp};
+use shared::msg::refresh_storage_pools::RefreshStoragePools;
 use shared::types::{NodeType, NodeTypeServer, DEFAULT_STORAGE_POOL};
 
 pub(super) async fn handle(
-    msg: msg::ModifyStoragePool,
+    msg: ModifyStoragePool,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::ModifyStoragePoolResp {
+) -> ModifyStoragePoolResp {
     match async {
         ctx.db
             .op(move |tx| {
@@ -61,18 +63,18 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta, NodeType::Storage],
-                &msg::RefreshStoragePools { ack_id: "".into() },
+                &RefreshStoragePools { ack_id: "".into() },
             )
             .await;
 
-            msg::ModifyStoragePoolResp {
+            ModifyStoragePoolResp {
                 result: OpsErr::SUCCESS,
             }
         }
         Err(err) => {
             log_error_chain!(err, "Modifying storage pool {} failed", msg.pool_id);
 
-            msg::ModifyStoragePoolResp {
+            ModifyStoragePoolResp {
                 result: match err.downcast_ref() {
                     // Yes, returning OpsErr::INVAL is intended for value not found. Unlike
                     // remove_storage_pool, here this signals that pool ID is invalid

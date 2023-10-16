@@ -3,7 +3,8 @@
 use super::msg_buf::MsgBuf;
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
-use crate::msg::{self, Msg};
+use crate::msg::authenticate_channel::AuthenticateChannel;
+use crate::msg::Msg;
 use crate::shutdown::Shutdown;
 use anyhow::{bail, Result};
 use std::sync::Arc;
@@ -89,7 +90,7 @@ async fn read_stream(
     // check authentication
     if stream_authentication_required
         && !stream.authenticated
-        && buf.msg_id() != msg::AuthenticateChannel::ID
+        && buf.msg_id() != AuthenticateChannel::ID
     {
         bail!(
             "Received message on unauthenticated stream from {:?}",

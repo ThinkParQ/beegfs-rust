@@ -1,15 +1,16 @@
 use super::*;
 use db::misc::MetaRoot;
+use shared::msg::set_metadata_mirroring::{SetMetadataMirroring, SetMetadataMirroringResp};
 
 pub(super) async fn handle(
-    msg: msg::SetMetadataMirroring,
+    msg: SetMetadataMirroring,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::SetMetadataMirroringResp {
+) -> SetMetadataMirroringResp {
     match async {
         match ctx.db.op(db::misc::get_meta_root).await? {
             MetaRoot::Normal(_, node_uid) => {
-                let _: msg::SetMetadataMirroringResp = ctx.conn.request(node_uid, &msg).await?;
+                let _: SetMetadataMirroringResp = ctx.conn.request(node_uid, &msg).await?;
 
                 ctx.db.op(db::misc::enable_metadata_mirroring).await?;
             }
@@ -24,14 +25,14 @@ pub(super) async fn handle(
         Ok(_) => {
             log::info!("Enabled metadata mirroring");
 
-            msg::SetMetadataMirroringResp {
+            SetMetadataMirroringResp {
                 result: OpsErr::SUCCESS,
             }
         }
         Err(err) => {
             log_error_chain!(err, "Enabling metadata mirroring failed");
 
-            msg::SetMetadataMirroringResp {
+            SetMetadataMirroringResp {
                 result: OpsErr::INTERNAL,
             }
         }

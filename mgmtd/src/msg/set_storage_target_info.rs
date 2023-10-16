@@ -1,11 +1,12 @@
 use super::*;
 use crate::db::target::TargetCapacities;
+use shared::msg::set_storage_target_info::{SetStorageTargetInfo, SetStorageTargetInfoResp};
 
 pub(super) async fn handle(
-    msg: msg::SetStorageTargetInfo,
+    msg: SetStorageTargetInfo,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::SetStorageTargetInfoResp {
+) -> SetStorageTargetInfoResp {
     let node_type = msg.node_type;
     match ctx
         .db
@@ -35,14 +36,14 @@ pub(super) async fn handle(
             // changed I consider this being to expensive to check here and just don't
             // do it. Nodes refresh their cap pool every two minutes (by default) anyway
 
-            msg::SetStorageTargetInfoResp {
+            SetStorageTargetInfoResp {
                 result: OpsErr::SUCCESS,
             }
         }
 
         Err(err) => {
             log_error_chain!(err, "Updating {:?} target info failed", node_type);
-            msg::SetStorageTargetInfoResp {
+            SetStorageTargetInfoResp {
                 result: OpsErr::INTERNAL,
             }
         }

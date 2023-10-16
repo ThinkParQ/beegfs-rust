@@ -1,4 +1,5 @@
 use super::*;
+pub use crate::msg::get_nodes::Nic;
 
 /// Requests a heartbeat from a node.
 ///

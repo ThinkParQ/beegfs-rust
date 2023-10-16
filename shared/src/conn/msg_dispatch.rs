@@ -1,3 +1,5 @@
+//! Facilities for dispatching TCP and UDP messages to their message handlers
+
 use super::msg_buf::MsgBuf;
 use super::stream::Stream;
 use crate::msg::{Msg, MsgID};
@@ -15,6 +17,11 @@ pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
     async fn dispatch_request(&self, chn: impl Request) -> Result<()>;
 }
 
+/// Defines the required functionality of the object containing the request data (e.g. message and
+/// peer).
+///
+/// Abstracts away the underlying protocol (TCP or UDP), so the message handler doesn't need
+/// to know about that.
 #[async_trait]
 pub trait Request: Send + Sync {
     async fn respond(self, msg: &impl Msg) -> Result<()>;
@@ -24,6 +31,7 @@ pub trait Request: Send + Sync {
     fn deserialize_msg<M: Msg>(&self) -> Result<M>;
 }
 
+/// Represents a request made via a TCP stream
 #[derive(Debug)]
 pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
@@ -60,6 +68,7 @@ impl<'a> Request for StreamRequest<'a> {
     }
 }
 
+/// Represents a request made via a UDP datagram
 #[derive(Debug)]
 pub struct SocketRequest<'a> {
     pub(crate) sock: Arc<UdpSocket>,

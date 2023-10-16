@@ -1,17 +1,18 @@
 use super::*;
+use shared::msg::get_target_mappings::{GetTargetMappings, GetTargetMappingsResp};
 use shared::types::NodeTypeServer;
 
 pub(super) async fn handle(
-    _msg: msg::GetTargetMappings,
+    _msg: GetTargetMappings,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetTargetMappingsResp {
+) -> GetTargetMappingsResp {
     match ctx
         .db
         .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
         .await
     {
-        Ok(res) => msg::GetTargetMappingsResp {
+        Ok(res) => GetTargetMappingsResp {
             mapping: res
                 .into_iter()
                 .map(|e| (e.target_id, e.node_id))
@@ -19,7 +20,7 @@ pub(super) async fn handle(
         },
         Err(err) => {
             log_error_chain!(err, "Getting target mappings failed");
-            msg::GetTargetMappingsResp {
+            GetTargetMappingsResp {
                 mapping: HashMap::new(),
             }
         }

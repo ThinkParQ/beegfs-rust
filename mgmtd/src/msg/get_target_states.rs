@@ -1,10 +1,11 @@
 use super::*;
+use shared::msg::get_target_states::{GetTargetStates, GetTargetStatesResp};
 
 pub(super) async fn handle(
-    msg: msg::GetTargetStates,
+    msg: GetTargetStates,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetTargetStatesResp {
+) -> GetTargetStatesResp {
     match ctx
         .db
         .op(move |tx| db::target::get_with_type(tx, msg.node_type))
@@ -24,7 +25,7 @@ pub(super) async fn handle(
                 consistency_states.push(e.consistency);
             }
 
-            msg::GetTargetStatesResp {
+            GetTargetStatesResp {
                 targets,
                 reachability_states,
                 consistency_states,
@@ -37,7 +38,7 @@ pub(super) async fn handle(
                 msg.node_type,
             );
 
-            msg::GetTargetStatesResp {
+            GetTargetStatesResp {
                 targets: vec![],
                 reachability_states: vec![],
                 consistency_states: vec![],

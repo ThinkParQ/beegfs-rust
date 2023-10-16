@@ -1,11 +1,8 @@
 use super::*;
 use crate::db::quota_limit::SpaceAndInodeLimits;
+use shared::msg::set_quota::{SetQuota, SetQuotaResp};
 
-pub(super) async fn handle(
-    msg: msg::SetQuota,
-    ctx: &Context,
-    _req: &impl Request,
-) -> msg::SetQuotaResp {
+pub(super) async fn handle(msg: SetQuota, ctx: &Context, _req: &impl Request) -> SetQuotaResp {
     match ctx
         .db
         .op(move |tx| {
@@ -39,13 +36,13 @@ pub(super) async fn handle(
     {
         Ok(_) => {
             log::info!("Set quota for storage pool {}", msg.pool_id,);
-            msg::SetQuotaResp { result: 1 }
+            SetQuotaResp { result: 1 }
         }
 
         Err(err) => {
             log_error_chain!(err, "Setting quota for storage pool {} failed", msg.pool_id);
 
-            msg::SetQuotaResp { result: 0 }
+            SetQuotaResp { result: 0 }
         }
     }
 }

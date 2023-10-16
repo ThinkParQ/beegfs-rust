@@ -1,10 +1,11 @@
 use super::*;
+use shared::msg::get_mirror_buddy_groups::{GetMirrorBuddyGroups, GetMirrorBuddyGroupsResp};
 
 pub(super) async fn handle(
-    msg: msg::GetMirrorBuddyGroups,
+    msg: GetMirrorBuddyGroups,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetMirrorBuddyGroupsResp {
+) -> GetMirrorBuddyGroupsResp {
     match ctx
         .db
         .op(move |tx| db::buddy_group::get_with_type(tx, msg.node_type))
@@ -21,7 +22,7 @@ pub(super) async fn handle(
                 secondary_targets.push(g.secondary_target_id);
             }
 
-            msg::GetMirrorBuddyGroupsResp {
+            GetMirrorBuddyGroupsResp {
                 buddy_groups,
                 primary_targets,
                 secondary_targets,
@@ -29,7 +30,7 @@ pub(super) async fn handle(
         }
         Err(err) => {
             log_error_chain!(err, "Getting buddy groups failed");
-            msg::GetMirrorBuddyGroupsResp {
+            GetMirrorBuddyGroupsResp {
                 buddy_groups: vec![],
                 primary_targets: vec![],
                 secondary_targets: vec![],

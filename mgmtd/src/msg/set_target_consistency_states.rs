@@ -1,11 +1,15 @@
 use super::*;
+use shared::msg::refresh_target_states::RefreshTargetStates;
+use shared::msg::set_target_consistency_states::{
+    SetTargetConsistencyStates, SetTargetConsistencyStatesResp,
+};
 use shared::types::NodeType;
 
 pub(super) async fn handle(
-    msg: msg::SetTargetConsistencyStates,
+    msg: SetTargetConsistencyStates,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::SetTargetConsistencyStatesResp {
+) -> SetTargetConsistencyStatesResp {
     match async {
         let msg = msg.clone();
 
@@ -29,7 +33,7 @@ pub(super) async fn handle(
         notify_nodes(
             ctx,
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-            &msg::RefreshTargetStates { ack_id: "".into() },
+            &RefreshTargetStates { ack_id: "".into() },
         )
         .await;
 
@@ -39,7 +43,7 @@ pub(super) async fn handle(
     {
         Ok(_) => {
             log::info!("Set consistency state for targets {:?}", msg.target_ids,);
-            msg::SetTargetConsistencyStatesResp {
+            SetTargetConsistencyStatesResp {
                 result: OpsErr::SUCCESS,
             }
         }
@@ -50,7 +54,7 @@ pub(super) async fn handle(
                 "Setting consistency state for targets {:?} failed",
                 msg.target_ids
             );
-            msg::SetTargetConsistencyStatesResp {
+            SetTargetConsistencyStatesResp {
                 result: OpsErr::INTERNAL,
             }
         }

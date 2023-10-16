@@ -1,11 +1,13 @@
 use super::*;
+use shared::msg::refresh_storage_pools::RefreshStoragePools;
+use shared::msg::remove_storage_pool::{RemoveStoragePool, RemoveStoragePoolResp};
 use shared::types::{NodeType, DEFAULT_STORAGE_POOL};
 
 pub(super) async fn handle(
-    msg: msg::RemoveStoragePool,
+    msg: RemoveStoragePool,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::RemoveStoragePoolResp {
+) -> RemoveStoragePoolResp {
     match ctx
         .db
         .op(move |tx| {
@@ -34,18 +36,18 @@ pub(super) async fn handle(
             notify_nodes(
                 ctx,
                 &[NodeType::Meta, NodeType::Storage],
-                &msg::RefreshStoragePools { ack_id: "".into() },
+                &RefreshStoragePools { ack_id: "".into() },
             )
             .await;
 
-            msg::RemoveStoragePoolResp {
+            RemoveStoragePoolResp {
                 result: OpsErr::SUCCESS,
             }
         }
         Err(err) => {
             log_error_chain!(err, "Removing storage pool {} failed", msg.pool_id);
 
-            msg::RemoveStoragePoolResp {
+            RemoveStoragePoolResp {
                 result: match err.downcast_ref() {
                     Some(TypedError::ValueNotFound { .. }) => OpsErr::UNKNOWN_POOL,
                     _ => OpsErr::INTERNAL,

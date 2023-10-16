@@ -1,4 +1,5 @@
 use super::*;
+pub use crate::msg::get_nodes::Nic;
 
 /// Registers a new node with the given information.
 ///

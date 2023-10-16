@@ -22,3 +22,15 @@ pub struct GetStatesAndBuddyGroupsResp {
 impl Msg for GetStatesAndBuddyGroupsResp {
     const ID: MsgID = 1054;
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
+pub struct CombinedTargetState {
+    pub reachability: TargetReachabilityState,
+    pub consistency: TargetConsistencyState,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
+pub struct BuddyGroup {
+    pub primary_target_id: TargetID,
+    pub secondary_target_id: TargetID,
+}

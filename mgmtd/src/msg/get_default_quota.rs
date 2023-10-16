@@ -1,11 +1,11 @@
 use super::*;
-use shared::msg::types::QuotaDefaultLimits;
+use shared::msg::get_default_quota::{GetDefaultQuota, GetDefaultQuotaResp, QuotaDefaultLimits};
 
 pub(super) async fn handle(
-    msg: msg::GetDefaultQuota,
+    msg: GetDefaultQuota,
     ctx: &Context,
     _req: &impl Request,
-) -> msg::GetDefaultQuotaResp {
+) -> GetDefaultQuotaResp {
     match ctx
         .db
         .op(move |tx| {
@@ -20,7 +20,7 @@ pub(super) async fn handle(
         })
         .await
     {
-        Ok(res) => msg::GetDefaultQuotaResp {
+        Ok(res) => GetDefaultQuotaResp {
             limits: QuotaDefaultLimits {
                 user_space_limit: res.user_space_limit.unwrap_or_default(),
                 user_inode_limit: res.user_inodes_limit.unwrap_or_default(),
@@ -35,7 +35,7 @@ pub(super) async fn handle(
                 msg.pool_id
             );
 
-            msg::GetDefaultQuotaResp {
+            GetDefaultQuotaResp {
                 limits: QuotaDefaultLimits::default(),
             }
         }
