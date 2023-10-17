@@ -23,7 +23,7 @@ itertools = { workspace = true }
 libc = { version = "~0" }
 log = { workspace = true }
 prost = { workspace = true }
-rusqlite = { workspace = true, features = ["bundled"] }
+rusqlite = { workspace = true }
 sd-notify = "~0"
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }

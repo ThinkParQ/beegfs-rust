@@ -42,15 +42,14 @@ pub fn with_quota_id_list(
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     fetch(
         tx,
-        &format!(
+        sql!(
             r#"
             SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
             WHERE pool_id == ?1 AND id_type = ?2
-            AND quota_id IN ({})
-            "#,
-            quota_ids.into_iter().join(",")
+            AND quota_id IN rarray(?3)
+            "#
         ),
-        params![pool_id, id_type],
+        params![pool_id, id_type, &rarray_param(quota_ids)],
     )
 }
 

@@ -1,6 +1,5 @@
 //! Functions for node nic management.
 use super::*;
-use rusqlite::ToSql;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -54,45 +53,18 @@ pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketA
 /// # Return value
 /// A Vec containing [NodeNic] entries.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
-    fetch(
-        tx,
-        sql!(
-            r#"
-            SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-            FROM node_nics AS nn
-            INNER JOIN nodes AS n USING(node_uid)
-            WHERE n.node_type = ?1
-            ORDER BY nn.node_uid ASC
-            "#
-        ),
-        params![node_type],
-    )
-}
-
-/// Retrieves all node nics for the given node by UID.
-///
-/// # Return value
-/// A Vec containing [NodeNic] entries.
-pub fn get_with_node_uid(tx: &mut Transaction, node_uid: EntityUID) -> Result<Arc<[NodeNic]>> {
-    fetch(
-        tx,
-        sql!(
-            r#"
-            SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-            FROM node_nics AS nn
-            INNER JOIN nodes AS n USING(node_uid)
-            WHERE n.node_uid = ?1
-            "#
-        ),
-        params![node_uid],
-    )
-}
-
-fn fetch(tx: &mut Transaction, stmt: &str, params: &[&dyn ToSql]) -> Result<Arc<[NodeNic]>> {
-    let mut stmt = tx.prepare_cached(stmt)?;
+    let mut stmt = tx.prepare_cached(sql!(
+        r#"
+        SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+        FROM node_nics AS nn
+        INNER JOIN nodes AS n USING(node_uid)
+        WHERE n.node_type = ?1
+        ORDER BY nn.node_uid ASC
+        "#
+    ))?;
 
     let nics = stmt
-        .query_map(params, |row| {
+        .query_map(params![node_type], |row| {
             Ok(NodeNic {
                 node_uid: row.get(0)?,
                 addr: row.get::<_, [u8; 4]>(1)?.into(),
@@ -126,8 +98,7 @@ pub fn replace<'a>(
     )?;
 
     let mut stmt = tx.prepare_cached(sql!(
-        "INSERT INTO node_nics (node_uid, nic_type, addr, name)
-        VALUES (?1, ?2, ?3, ?4)"
+        "INSERT INTO node_nics (node_uid, nic_type, addr, name) VALUES (?1, ?2, ?3, ?4)"
     ))?;
 
     for nic in nics {
@@ -151,23 +122,15 @@ mod test {
     }
 
     #[test]
-    fn get_with_type() {
+    fn get_update() {
         with_test_data(|tx| {
-            let nics = super::get_with_type(tx, NodeType::Meta).unwrap();
-            assert_eq!(7, nics.len());
-        })
-    }
-
-    #[test]
-    fn update_get() {
-        with_test_data(|tx| {
-            let nics = super::get_with_node_uid(tx, 102001.into()).unwrap();
-            assert_eq!(4, nics.len());
+            let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
+            assert_eq!(4, nics.iter().filter(|e| e.node_uid == 102001).count());
 
             super::replace(tx, 102001.into(), []).unwrap();
 
-            let nics = super::get_with_node_uid(tx, 102001.into()).unwrap();
-            assert_eq!(0, nics.len());
+            let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
+            assert_eq!(0, nics.iter().filter(|e| e.node_uid == 102001).count());
 
             super::replace(
                 tx,
@@ -180,8 +143,8 @@ mod test {
             )
             .unwrap();
 
-            let nics = super::get_with_node_uid(tx, 102001.into()).unwrap();
-            assert_eq!(1, nics.len());
+            let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
+            assert_eq!(1, nics.iter().filter(|e| e.node_uid == 102001).count());
         })
     }
 }

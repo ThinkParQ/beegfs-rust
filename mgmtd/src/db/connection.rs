@@ -82,6 +82,8 @@ impl Connection {
 
 /// Sets connection parameters on an SQLite connection.
 pub fn setup_connection(conn: &rusqlite::Connection) -> Result<()> {
+    // We use the carray extension to bind arrays to parameters
+    rusqlite::vtab::array::load_module(conn)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
     conn.pragma_update(None, "journal_mode", "DELETE")?;

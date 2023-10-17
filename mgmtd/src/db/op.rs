@@ -2,11 +2,13 @@
 use super::test::*;
 use crate::types::*;
 use anyhow::{anyhow, bail, Result};
+use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension, Params, Row, Transaction};
 use shared::error::*;
 use shared::types::*;
 use sql_check::sql;
 use std::ops::RangeBounds;
+use std::rc::Rc;
 
 pub mod buddy_group;
 pub mod cap_pool;
@@ -104,4 +106,14 @@ fn check_count(count: usize, allowed_range: impl RangeBounds<usize>) -> rusqlite
     } else {
         Ok(())
     }
+}
+
+/// Transforms an iterator into a type suitable for passing as a parameter to a rusqlite statement.
+///
+/// The bound parameter must be accessed using `rarray(?n)` within the statement.
+pub(crate) fn rarray_param<T>(iter: impl IntoIterator<Item = T>) -> Rc<Vec<Value>>
+where
+    Value: From<T>,
+{
+    Rc::new(iter.into_iter().map(Value::from).collect())
 }

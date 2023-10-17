@@ -148,17 +148,18 @@ pub fn update_last_contact_for_targets(
     target_ids: &[TargetID],
     node_type: NodeTypeServer,
 ) -> rusqlite::Result<usize> {
+    let stmt = sql!(
+        r#"
+        UPDATE nodes AS n SET last_contact = DATETIME('now')
+        WHERE n.node_uid IN (
+            SELECT DISTINCT node_uid FROM all_targets_v WHERE target_id IN rarray(?1) AND node_type = ?2
+        )
+        "#
+    );
+
     tx.execute_cached(
-        &format!(
-            r#"
-            UPDATE nodes AS n SET last_contact = DATETIME('now')
-            WHERE n.node_uid IN (
-                SELECT DISTINCT node_uid FROM all_targets_v WHERE target_id IN ({}) AND node_type = ?1
-            )
-            "#,
-            target_ids.iter().join(",")
-        ),
-        [node_type],
+        stmt,
+        params![&rarray_param(target_ids.iter().copied()), node_type],
     )
 }
 

@@ -80,15 +80,18 @@ pub fn validate_ids(
     target_ids: &[TargetID],
     node_type: NodeTypeServer,
 ) -> Result<()> {
-    let count: usize = tx.query_row_cached(
-        &format!(
-            "SELECT COUNT(*) FROM {}_targets WHERE target_id IN ({}) ",
-            node_type.as_sql_str(),
-            target_ids.iter().join(",")
-        ),
-        [],
-        |row| row.get(0),
-    )?;
+    let stmt = match node_type {
+        NodeTypeServer::Meta => {
+            sql!("SELECT COUNT(*) FROM meta_targets WHERE target_id IN rarray(?1)")
+        }
+        NodeTypeServer::Storage => {
+            sql!("SELECT COUNT(*) FROM storage_targets WHERE target_id IN rarray(?1)")
+        }
+    };
+    let count: usize =
+        tx.query_row_cached(stmt, [&rarray_param(target_ids.iter().copied())], |row| {
+            row.get(0)
+        })?;
 
     match count.cmp(&target_ids.len()) {
         Ordering::Less => Err(anyhow!(TypedError::value_not_found(
@@ -222,11 +225,8 @@ pub fn update_storage_pools(
     target_ids: &[TargetID],
 ) -> Result<()> {
     let updated = tx.execute(
-        &format!(
-            "UPDATE storage_targets SET pool_id = ?1 WHERE target_id IN ({})",
-            target_ids.iter().join(",")
-        ),
-        [new_pool_id],
+        sql!("UPDATE storage_targets SET pool_id = ?1 WHERE target_id IN rarray(?2)"),
+        params![new_pool_id, &rarray_param(target_ids.iter().copied())],
     )?;
 
     if updated != target_ids.len() {

@@ -56,6 +56,7 @@ static DB_CONN: OnceLock<Arc<Mutex<rusqlite::Connection>>> = OnceLock::new();
 /// Set up an in memory SQLite database for testing
 fn open_db() -> Arc<Mutex<rusqlite::Connection>> {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
+    rusqlite::vtab::array::load_module(&conn).unwrap();
 
     // Setup test data
     conn.execute_batch(include_str!("../../src/db/schema/schema.sql"))

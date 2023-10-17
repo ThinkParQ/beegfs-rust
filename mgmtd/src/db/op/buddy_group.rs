@@ -83,13 +83,18 @@ pub fn validate_ids(
     buddy_group_ids: &[BuddyGroupID],
     node_type: NodeTypeServer,
 ) -> Result<()> {
+    let stmt = match node_type {
+        NodeTypeServer::Meta => {
+            sql!("SELECT COUNT(*) FROM meta_buddy_groups WHERE buddy_group_id IN rarray(?1)")
+        }
+        NodeTypeServer::Storage => {
+            sql!("SELECT COUNT(*) FROM storage_buddy_groups WHERE buddy_group_id IN rarray(?1)")
+        }
+    };
+
     let count: usize = tx.query_row_cached(
-        &format!(
-            "SELECT COUNT(*) FROM {}_buddy_groups WHERE buddy_group_id IN ({}) ",
-            node_type.as_sql_str(),
-            buddy_group_ids.iter().join(",")
-        ),
-        [],
+        stmt,
+        [&rarray_param(buddy_group_ids.iter().copied())],
         |row| row.get(0),
     )?;
 

@@ -107,12 +107,6 @@ pub enum CapacityPool {
     Emergency,
 }
 
-impl CapacityPool {
-    pub fn lowest(cap_pool_1: Self, cap_pool_2: Self) -> Self {
-        std::cmp::max(cap_pool_1, cap_pool_2)
-    }
-}
-
 impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
 impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
 
