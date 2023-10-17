@@ -1,6 +1,8 @@
 use super::*;
 
 /// Unmap a storage target.
+///
+/// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct UnmapTarget {
     pub target_id: TargetID,

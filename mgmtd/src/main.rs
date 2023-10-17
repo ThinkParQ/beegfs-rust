@@ -1,6 +1,6 @@
 use anyhow::Context;
 use mgmtd::config::LogTarget;
-use mgmtd::start;
+use mgmtd::{start, StaticInfo};
 use shared::types::AuthenticationSecret;
 use shared::{journald_logger, shutdown};
 use std::backtrace::Backtrace;
@@ -20,15 +20,15 @@ fn main() -> Result<(), i32> {
 ///
 /// The binary related setup is made here, before execution is passed to the actual app.
 fn inner_main() -> anyhow::Result<()> {
-    let (static_config, info_log) = mgmtd::config::load_and_parse()?;
+    let (user_config, info_log) = mgmtd::config::load_and_parse()?;
 
     // Initialize logging
-    match static_config.log_target {
+    match user_config.log_target {
         LogTarget::Std => Ok(env_logger::Builder::from_env(
-            env_logger::Env::default().default_filter_or(static_config.log_level.as_str()),
+            env_logger::Env::default().default_filter_or(user_config.log_level.as_str()),
         )
         .try_init()?),
-        LogTarget::Journald => journald_logger::init(static_config.log_level),
+        LogTarget::Journald => journald_logger::init(user_config.log_level),
     }
     .expect("Logger initialization failed");
 
@@ -38,17 +38,17 @@ fn inner_main() -> anyhow::Result<()> {
     }
 
     // If the user set --init, init the database and then exit
-    if static_config.init {
-        mgmtd::db::initialize(static_config.db_file.as_path())?;
+    if user_config.init {
+        mgmtd::db::initialize(user_config.db_file.as_path())?;
         println!("Database initialized");
         return Ok(());
     }
 
-    let auth_secret = if static_config.auth_enable {
-        let secret = std::fs::read(&static_config.auth_file).with_context(|| {
+    let auth_secret = if user_config.auth_enable {
+        let secret = std::fs::read(&user_config.auth_file).with_context(|| {
             format!(
                 "Could not open authentication file {:?}",
-                static_config.auth_file
+                user_config.auth_file
             )
         })?;
         Some(AuthenticationSecret::from_bytes(secret))
@@ -71,10 +71,20 @@ fn inner_main() -> anyhow::Result<()> {
         .thread_stack_size(16 * 1024 * 1024)
         .build()?;
 
+    let network_addrs = shared::ethernet_interfaces(&user_config.interfaces)?;
+
     // Run the tokio executor
     rt.block_on(async move {
         // Start the actual daemon
-        start(static_config, auth_secret, shutdown).await?;
+        start(
+            StaticInfo {
+                user_config,
+                auth_secret,
+                network_addrs,
+            },
+            shutdown,
+        )
+        .await?;
 
         // Mgmtds systemd unit is set to service type "notify". Here we send out the
         // notification that the service has completed startup and is ready for serving

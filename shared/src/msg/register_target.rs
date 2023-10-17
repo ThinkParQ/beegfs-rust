@@ -3,6 +3,8 @@ use super::*;
 /// Registers a new storage target.
 ///
 /// The new target is supposed to be mapped after using [MapTargets].
+///
+/// Used by storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterTarget {
     #[bee_serde(as = CStr<0>)]

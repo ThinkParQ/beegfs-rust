@@ -3,10 +3,12 @@ use super::*;
 /// Removes a buddy group from the system.
 ///
 /// Currently only supported for storage buddy groups, despite the field `node_type`.
+///
+/// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveBuddyGroup {
     #[bee_serde(as = Int<i32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
     pub buddy_group_id: BuddyGroupID,
     pub check_only: u8,
     pub force: u8,

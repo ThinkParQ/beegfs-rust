@@ -15,7 +15,7 @@ pub(super) async fn handle(msg: SetQuota, ctx: &Context, _req: &impl Request) ->
                 tx,
                 msg.quota_entry.into_iter().map(|e| {
                     (
-                        e.id_type,
+                        e.id_type.into(),
                         msg.pool_id,
                         SpaceAndInodeLimits {
                             quota_id: e.id,

@@ -1,7 +1,9 @@
 use super::*;
 pub use crate::msg::get_quota_info::QuotaEntry;
 
-/// Used by the server nodes to set quota usage information on the management
+/// Set the quota limits for a given storage pool.
+///
+/// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetQuota {
     pub pool_id: StoragePoolID,

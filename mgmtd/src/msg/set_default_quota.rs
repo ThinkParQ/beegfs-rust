@@ -1,6 +1,6 @@
 use super::*;
+use crate::types::QuotaType;
 use shared::msg::set_default_quota::{SetDefaultQuota, SetDefaultQuotaResp};
-use shared::types::QuotaType;
 
 pub(super) async fn handle(
     msg: SetDefaultQuota,
@@ -16,13 +16,16 @@ pub(super) async fn handle(
             }
 
             match msg.space {
-                0 => {
-                    db::quota_default_limit::delete(tx, msg.pool_id, msg.id_type, QuotaType::Space)?
-                }
+                0 => db::quota_default_limit::delete(
+                    tx,
+                    msg.pool_id,
+                    msg.id_type.into(),
+                    QuotaType::Space,
+                )?,
                 n => db::quota_default_limit::upsert(
                     tx,
                     msg.pool_id,
-                    msg.id_type,
+                    msg.id_type.into(),
                     QuotaType::Space,
                     n,
                 )?,
@@ -32,13 +35,13 @@ pub(super) async fn handle(
                 0 => db::quota_default_limit::delete(
                     tx,
                     msg.pool_id,
-                    msg.id_type,
+                    msg.id_type.into(),
                     QuotaType::Inodes,
                 )?,
                 n => db::quota_default_limit::upsert(
                     tx,
                     msg.pool_id,
-                    msg.id_type,
+                    msg.id_type.into(),
                     QuotaType::Inodes,
                     n,
                 )?,

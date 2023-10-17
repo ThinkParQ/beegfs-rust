@@ -1,6 +1,8 @@
 use super::*;
 
 /// Fetch default quota settings for the given storage pool
+///
+/// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetDefaultQuota {
     pub pool_id: StoragePoolID,

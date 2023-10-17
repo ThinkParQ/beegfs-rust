@@ -1,6 +1,8 @@
 use super::*;
 
 /// Fetches a mapping target ID to its owner node ID
+///
+/// Used by old ctl, fsck, meta, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetTargetMappings {}
 

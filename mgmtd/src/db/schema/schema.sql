@@ -89,6 +89,9 @@ CREATE TABLE node_nics (
     addr BLOB NOT NULL
         CHECK(LENGTH(addr) = 4),
     name TEXT NOT NULL
+        -- Nic names tend to contain null bytes which we don't want to be in our database.
+        -- This feels dirty, but I don't know any better way to check for that
+        CHECK(HEX(name) NOT LIKE "%00%")
 ) STRICT;
 
 CREATE TABLE targets (

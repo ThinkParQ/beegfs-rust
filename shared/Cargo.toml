@@ -17,8 +17,6 @@ bytes = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "~0"
 regex = "~1"
-# Rusqlite support is only needed when the SQlite impls are required => optional
-rusqlite = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -27,6 +25,3 @@ tokio = { workspace = true, features = [
     "time",
     "rt-multi-thread",
 ] }
-
-[features]
-rusqlite = ["dep:rusqlite"]

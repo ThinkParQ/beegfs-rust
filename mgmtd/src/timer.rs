@@ -3,10 +3,10 @@
 use crate::context::Context;
 use crate::db::{self};
 use crate::quota::update_and_distribute;
+use crate::types::NodeType;
 use shared::log_error_chain;
 use shared::msg::refresh_target_states::RefreshTargetStates;
 use shared::shutdown::Shutdown;
-use shared::types::NodeType;
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
@@ -23,7 +23,7 @@ pub(crate) fn start_tasks(ctx: Context, shutdown: Shutdown) {
 /// Deletes client nodes from the database which haven't responded for the configured time.
 async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
     loop {
-        let timeout = ctx.info.config.client_auto_remove_timeout;
+        let timeout = ctx.info.user_config.client_auto_remove_timeout;
 
         match ctx
             .db
@@ -50,7 +50,7 @@ async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
 async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
     loop {
-        if ctx.info.config.quota_enable {
+        if ctx.info.user_config.quota_enable {
             match update_and_distribute(&ctx).await {
                 Ok(_) => {}
                 Err(err) => log_error_chain!(err, "Updating quota failed"),
@@ -58,7 +58,7 @@ async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
         }
 
         tokio::select! {
-            _ = sleep(ctx.info.config.quota_update_interval) => {}
+            _ = sleep(ctx.info.user_config.quota_update_interval) => {}
             _ = shutdown.wait() => { break; }
         }
     }
@@ -77,7 +77,7 @@ async fn switchover(ctx: Context, mut shutdown: Shutdown) {
             _ = shutdown.wait() => { break; }
         }
 
-        let timeout = ctx.info.config.node_offline_timeout;
+        let timeout = ctx.info.user_config.node_offline_timeout;
 
         match ctx
             .db

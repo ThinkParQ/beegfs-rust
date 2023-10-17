@@ -9,7 +9,7 @@
 pub mod config;
 mod context;
 pub mod db;
-// mod grpc;
+mod grpc;
 mod msg;
 mod quota;
 mod timer;
@@ -18,19 +18,18 @@ mod types;
 use crate::config::Config;
 use crate::context::Context;
 use anyhow::Result;
-use shared::conn::incoming::{listen_tcp, recv_udp};
-use shared::conn::Pool;
+use shared::conn::{incoming, Pool};
 use shared::shutdown::Shutdown;
 use shared::types::AuthenticationSecret;
 use shared::NetworkAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::{TcpListener, UdpSocket};
+use tokio::net::UdpSocket;
 
 /// Contains information that is obtained at the start of the app and then never changes again.
 #[derive(Debug)]
-pub struct RuntimeInfo {
-    pub config: Config,
+pub struct StaticInfo {
+    pub user_config: Config,
     pub auth_secret: Option<AuthenticationSecret>,
     pub network_addrs: Vec<NetworkAddr>,
 }
@@ -45,37 +44,27 @@ pub struct RuntimeInfo {
 /// Returns after all setup work is done and all tasks are started. The caller is responsible for
 /// keeping the shutdown control handle and send a shutdown request when the program shall
 /// be terminated.
-pub async fn start(
-    config: Config,
-    auth_secret: Option<AuthenticationSecret>,
-    shutdown: Shutdown,
-) -> Result<()> {
+pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
     // Initialization
 
-    let network_interfaces = shared::ethernet_interfaces(config.interfaces.as_slice())?;
-
     // Static configuration which doesn't change at runtime
-    let info = Box::leak(Box::new(RuntimeInfo {
-        config,
-        auth_secret,
-        network_addrs: network_interfaces,
-    }));
+    let info = Box::leak(Box::new(info));
 
-    let db = db::Connection::open(info.config.db_file.as_path()).await?;
-
-    // TCP listener for incoming connections
-    let tcp_listener =
-        TcpListener::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.beegfs_port)).await?;
+    let db = db::Connection::open(info.user_config.db_file.as_path()).await?;
 
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(
-        UdpSocket::bind(SocketAddr::new("0.0.0.0".parse()?, info.config.beegfs_port)).await?,
+        UdpSocket::bind(SocketAddr::new(
+            "0.0.0.0".parse()?,
+            info.user_config.beegfs_port,
+        ))
+        .await?,
     );
 
     // Node address store and connection pool
     let conn_pool = Pool::new(
         udp_socket.clone(),
-        info.config.connection_limit,
+        info.user_config.connection_limit,
         info.auth_secret,
     );
 
@@ -89,21 +78,22 @@ pub async fn start(
     let ctx = Context::new(conn_pool, db, info);
 
     // Listen for incoming TCP connections
-    tokio::spawn(listen_tcp(
-        tcp_listener,
+    incoming::listen_tcp(
+        SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.beegfs_port),
         ctx.clone(),
         info.auth_secret.is_some(),
         shutdown.clone(),
-    ));
+    )
+    .await?;
 
     // Recv UDP datagrams
-    tokio::spawn(recv_udp(udp_socket, ctx.clone(), shutdown.clone()));
+    incoming::recv_udp(udp_socket, ctx.clone(), shutdown.clone())?;
 
     // Run the timers
     timer::start_tasks(ctx.clone(), shutdown.clone());
 
     // Start gRPC service
-    // tokio::spawn(grpc::serve(ctx, shutdown));
+    grpc::serve(ctx, shutdown)?;
 
     Ok(())
 }

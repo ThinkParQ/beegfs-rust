@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::TargetConsistencyState;
 use shared::msg::change_target_consistency_states::*;
 use shared::msg::refresh_target_states::RefreshTargetStates;
 
@@ -14,17 +15,24 @@ pub(super) async fn handle(
     match ctx
         .db
         .op(move |tx| {
+            let node_type = msg.node_type.try_into()?;
+
             // Check given target IDs exist
-            db::target::validate_ids(tx, &msg.target_ids, msg.node_type)?;
+            db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
             // Old management updates contact time while handling this message (comes usually in
             // every 30 seconds), so we do it as well
-            db::node::update_last_contact_for_targets(tx, &msg.target_ids, msg.node_type)?;
+            db::node::update_last_contact_for_targets(tx, &msg.target_ids, node_type)?;
 
             let affected = db::target::update_consistency_states(
                 tx,
-                msg.target_ids.into_iter().zip(msg.new_states),
-                msg.node_type,
+                msg.target_ids.into_iter().zip(
+                    msg.new_states
+                        .iter()
+                        .copied()
+                        .map(TargetConsistencyState::from),
+                ),
+                node_type,
             )?;
 
             Ok(affected > 0)

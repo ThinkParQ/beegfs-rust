@@ -1,10 +1,12 @@
 use super::*;
 
 /// Fetch buddy groups of the given node type
+///
+/// Used by old ctl, fsck, mon, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetMirrorBuddyGroups {
     #[bee_serde(as = Int<u32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
 }
 
 impl Msg for GetMirrorBuddyGroups {

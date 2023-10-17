@@ -11,8 +11,8 @@ documentation = "https://doc.beegfs.io"
 publish = false
 
 [dependencies]
-shared = { path = "../shared", features = ["rusqlite"]}
-# pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", branch = "main" }
+shared = { path = "../shared"}
+pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", branch = "main" }
 sql_check = { path = "sql_check"}
 
 anyhow = { workspace = true }
@@ -23,7 +23,7 @@ itertools = { workspace = true }
 libc = { version = "~0" }
 log = { workspace = true }
 prost = { workspace = true }
-rusqlite = { workspace = true }
+rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}
 sd-notify = "~0"
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }

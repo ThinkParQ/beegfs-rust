@@ -3,6 +3,8 @@ use super::*;
 /// Modifies an existing storage pool and adds/removes targets fromto/from this pool
 ///
 /// Targets removed shall be put into the default pool.
+///
+/// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModifyStoragePool {
     pub pool_id: StoragePoolID,

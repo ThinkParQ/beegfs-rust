@@ -4,10 +4,12 @@ use super::*;
 ///
 /// Some nodes receive this via UDP, therefore the msg has an AckID field. Similar to
 /// [SetTargetConsistencyStates].
+///
+/// Used by meta, storage, fsck, old ctl
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct ChangeTargetConsistencyStates {
     #[bee_serde(as = Int<i32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
     #[bee_serde(as = Seq<true, _>)]
     pub target_ids: Vec<TargetID>,
     #[bee_serde(as = Seq<true, _>)]

@@ -3,10 +3,12 @@ use super::*;
 /// Sets usage info for a target.
 ///
 /// Actually used for storage AND meta targets, despite the name.
+///
+/// Used by meta, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetStorageTargetInfo {
     #[bee_serde(as = Int<i32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
     #[bee_serde(as = Seq<false, _>)]
     pub info: Vec<TargetInfo>,
 }

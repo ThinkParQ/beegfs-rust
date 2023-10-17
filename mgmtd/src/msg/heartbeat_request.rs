@@ -16,8 +16,8 @@ pub(super) async fn handle(
         node_num_id: MGMTD_ID,
         root_num_id: 0,
         is_root_mirrored: 0,
-        port: ctx.info.config.beegfs_port,
-        port_tcp_unused: ctx.info.config.beegfs_port,
+        port: ctx.info.user_config.beegfs_port,
+        port_tcp_unused: ctx.info.user_config.beegfs_port,
         nic_list: ctx
             .info
             .network_addrs

@@ -7,44 +7,52 @@ use crate::msg::authenticate_channel::AuthenticateChannel;
 use crate::msg::Msg;
 use crate::shutdown::Shutdown;
 use anyhow::{bail, Result};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
 
 /// Listens for new TCP connections
 pub async fn listen_tcp(
-    listener: TcpListener,
+    listen_addr: SocketAddr,
     dispatch: impl DispatchRequest,
     stream_authentication_required: bool,
     mut shutdown: Shutdown,
-) {
-    loop {
-        tokio::select! {
-            res = listener.accept() => {
-                let (stream, _) = match res {
-                    Ok(res) => res,
-                    Err(err) => {
-                        log::error!("Accepting TCP connection failed: {err:#}");
-                        continue;
-                    }
-                };
+) -> Result<()> {
+    let listener = TcpListener::bind(listen_addr).await?;
+    log::info!("Listening for BeeGFS connections on {listen_addr}");
 
-                // BeeGFS streams follow a "request-response" schema: A request is made using one
-                // stream and the following response comes back using the same stream. The stream
-                // is blocked during that and not used for anything else. Therefore, we just handle
-                // reading from each stream in a separate task that is also used for
-                // (de-)serializing, processing the request and sending the response.
-                tokio::spawn(new_stream(
-                    stream.into(),
-                    dispatch.clone(),
-                    stream_authentication_required,
-                ));
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                res = listener.accept() => {
+                    let (stream, _) = match res {
+                        Ok(res) => res,
+                        Err(err) => {
+                            log::error!("Accepting TCP connection failed: {err:#}");
+                            continue;
+                        }
+                    };
+
+                    // BeeGFS streams follow a "request-response" schema: A request is made using one
+                    // stream and the following response comes back using the same stream. The stream
+                    // is blocked during that and not used for anything else. Therefore, we just handle
+                    // reading from each stream in a separate task that is also used for
+                    // (de-)serializing, processing the request and sending the response.
+                    tokio::spawn(new_stream(
+                        stream.into(),
+                        dispatch.clone(),
+                        stream_authentication_required,
+                    ));
+                }
+
+                _ = shutdown.wait() =>{ break; }
             }
-
-            _ = shutdown.wait() =>{ break; }
         }
-    }
 
-    log::debug!("TCP listener task has been shut down: {listener:?}")
+        log::debug!("TCP listener task has been shut down: {listener:?}")
+    });
+
+    Ok(())
 }
 
 /// Handles an incoming stream
@@ -108,25 +116,31 @@ async fn read_stream(
 }
 
 /// Receives datagrams from a UDP socket
-pub async fn recv_udp(
+pub fn recv_udp(
     sock: Arc<UdpSocket>,
     dispatch: impl DispatchRequest,
     mut shutdown: Shutdown,
-) {
-    loop {
-        tokio::select! {
-            res = recv_datagram(sock.clone(), dispatch.clone()) => {
-                if let Err(err) = res {
-                    log::error!("Error in UDP socket {sock:?}: {err:#}");
-                    break;
+) -> Result<()> {
+    log::info!("Receiving BeeGFS datagrams on {}", sock.local_addr()?);
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                res = recv_datagram(sock.clone(), dispatch.clone()) => {
+                    if let Err(err) = res {
+                        log::error!("Error in UDP socket {sock:?}: {err:#}");
+                        break;
+                    }
                 }
+
+                _ = shutdown.wait() => { break; }
             }
-
-            _ = shutdown.wait() => { break; }
         }
-    }
 
-    log::debug!("UDP receiver task has been shut down: {sock:?}")
+        log::debug!("UDP receiver task has been shut down: {sock:?}")
+    });
+
+    Ok(())
 }
 
 /// Receives a datagram and forwards it to the dispatcher

@@ -4,6 +4,8 @@ pub use crate::msg::get_nodes::Nic;
 /// Registers a new node with the given information.
 ///
 /// Similar to [Heartbeat]
+///
+/// Used by client, meta, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterNode {
     /// Unused

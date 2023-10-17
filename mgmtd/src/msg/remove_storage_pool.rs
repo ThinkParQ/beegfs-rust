@@ -1,7 +1,7 @@
 use super::*;
 use shared::msg::refresh_storage_pools::RefreshStoragePools;
 use shared::msg::remove_storage_pool::{RemoveStoragePool, RemoveStoragePoolResp};
-use shared::types::{NodeType, DEFAULT_STORAGE_POOL};
+use shared::types::DEFAULT_STORAGE_POOL;
 
 pub(super) async fn handle(
     msg: RemoveStoragePool,

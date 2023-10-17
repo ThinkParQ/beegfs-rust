@@ -1,7 +1,6 @@
 use super::*;
 use shared::msg::refresh_capacity_pools::RefreshCapacityPools;
 use shared::msg::set_mirror_buddy_group::{SetMirrorBuddyGroup, SetMirrorBuddyGroupResp};
-use shared::types::NodeType;
 
 pub(super) async fn handle(
     msg: SetMirrorBuddyGroup,
@@ -11,8 +10,10 @@ pub(super) async fn handle(
     match ctx
         .db
         .op(move |tx| {
+            let node_type = msg.node_type.try_into()?;
+
             // Check buddy group doesn't exist
-            if db::buddy_group::get_uid(tx, msg.buddy_group_id, msg.node_type)?.is_some() {
+            if db::buddy_group::get_uid(tx, msg.buddy_group_id, node_type)?.is_some() {
                 bail!(TypedError::value_exists(
                     "buddy group ID",
                     msg.buddy_group_id
@@ -23,7 +24,7 @@ pub(super) async fn handle(
             db::target::validate_ids(
                 tx,
                 &[msg.primary_target_id, msg.secondary_target_id],
-                msg.node_type,
+                node_type,
             )?;
 
             db::buddy_group::insert(
@@ -33,7 +34,7 @@ pub(super) async fn handle(
                 } else {
                     Some(msg.buddy_group_id)
                 },
-                msg.node_type,
+                node_type,
                 msg.primary_target_id,
                 msg.secondary_target_id,
             )

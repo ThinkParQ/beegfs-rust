@@ -1,7 +1,6 @@
 use super::*;
 use shared::msg::refresh_capacity_pools::RefreshCapacityPools;
 use shared::msg::unmap_target::{UnmapTarget, UnmapTargetResp};
-use shared::types::{NodeType, NodeTypeServer};
 
 pub(super) async fn handle(
     msg: UnmapTarget,

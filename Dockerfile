@@ -6,7 +6,6 @@ COPY . .
 RUN cargo update
 RUN apt update && apt install sqlite3
 RUN cargo build --release --bin mgmtd
-RUN cargo build --release --bin ctl
 
 RUN echo "shared_secret" > /auth_file
 RUN mkdir -p /var/lib/beegfs

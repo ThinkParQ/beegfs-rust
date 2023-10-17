@@ -18,8 +18,8 @@ pub(super) async fn handle(
                 } else {
                     PoolOrTargetID::TargetID(msg.target_id)
                 },
-                msg.id_type,
-                msg.quota_type,
+                msg.id_type.into(),
+                msg.quota_type.into(),
             )?;
 
             Ok(SetExceededQuota {

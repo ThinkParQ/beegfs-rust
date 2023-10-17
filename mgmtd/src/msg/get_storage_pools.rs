@@ -1,3 +1,4 @@
+use super::get_node_capacity_pools::map_cap_pool_to_index;
 use super::*;
 use shared::msg::get_storage_pools::{
     BuddyGroupCapacityPools, GetStoragePools, GetStoragePoolsResp, StoragePool, TargetCapacityPools,
@@ -10,7 +11,7 @@ pub(super) async fn handle(
     _req: &impl Request,
 ) -> GetStoragePoolsResp {
     let pools = match async move {
-        let config = &ctx.info.config;
+        let config = &ctx.info.user_config;
 
         let (targets, pools, buddy_groups) = ctx
             .db
@@ -52,7 +53,7 @@ pub(super) async fn handle(
 
                 // Only collect targets belonging to the current pool
                 for target in targets.iter().filter(|t| t.pool_id == pool.pool_id) {
-                    let cap_pool_i: usize = target.cap_pool.into();
+                    let cap_pool_i = map_cap_pool_to_index(target.cap_pool);
                     let target_id: TargetID = target.entity_id;
 
                     target_map.insert(target_id, target.node_id);
@@ -71,7 +72,8 @@ pub(super) async fn handle(
                 // Only collect buddy groups belonging to the current pool
                 for group in buddy_groups.iter().filter(|g| g.pool_id == pool.pool_id) {
                     buddy_group_vec.push(group.entity_id);
-                    buddy_group_cap_pools[usize::from(group.cap_pool)].push(group.entity_id);
+                    buddy_group_cap_pools[map_cap_pool_to_index(group.cap_pool)]
+                        .push(group.entity_id);
                 }
 
                 Ok(StoragePool {

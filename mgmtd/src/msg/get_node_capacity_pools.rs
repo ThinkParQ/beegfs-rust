@@ -1,6 +1,8 @@
 use super::*;
+use crate::types::CapacityPool;
 use shared::msg::get_node_capacity_pools::{
-    CapacityPoolQueryType, GetNodeCapacityPools, GetNodeCapacityPoolsResp,
+    CapacityPool as MsgCapacityPool, CapacityPoolQueryType, GetNodeCapacityPools,
+    GetNodeCapacityPoolsResp,
 };
 use shared::types::StoragePoolID;
 
@@ -13,7 +15,7 @@ pub(super) async fn handle(
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
         // either a NodeNUmID, TargetNumID or BuddyGroupID
 
-        let config = &ctx.info.config;
+        let config = &ctx.info.user_config;
 
         let result: HashMap<StoragePoolID, Vec<Vec<u16>>> = match msg.query_type {
             CapacityPoolQueryType::Meta => {
@@ -31,7 +33,7 @@ pub(super) async fn handle(
                 let mut target_cap_pools = vec![Vec::<u16>::new(), vec![], vec![]];
 
                 for t in res {
-                    target_cap_pools[usize::from(t.cap_pool)].push(t.entity_id);
+                    target_cap_pools[map_cap_pool_to_index(t.cap_pool)].push(t.entity_id);
                 }
 
                 [(0, target_cap_pools)].into()
@@ -51,10 +53,10 @@ pub(super) async fn handle(
                 let mut group_cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
                 for t in res {
                     if let Some(pool_groups) = group_cap_pools.get_mut(&t.pool_id) {
-                        pool_groups[usize::from(t.cap_pool)].push(t.entity_id);
+                        pool_groups[map_cap_pool_to_index(t.cap_pool)].push(t.entity_id);
                     } else {
                         let mut pool_groups = [vec![], vec![], vec![]];
-                        pool_groups[usize::from(t.cap_pool)].push(t.entity_id);
+                        pool_groups[map_cap_pool_to_index(t.cap_pool)].push(t.entity_id);
                         group_cap_pools.insert(t.pool_id, pool_groups.into());
                     }
                 }
@@ -76,7 +78,7 @@ pub(super) async fn handle(
 
                 let mut group_cap_pools = vec![Vec::<u16>::new(), vec![], vec![]];
                 for g in res {
-                    group_cap_pools[usize::from(g.cap_pool)].push(g.entity_id);
+                    group_cap_pools[map_cap_pool_to_index(g.cap_pool)].push(g.entity_id);
                 }
 
                 [(0, group_cap_pools)].into()
@@ -97,10 +99,10 @@ pub(super) async fn handle(
                 let mut group_cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
                 for g in res {
                     if let Some(pool_groups) = group_cap_pools.get_mut(&g.pool_id) {
-                        pool_groups[usize::from(g.cap_pool)].push(g.entity_id);
+                        pool_groups[map_cap_pool_to_index(g.cap_pool)].push(g.entity_id);
                     } else {
                         let mut pool_groups = [vec![], vec![], vec![]];
-                        pool_groups[usize::from(g.cap_pool)].push(g.entity_id);
+                        pool_groups[map_cap_pool_to_index(g.cap_pool)].push(g.entity_id);
                         group_cap_pools.insert(g.pool_id, pool_groups.into());
                     }
                 }
@@ -126,4 +128,12 @@ pub(super) async fn handle(
     };
 
     GetNodeCapacityPoolsResp { pools }
+}
+
+pub(super) fn map_cap_pool_to_index(pool: CapacityPool) -> usize {
+    match pool {
+        CapacityPool::Normal => MsgCapacityPool::Normal.into(),
+        CapacityPool::Low => MsgCapacityPool::Low.into(),
+        CapacityPool::Emergency => MsgCapacityPool::Emergency.into(),
+    }
 }

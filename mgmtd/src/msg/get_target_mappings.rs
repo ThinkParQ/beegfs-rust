@@ -1,6 +1,6 @@
 use super::*;
+use crate::types::NodeTypeServer;
 use shared::msg::get_target_mappings::{GetTargetMappings, GetTargetMappingsResp};
-use shared::types::NodeTypeServer;
 
 pub(super) async fn handle(
     _msg: GetTargetMappings,

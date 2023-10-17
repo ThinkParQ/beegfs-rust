@@ -3,6 +3,8 @@ use anyhow::bail;
 use std::net::Ipv4Addr;
 
 /// Fetch all nodes of the given type
+///
+/// Used by old ctl, fsck, meta, mon, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetNodes {
     #[bee_serde(as = Int<u32>)]
@@ -75,13 +77,16 @@ impl BeeSerde for Nic {
     }
 
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        let s = Self {
+        let mut s = Self {
             addr: des.u32()?.to_le_bytes().into(),
             name: des.bytes(16)?,
             nic_type: des.u8()?.try_into()?,
         };
 
         des.skip(3)?;
+
+        // This is filled up with null bytes, which we don't want to deal with - we remove them
+        s.name.retain(|b| b != &0);
 
         Ok(s)
     }

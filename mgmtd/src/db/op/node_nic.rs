@@ -80,7 +80,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[N
 
 #[derive(Debug)]
 pub struct ReplaceNic<'a> {
-    pub nic_type: &'a NicType,
+    pub nic_type: NicType,
     pub addr: &'a Ipv4Addr,
     pub name: &'a str,
 }
@@ -138,7 +138,7 @@ mod test {
                 [ReplaceNic {
                     addr: &Ipv4Addr::new(1, 2, 3, 4),
                     name: "test",
-                    nic_type: &NicType::Ethernet,
+                    nic_type: NicType::Ethernet,
                 }],
             )
             .unwrap();

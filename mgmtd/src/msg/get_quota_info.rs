@@ -27,21 +27,24 @@ pub(super) async fn handle(
                     tx,
                     msg.id_range_start..=msg.id_range_start,
                     msg.pool_id,
-                    msg.id_type,
+                    msg.id_type.into(),
                 )?,
                 QuotaQueryType::Range => db::quota_limit::with_quota_id_range(
                     tx,
                     msg.id_range_start..=msg.id_range_end,
                     msg.pool_id,
-                    msg.id_type,
+                    msg.id_type.into(),
                 )?,
-                QuotaQueryType::List => {
-                    db::quota_limit::with_quota_id_list(tx, msg.id_list, msg.pool_id, msg.id_type)?
-                }
+                QuotaQueryType::List => db::quota_limit::with_quota_id_list(
+                    tx,
+                    msg.id_list,
+                    msg.pool_id,
+                    msg.id_type.into(),
+                )?,
                 QuotaQueryType::All => {
                     // This is actually unused on the old ctl side, if --all is provided, it sends a
                     // list
-                    db::quota_limit::all(tx, msg.pool_id, msg.id_type)?
+                    db::quota_limit::all(tx, msg.pool_id, msg.id_type.into())?
                 }
             };
 

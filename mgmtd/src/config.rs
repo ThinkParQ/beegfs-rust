@@ -24,6 +24,9 @@ pub struct Config {
     pub init: bool,
     pub beegfs_port: Port,
     pub grpc_port: Port,
+    pub grpc_tls_enable: bool,
+    pub tls_cert_file: PathBuf,
+    pub tls_key_file: PathBuf,
     pub interfaces: Vec<String>,
     pub connection_limit: usize,
     pub db_file: PathBuf,
@@ -64,6 +67,9 @@ impl Default for Config {
             init: false,
             beegfs_port: 8008,
             grpc_port: 8010,
+            grpc_tls_enable: true,
+            tls_cert_file: "/etc/beegfs/mgmtd.pem".into(),
+            tls_key_file: "/etc/beegfs/mgmtd.key".into(),
             interfaces: vec![],
             connection_limit: 12,
             db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
@@ -129,6 +135,16 @@ struct CommandLineArgs {
     /// Sets the gRPC port (TCP) to listen on [default: 8010]
     #[arg(long)]
     grpc_port: Option<Port>,
+    /// Enables TLS for gRPC communication [default: true]
+    #[arg(long)]
+    grpc_tls_enable: Option<bool>,
+    /// The PEM encoded .X509 certificate file that provides the identity of the gRPC server
+    /// [default: /etc/beegfs/mgmtd.pem]
+    #[arg(long)]
+    tls_cert_file: Option<PathBuf>,
+    /// The private key file belonging to the above certificate [default: /etc/beegfs/mgmtd.key]
+    #[arg(long)]
+    tls_key_file: Option<PathBuf>,
     /// Network interfaces reported to other nodes for incoming communication
     ///
     /// Can be specified multiple times. If not given, all suitable interfaces
@@ -178,6 +194,9 @@ struct CommandLineArgs {
 struct ConfigFileArgs {
     beegfs_port: Option<Port>,
     grpc_port: Option<Port>,
+    grpc_tls_enable: Option<bool>,
+    tls_cert_file: Option<PathBuf>,
+    tls_key_file: Option<PathBuf>,
     interfaces: Option<Vec<String>>,
     connection_limit: Option<usize>,
     db_file: Option<PathBuf>,
@@ -218,8 +237,17 @@ impl Config {
         if let Some(v) = args.beegfs_port {
             self.beegfs_port = v;
         }
+        if let Some(v) = args.grpc_tls_enable {
+            self.grpc_tls_enable = v;
+        }
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;
+        }
+        if let Some(v) = args.tls_cert_file {
+            self.tls_cert_file = v;
+        }
+        if let Some(v) = args.tls_key_file {
+            self.tls_key_file = v;
         }
         if let Some(v) = args.interfaces {
             self.interfaces = v;
@@ -254,6 +282,15 @@ impl Config {
         }
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;
+        }
+        if let Some(v) = args.grpc_tls_enable {
+            self.grpc_tls_enable = v;
+        }
+        if let Some(v) = args.tls_cert_file {
+            self.tls_cert_file = v;
+        }
+        if let Some(v) = args.tls_key_file {
+            self.tls_key_file = v;
         }
         if let Some(v) = args.interfaces {
             self.interfaces = v;

@@ -1,6 +1,18 @@
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CapacityPool {
+    Normal,
+    Low,
+    Emergency,
+}
+
+// Defines which pool maps to which index in the repsonse below
+impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
+
 /// Fetches node capacity pools of the given type for all targets / groups.
+///
+/// Used by ctl, meta
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetNodeCapacityPools {
     #[bee_serde(as = Int<i32>)]

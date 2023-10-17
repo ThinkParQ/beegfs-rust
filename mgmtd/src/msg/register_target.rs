@@ -7,7 +7,7 @@ pub(super) async fn handle(
     _req: &impl Request,
 ) -> RegisterTargetResp {
     match async move {
-        if !ctx.info.config.registration_enable {
+        if !ctx.info.user_config.registration_enable {
             bail!("Registration of new targets is not allowed");
         }
 

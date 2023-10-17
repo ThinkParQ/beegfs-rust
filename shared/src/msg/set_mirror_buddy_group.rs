@@ -1,10 +1,12 @@
 use super::*;
 
 /// Adds a new buddy group or notifies the nodes via UDP that there is a new buddy group
+///
+/// Used by old ctl, self
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetMirrorBuddyGroup {
     #[bee_serde(as = Int<u32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
     pub primary_target_id: TargetID,
     pub secondary_target_id: TargetID,
     pub buddy_group_id: BuddyGroupID,

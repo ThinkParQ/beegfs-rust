@@ -24,7 +24,7 @@ pub(super) async fn handle(
                         },
                     )
                 }),
-                msg.node_type,
+                msg.node_type.try_into()?,
             )
         })
         .await

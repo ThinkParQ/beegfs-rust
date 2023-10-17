@@ -6,12 +6,12 @@
 use crate::context::Context;
 use crate::db;
 use crate::db::TypedError;
+use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{bail, Result};
 use shared::conn::msg_dispatch::*;
 use shared::log_error_chain;
 use shared::msg::generic_response::{GenericResponse, TRY_AGAIN};
 use shared::msg::{Msg, OpsErr};
-use shared::types::NodeType;
 use std::collections::HashMap;
 
 mod ack;

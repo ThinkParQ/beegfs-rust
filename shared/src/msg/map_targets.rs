@@ -1,6 +1,8 @@
 use super::*;
 
 /// Maps targets to owning nodes
+///
+/// Used by old ctl, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct MapTargets {
     #[bee_serde(as = Map<false, _, _>)]

@@ -1,7 +1,7 @@
 use super::*;
+use crate::types::{EntityType, NodeType, NodeTypeServer};
 use shared::msg::add_storage_pool::*;
 use shared::msg::refresh_storage_pools::RefreshStoragePools;
-use shared::types::{EntityType, NodeType, NodeTypeServer};
 
 pub(super) async fn handle(
     msg: AddStoragePool,

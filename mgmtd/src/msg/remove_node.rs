@@ -1,12 +1,12 @@
 use super::*;
+use crate::types::NodeType;
 use shared::msg::remove_node::{RemoveNode, RemoveNodeResp};
-use shared::types::NodeType;
 
 pub(super) async fn handle(msg: RemoveNode, ctx: &Context, _req: &impl Request) -> RemoveNodeResp {
     match ctx
         .db
         .op(move |tx| {
-            let node_uid = db::node::get_uid(tx, msg.node_id, msg.node_type)?
+            let node_uid = db::node::get_uid(tx, msg.node_id, msg.node_type.try_into()?)?
                 .ok_or_else(|| TypedError::value_not_found("node ID", msg.node_id))?;
 
             db::node::delete(tx, node_uid)?;
@@ -21,8 +21,10 @@ pub(super) async fn handle(msg: RemoveNode, ctx: &Context, _req: &impl Request) 
             notify_nodes(
                 ctx,
                 match msg.node_type {
-                    NodeType::Meta => &[NodeType::Meta, NodeType::Client],
-                    NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                    shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+                    shared::types::NodeType::Storage => {
+                        &[NodeType::Meta, NodeType::Storage, NodeType::Client]
+                    }
                     _ => &[],
                 },
                 &RemoveNode {

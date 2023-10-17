@@ -1,3 +1,4 @@
+use super::get_target_states::calc_reachability_state;
 use super::*;
 use shared::msg::get_states_and_buddy_groups::{
     BuddyGroup, CombinedTargetState, GetStatesAndBuddyGroups, GetStatesAndBuddyGroupsResp,
@@ -11,8 +12,10 @@ pub(super) async fn handle(
     match ctx
         .db
         .op(move |tx| {
-            let targets = db::target::get_with_type(tx, msg.node_type)?;
-            let groups = db::buddy_group::get_with_type(tx, msg.node_type)?;
+            let node_type = msg.node_type.try_into()?;
+
+            let targets = db::target::get_with_type(tx, node_type)?;
+            let groups = db::buddy_group::get_with_type(tx, node_type)?;
 
             Ok((targets, groups))
         })
@@ -25,11 +28,11 @@ pub(super) async fn handle(
                     (
                         e.target_id,
                         CombinedTargetState {
-                            reachability: db::misc::calc_reachability_state(
+                            reachability: calc_reachability_state(
                                 e.last_contact,
-                                ctx.info.config.node_offline_timeout,
+                                ctx.info.user_config.node_offline_timeout,
                             ),
-                            consistency: e.consistency,
+                            consistency: e.consistency.into(),
                         },
                     )
                 })

@@ -8,7 +8,7 @@ pub(super) async fn handle(
 ) -> GetMirrorBuddyGroupsResp {
     match ctx
         .db
-        .op(move |tx| db::buddy_group::get_with_type(tx, msg.node_type))
+        .op(move |tx| db::buddy_group::get_with_type(tx, msg.node_type.try_into()?))
         .await
     {
         Ok(groups) => {

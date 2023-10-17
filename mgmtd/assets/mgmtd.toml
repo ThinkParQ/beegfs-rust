@@ -13,6 +13,18 @@
 # TCP/UDP port to listen for incoming connections / messages
 # port = 8008
 
+# Sets the gRPC port (TCP) to listen on
+# grpc_port = 8010
+
+# Enables TLS for gRPC communication
+# grpc_tls_enable = true
+
+# The PEM encoded .X509 certificate file that provides the identity of the gRPC server
+# tls_cert_file = /etc/beegfs/mgmtd.pem
+
+# The private key file belonging to the above certificate
+# tls_key_file = /etc/beegfs/mgmtd.key
+
 # Network interfaces reported to other nodes. 
 # interfaces = ["eth0", "eth1"]
 

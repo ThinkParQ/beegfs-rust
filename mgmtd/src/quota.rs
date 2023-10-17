@@ -4,12 +4,13 @@ use crate::context::Context;
 use crate::db;
 use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
+use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use shared::log_error_chain;
 use shared::msg::get_quota_info::{GetQuotaInfo, GetQuotaInfoResp};
 use shared::msg::set_exceeded_quota::{SetExceededQuota, SetExceededQuotaResp};
 use shared::msg::OpsErr;
-use shared::types::{NodeType, NodeTypeServer, QuotaID};
+use shared::types::QuotaID;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -33,7 +34,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
     // If configured, add system User IDS
-    let user_ids_min = ctx.info.config.quota_user_system_ids_min;
+    let user_ids_min = ctx.info.user_config.quota_user_system_ids_min;
 
     if let Some(user_ids_min) = user_ids_min {
         system_ids::user_ids()
@@ -45,7 +46,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     }
 
     // If configured, add system Group IDS
-    let group_ids_min = ctx.info.config.quota_group_system_ids_min;
+    let group_ids_min = ctx.info.user_config.quota_group_system_ids_min;
 
     if let Some(group_ids_min) = group_ids_min {
         system_ids::group_ids()
@@ -57,22 +58,22 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     }
 
     // If configured, add user IDs from file
-    if let Some(ref path) = ctx.info.config.quota_user_ids_file {
+    if let Some(ref path) = ctx.info.user_config.quota_user_ids_file {
         try_read_quota_ids(path, &mut user_ids)?;
     }
 
     // If configured, add group IDs from file
-    if let Some(ref path) = ctx.info.config.quota_group_ids_file {
+    if let Some(ref path) = ctx.info.user_config.quota_group_ids_file {
         try_read_quota_ids(path, &mut group_ids)?;
     }
 
     // If configured, add range based user IDs
-    if let Some(range) = &ctx.info.config.quota_user_ids_range {
+    if let Some(range) = &ctx.info.user_config.quota_user_ids_range {
         user_ids.extend(range.clone().map(QuotaID::from));
     }
 
     // If configured, add range based group IDs
-    if let Some(range) = &ctx.info.config.quota_group_ids_range {
+    if let Some(range) = &ctx.info.user_config.quota_group_ids_range {
         group_ids.extend(range.clone().map(QuotaID::from));
     }
 
@@ -148,7 +149,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
                         target_id,
                         r.quota_entry.into_iter().map(|e| QuotaData {
                             quota_id: e.id,
-                            id_type: e.id_type,
+                            id_type: e.id_type.into(),
                             space: e.space,
                             inodes: e.inodes,
                         }),
@@ -163,8 +164,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     for e in ctx.db.op(db::quota_usage::all_exceeded_quota_ids).await? {
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
-                && e.id_type == last.id_type
-                && e.quota_type == last.quota_type
+                && e.id_type == last.id_type.into()
+                && e.quota_type == last.quota_type.into()
             {
                 last.exceeded_quota_ids.push(e.quota_id);
                 continue;
@@ -173,8 +174,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 
         msges.push(SetExceededQuota {
             pool_id: e.pool_id,
-            id_type: e.id_type,
-            quota_type: e.quota_type,
+            id_type: e.id_type.into(),
+            quota_type: e.quota_type.into(),
             exceeded_quota_ids: vec![e.quota_id],
         });
     }

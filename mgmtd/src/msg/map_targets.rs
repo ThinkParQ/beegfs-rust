@@ -1,6 +1,6 @@
 use super::*;
+use crate::types::{NodeType, NodeTypeServer};
 use shared::msg::map_targets::{MapTargets, MapTargetsResp};
-use shared::types::{NodeType, NodeTypeServer};
 
 pub(super) async fn handle(msg: MapTargets, ctx: &Context, _req: &impl Request) -> MapTargetsResp {
     let target_ids = msg.target_ids.keys().copied().collect::<Vec<_>>();

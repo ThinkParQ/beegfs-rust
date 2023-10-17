@@ -1,10 +1,12 @@
 use super::*;
 
 /// Fetches a mapping target ID to target states
+///
+/// Used by old ctl, fsck, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetTargetStates {
     #[bee_serde(as = Int<i32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
 }
 
 impl Msg for GetTargetStates {
@@ -26,4 +28,28 @@ pub struct GetTargetStatesResp {
 
 impl Msg for GetTargetStatesResp {
     const ID: MsgID = 1050;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TargetReachabilityState {
+    #[default]
+    Online,
+    ProbablyOffline,
+    Offline,
+}
+
+impl_enum_to_int!(TargetReachabilityState,
+    Online => 0,
+    ProbablyOffline => 1,
+    Offline => 2
+);
+
+impl BeeSerde for TargetReachabilityState {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        ser.u8((*self).into())
+    }
+
+    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
+        des.u8()?.try_into()
+    }
 }

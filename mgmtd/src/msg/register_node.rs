@@ -1,9 +1,10 @@
 use super::*;
 use crate::db::node_nic::ReplaceNic;
+use crate::types::{EntityType, NodeType};
 use db::misc::MetaRoot;
 use shared::msg::heartbeat::Heartbeat;
 use shared::msg::register_node::{RegisterNode, RegisterNodeResp};
-use shared::types::{EntityType, NodeID, NodeType};
+use shared::types::NodeID;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -29,13 +30,14 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
             .db
             .op(move |tx| {
                 let alias = &std::str::from_utf8(&msg.node_alias)?;
+                let node_type = msg.node_type.try_into()?;
 
                 let node_uid = if msg.node_id == 0 {
                     // No node ID given => new node
                     None
                 } else {
                     // If Some is returned, the node with node_id already exists
-                    db::node::get_uid(tx, msg.node_id, msg.node_type)?
+                    db::node::get_uid(tx, msg.node_id, node_type)?
                 };
 
                 let (node_id, node_uid) = if let Some(node_uid) = node_uid {
@@ -48,7 +50,7 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
                     // New node, do additional checks and insert data
 
                     // Check node registration is allowed
-                    if !info.config.registration_enable {
+                    if !info.user_config.registration_enable {
                         bail!("Registration of new nodes is not allowed");
                     }
 
@@ -62,7 +64,7 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
                     let node_id = if msg.node_id == 0 {
                         db::misc::find_new_id(
                             tx,
-                            &format!("{}_nodes", msg.node_type.as_sql_str()),
+                            &format!("{}_nodes", node_type.as_sql_str()),
                             "node_id",
                             1..=0xFFFF,
                         )?
@@ -72,13 +74,13 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
 
                     // Insert new entity and node entry
                     let node_uid = db::entity::insert(tx, EntityType::Node, alias)?;
-                    db::node::insert(tx, node_id, node_uid, msg.node_type, msg.port)?;
+                    db::node::insert(tx, node_id, node_uid, node_type, msg.port)?;
 
                     // if this is a meta node, auto-add a corresponding meta target after the node.
                     // This is required because currently the rest of BeeGFS
                     // doesn't know about meta targets and expects exactly one
                     // meta target per meta node (with the same ID)
-                    if msg.node_type == NodeType::Meta {
+                    if node_type == NodeType::Meta {
                         db::target::insert_meta(tx, node_id, &format!("{alias}_target"))?;
                     }
 
@@ -90,7 +92,7 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
                     tx,
                     node_uid,
                     msg.nics.iter().map(|e| ReplaceNic {
-                        nic_type: &e.nic_type,
+                        nic_type: e.nic_type.into(),
                         addr: &e.addr,
                         name: std::str::from_utf8(&e.name).unwrap_or("INVALID_UTF8"),
                     }),
@@ -99,7 +101,7 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
                 Ok((
                     node_uid,
                     node_id,
-                    match msg.node_type {
+                    match node_type {
                         // In case this is a meta node, the requestor expects info about the meta
                         // root
                         NodeType::Meta => db::misc::get_meta_root(tx)?,
@@ -134,9 +136,11 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
             notify_nodes(
                 ctx,
                 match msg.node_type {
-                    NodeType::Meta => &[NodeType::Meta, NodeType::Client],
-                    NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                    NodeType::Client => &[NodeType::Meta],
+                    shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+                    shared::types::NodeType::Storage => {
+                        &[NodeType::Meta, NodeType::Storage, NodeType::Client]
+                    }
+                    shared::types::NodeType::Client => &[NodeType::Meta],
                     _ => &[],
                 },
                 &Heartbeat {

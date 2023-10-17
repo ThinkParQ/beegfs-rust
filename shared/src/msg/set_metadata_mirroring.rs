@@ -1,6 +1,8 @@
 use super::*;
 
 /// Enables a metadata mirrored system
+///
+/// Used by old ctl and self
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetMetadataMirroring {}
 

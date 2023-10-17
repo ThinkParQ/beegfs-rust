@@ -1,6 +1,8 @@
 use super::*;
 
 /// Adds a new storage pool and moves the specified entities to that pool.
+///
+/// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct AddStoragePool {
     pub pool_id: StoragePoolID,

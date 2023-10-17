@@ -1,10 +1,13 @@
+use super::get_target_states::TargetReachabilityState;
 use super::*;
 
 /// Fetches a buddy group ids with their assigned targets and target ids with their states
+///
+/// Used by old ctl, meta, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetStatesAndBuddyGroups {
     #[bee_serde(as = Int<u32>)]
-    pub node_type: NodeTypeServer,
+    pub node_type: NodeType,
 }
 
 impl Msg for GetStatesAndBuddyGroups {

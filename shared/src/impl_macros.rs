@@ -39,49 +39,26 @@ macro_rules! impl_enum_to_int {
     };
 }
 
-/// Implements SQLite support for an enum (without data) by converting its variants into strings.
-///
-/// The enum can then be used as parameter for a TEXT column.
-macro_rules! impl_enum_to_sql_str {
-    ($type:ty, $($variant:ident => $text:literal),+ $(,)?) => {
-
-        #[cfg(feature = "rusqlite")]
-        impl $type {
-            pub fn as_sql_str(&self) -> &'static str {
-                match self {
+/// Auto-implements From traits for two enums to convert back and forth
+#[macro_export]
+macro_rules! impl_from_and_into {
+    ($type1:path, $type2:path, $($variant1:ident <=> $variant2:ident),+ $(,)?) => {
+        impl From<$type1> for $type2 {
+            fn from(value: $type1) -> Self {
+                match value {
                     $(
-                        Self::$variant => $text,
-                    )+
+                        <$type1>::$variant1 => Self::$variant2,
+                     )+
                 }
             }
         }
 
-        #[cfg(feature = "rusqlite")]
-        impl ::rusqlite::types::ToSql for $type {
-            fn to_sql(&self) -> ::rusqlite::Result<::rusqlite::types::ToSqlOutput> {
-                Ok(::rusqlite::types::ToSqlOutput::Borrowed(
-                        ::rusqlite::types::ValueRef::Text(match self {
-                            $(
-                                Self::$variant => $text.as_bytes(),
-                            )+
-                        }
-                    ),
-                ))
-            }
-        }
-
-        #[cfg(feature = "rusqlite")]
-        impl ::rusqlite::types::FromSql for $type {
-            fn column_result(
-                value: ::rusqlite::types::ValueRef,
-            ) -> ::rusqlite::types::FromSqlResult<Self> {
-                let raw = String::column_result(value)?;
-
-                match raw.as_str() {
+        impl From<$type2> for $type1 {
+            fn from(value: $type2) -> Self {
+                match value {
                     $(
-                        $text => Ok(Self::$variant),
-                    )+
-                    _ => Err(::rusqlite::types::FromSqlError::InvalidType),
+                        <$type2>::$variant2 => Self::$variant1,
+                     )+
                 }
             }
         }

@@ -1,7 +1,7 @@
 use super::*;
+use crate::types::NodeTypeServer;
 use anyhow::bail;
 use shared::msg::remove_buddy_group::{RemoveBuddyGroup, RemoveBuddyGroupResp};
-use shared::types::NodeTypeServer;
 
 pub(super) async fn handle(
     msg: RemoveBuddyGroup,
@@ -9,7 +9,9 @@ pub(super) async fn handle(
     _req: &impl Request,
 ) -> RemoveBuddyGroupResp {
     match async {
-        if msg.node_type != NodeTypeServer::Storage {
+        let node_type: NodeTypeServer = msg.node_type.try_into()?;
+
+        if node_type != NodeTypeServer::Storage {
             bail!("Can only remove storage buddy groups");
         }
 

@@ -1,7 +1,4 @@
-//! Various BeeGFS type definitions
-//!
-//! Used internally (e.g. in the management) and by network messages. Types only used by BeeGFS
-//! messages are found in [crate::msg::types].
+//! Various BeeGFS type definitions, mainly for use by BeeMsg.
 
 use crate::bee_serde::*;
 use anyhow::Result;
@@ -26,22 +23,7 @@ pub type QuotaID = u32;
 pub const MGMTD_ID: NodeID = 1;
 pub const DEFAULT_STORAGE_POOL: StoragePoolID = 1;
 
-/// The entity type.
-#[derive(Clone, Debug)]
-pub enum EntityType {
-    Node,
-    Target,
-    BuddyGroup,
-    StoragePool,
-}
-
-impl_enum_to_sql_str!(EntityType,
-    Node => "node",
-    Target => "target",
-    BuddyGroup => "buddy_group",
-    StoragePool => "storage_pool",
-);
-
+/// The node type as used by most BeeGFS messages
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum NodeType {
     #[default]
@@ -57,38 +39,8 @@ impl_enum_to_int!(NodeType,
     Client => 3,
     Management => 4
 );
-impl_enum_to_sql_str!(NodeType,
-    Meta => "meta",
-    Storage => "storage",
-    Client => "client",
-    Management => "management"
-);
 
-impl From<NodeTypeServer> for NodeType {
-    fn from(value: NodeTypeServer) -> Self {
-        match value {
-            NodeTypeServer::Meta => Self::Meta,
-            NodeTypeServer::Storage => Self::Storage,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum NodeTypeServer {
-    #[default]
-    Meta,
-    Storage,
-}
-
-impl_enum_to_int!(NodeTypeServer,
-    Meta => 1,
-    Storage => 2
-);
-impl_enum_to_sql_str!(NodeTypeServer,
-    Meta => "meta",
-    Storage => "storage"
-);
-
+/// The network interface type as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum NicType {
     #[default]
@@ -98,18 +50,8 @@ pub enum NicType {
 }
 
 impl_enum_to_int!(NicType, Ethernet => 0, Sdp => 1, Rdma => 2);
-impl_enum_to_sql_str!(NicType, Ethernet => "ethernet", Sdp => "sdp", Rdma => "rdma");
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum CapacityPool {
-    Normal,
-    Low,
-    Emergency,
-}
-
-impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
-impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
-
+/// Type of a quota ID as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaIDType {
     #[default]
@@ -121,11 +63,8 @@ impl_enum_to_int!(QuotaIDType,
     User => 1,
     Group => 2
 );
-impl_enum_to_sql_str!(QuotaIDType,
-    User => "user",
-    Group => "group"
-);
 
+/// Type of a quota entry as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaType {
     #[default]
@@ -138,11 +77,7 @@ impl_enum_to_int!(QuotaType,
     Inodes => 2
 );
 
-impl_enum_to_sql_str!(QuotaType,
-    Space => "space",
-    Inodes => "inodes"
-);
-
+/// The consistency state of a target as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TargetConsistencyState {
     #[default]
@@ -158,36 +93,6 @@ impl_enum_to_int!(TargetConsistencyState,
 );
 
 impl BeeSerde for TargetConsistencyState {
-    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        ser.u8((*self).into())
-    }
-
-    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        des.u8()?.try_into()
-    }
-}
-
-impl_enum_to_sql_str!(TargetConsistencyState,
-    Good => "good",
-    NeedsResync => "needs_resync",
-    Bad => "bad"
-);
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum TargetReachabilityState {
-    #[default]
-    Online,
-    ProbablyOffline,
-    Offline,
-}
-
-impl_enum_to_int!(TargetReachabilityState,
-    Online => 0,
-    ProbablyOffline => 1,
-    Offline => 2
-);
-
-impl BeeSerde for TargetReachabilityState {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.u8((*self).into())
     }

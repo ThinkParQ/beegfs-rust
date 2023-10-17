@@ -7,9 +7,10 @@ pub(super) async fn handle(msg: GetNodes, ctx: &Context, _req: &impl Request) ->
     match ctx
         .db
         .op(move |tx| {
+            let node_type = msg.node_type.try_into()?;
             let res = (
-                db::node::get_with_type(tx, msg.node_type)?,
-                db::node_nic::get_with_type(tx, msg.node_type)?,
+                db::node::get_with_type(tx, node_type)?,
+                db::node_nic::get_with_type(tx, node_type)?,
                 match msg.node_type {
                     NodeType::Meta => db::misc::get_meta_root(tx)?,
                     _ => MetaRoot::Unknown,
@@ -35,7 +36,7 @@ pub(super) async fn handle(msg: GetNodes, ctx: &Context, _req: &impl Request) ->
                                 Some(Nic {
                                     addr: e.addr,
                                     name: e.name.clone().into_bytes(),
-                                    nic_type: e.nic_type,
+                                    nic_type: e.nic_type.into(),
                                 })
                             } else {
                                 None
@@ -44,7 +45,7 @@ pub(super) async fn handle(msg: GetNodes, ctx: &Context, _req: &impl Request) ->
                         .collect(),
                     port: n.port,
                     _unused_tcp_port: n.port,
-                    node_type: n.node_type,
+                    node_type: n.node_type.into(),
                 })
                 .collect(),
             root_num_id: match res.2 {

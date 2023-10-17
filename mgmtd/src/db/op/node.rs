@@ -118,7 +118,6 @@ pub fn insert(
             NodeType::Client => {
                 sql!("INSERT INTO client_nodes (node_id, node_uid) VALUES (?1, ?2)")
             }
-            NodeType::Management => bail!("Can not insert management node"),
         },
         params![node_id, node_uid],
     )?;

@@ -3,21 +3,6 @@
 use super::*;
 use rusqlite::types::FromSql;
 use std::ops::RangeInclusive;
-use std::time::Duration;
-
-/// Calculate reachability state as requested by old BeeGFS code.
-pub fn calc_reachability_state(
-    contact_age: Duration,
-    timeout: Duration,
-) -> TargetReachabilityState {
-    if contact_age < timeout {
-        TargetReachabilityState::Online
-    } else if contact_age < timeout / 2 {
-        TargetReachabilityState::ProbablyOffline
-    } else {
-        TargetReachabilityState::Offline
-    }
-}
 
 /// Finds a new unused ID from a specified table within a given range.
 ///
