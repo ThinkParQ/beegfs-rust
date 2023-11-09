@@ -3,7 +3,6 @@
 use crate::msg::dispatch_request;
 use crate::{db, StaticInfo};
 use anyhow::Result;
-use async_trait::async_trait;
 use shared::conn::msg_dispatch::*;
 use shared::conn::Pool;
 use std::ops::Deref;
@@ -51,7 +50,6 @@ impl Deref for Context {
     }
 }
 
-#[async_trait]
 impl DispatchRequest for Context {
     async fn dispatch_request(&self, req: impl Request) -> Result<()> {
         dispatch_request(self, req).await

@@ -130,7 +130,6 @@ impl MsgStore {
     }
 }
 
-#[async_trait::async_trait]
 impl MsgDispatcher for MsgStore {
     async fn dispatch_msg(&mut self, req: impl RequestHandle) -> Result<()> {
         self.push_msg(msg.clone()).await;

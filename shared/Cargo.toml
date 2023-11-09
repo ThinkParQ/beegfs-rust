@@ -12,7 +12,6 @@ bee_serde_derive = { path = "bee_serde_derive" }
 hsieh = { path = "hsieh" }
 
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 bytes = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "~0"

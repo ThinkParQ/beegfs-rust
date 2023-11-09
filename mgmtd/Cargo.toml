@@ -16,7 +16,6 @@ pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", bran
 sql_check = { path = "sql_check"}
 
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 env_logger = { workspace = true }
 itertools = { workspace = true }

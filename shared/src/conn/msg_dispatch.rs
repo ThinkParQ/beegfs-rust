@@ -4,17 +4,16 @@ use super::msg_buf::MsgBuf;
 use super::stream::Stream;
 use crate::msg::{Msg, MsgID};
 use anyhow::Result;
-use async_trait::async_trait;
 use std::fmt::Debug;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 
 /// Enables an object to act as a message dispatcher and being called from the generic connection
 /// pool.
-#[async_trait]
 pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
-    async fn dispatch_request(&self, chn: impl Request) -> Result<()>;
+    fn dispatch_request(&self, chn: impl Request) -> impl Future<Output = Result<()>> + Send;
 }
 
 /// Defines the required functionality of the object containing the request data (e.g. message and
@@ -22,9 +21,8 @@ pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
 ///
 /// Abstracts away the underlying protocol (TCP or UDP), so the message handler doesn't need
 /// to know about that.
-#[async_trait]
 pub trait Request: Send + Sync {
-    async fn respond(self, msg: &impl Msg) -> Result<()>;
+    fn respond(self, msg: &impl Msg) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
     fn addr(&self) -> SocketAddr;
     fn msg_id(&self) -> MsgID;
@@ -38,9 +36,8 @@ pub struct StreamRequest<'a> {
     pub(super) buf: &'a mut MsgBuf,
 }
 
-#[async_trait]
 impl<'a> Request for StreamRequest<'a> {
-    async fn respond(mut self, msg: &impl Msg) -> Result<()> {
+    async fn respond(self, msg: &impl Msg) -> Result<()> {
         self.buf.serialize_msg(msg)?;
         self.buf.write_to_stream(self.stream).await
     }
@@ -76,9 +73,8 @@ pub struct SocketRequest<'a> {
     pub(crate) msg_buf: &'a mut MsgBuf,
 }
 
-#[async_trait]
 impl<'a> Request for SocketRequest<'a> {
-    async fn respond(mut self, msg: &impl Msg) -> Result<()> {
+    async fn respond(self, msg: &impl Msg) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
 
         self.msg_buf
