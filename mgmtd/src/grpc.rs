@@ -1,8 +1,6 @@
 mod beegfs;
 
 use crate::context::Context;
-use crate::db;
-use crate::db::TypedError;
 use anyhow::{Context as AContext, Result};
 use beegfs::ManagementService;
 use pb::beegfs::beegfs::*;

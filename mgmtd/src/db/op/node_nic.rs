@@ -3,17 +3,6 @@ use super::*;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-/// Represents a network interface entry
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct NodeNic {
-    pub node_uid: EntityUID,
-    pub addr: Ipv4Addr,
-    pub port: Port,
-    pub nic_type: NicType,
-    pub name: String,
-}
-
 /// Retrieves all node addresses grouped by EntityUID.
 ///
 /// # Return value
@@ -46,29 +35,55 @@ pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketA
     Ok(res)
 }
 
+/// Represents a network interface entry
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct NodeNic {
+    pub node_uid: EntityUID,
+    pub addr: Ipv4Addr,
+    pub port: Port,
+    pub nic_type: NicType,
+    pub name: String,
+}
+
+impl NodeNic {
+    fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(NodeNic {
+            node_uid: row.get(0)?,
+            addr: row.get::<_, [u8; 4]>(1)?.into(),
+            port: row.get(2)?,
+            nic_type: row.get(3)?,
+            name: row.get(4)?,
+        })
+    }
+}
+
+/// Retrieves all node nics
+pub fn get_all(tx: &mut Transaction) -> Result<Arc<[NodeNic]>> {
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+            FROM node_nics AS nn
+            INNER JOIN nodes AS n USING(node_uid)
+            ORDER BY nn.node_uid ASC"
+        ),
+        [],
+        NodeNic::from_row,
+    )?)
+}
+
 /// Retrieves all node nics for the given node type.
-///
-/// # Return value
-/// A Vec containing [NodeNic] entries.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-             FROM node_nics AS nn
-             INNER JOIN nodes AS n USING(node_uid)
-             WHERE n.node_type = ?1
-             ORDER BY nn.node_uid ASC"
+            FROM node_nics AS nn
+            INNER JOIN nodes AS n USING(node_uid)
+            WHERE n.node_type = ?1
+            ORDER BY nn.node_uid ASC"
         ),
         params![node_type],
-        |row| {
-            Ok(NodeNic {
-                node_uid: row.get(0)?,
-                addr: row.get::<_, [u8; 4]>(1)?.into(),
-                port: row.get(2)?,
-                nic_type: row.get(3)?,
-                name: row.get(4)?,
-            })
-        },
+        NodeNic::from_row,
     )?)
 }
 
@@ -118,6 +133,9 @@ mod test {
     #[test]
     fn get_update() {
         with_test_data(|tx| {
+            let nics = super::get_all(tx).unwrap();
+            assert_eq!(22, nics.len());
+
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
             assert_eq!(4, nics.iter().filter(|e| e.node_uid == 102001).count());
 

@@ -31,16 +31,11 @@ pub(super) async fn handle(msg: GetNodes, ctx: &Context, _req: &impl Request) ->
                     nic_list: res
                         .1
                         .iter()
-                        .filter_map(|e| {
-                            if e.node_uid == n.uid {
-                                Some(Nic {
-                                    addr: e.addr,
-                                    name: e.name.clone().into_bytes(),
-                                    nic_type: e.nic_type.into(),
-                                })
-                            } else {
-                                None
-                            }
+                        .filter(|e| e.node_uid == n.uid)
+                        .map(|e| Nic {
+                            addr: e.addr,
+                            name: e.name.to_string().into_bytes(),
+                            nic_type: e.nic_type.into(),
                         })
                         .collect(),
                     port: n.port,

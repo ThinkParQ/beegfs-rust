@@ -93,6 +93,7 @@ CREATE TABLE node_nics (
         -- This feels dirty, but I don't know any better way to check for that
         CHECK(HEX(name) NOT LIKE "%00%")
 ) STRICT;
+CREATE INDEX index_node_nics_1 ON node_nics(node_uid);
 
 CREATE TABLE targets (
     target_uid INTEGER PRIMARY KEY,
