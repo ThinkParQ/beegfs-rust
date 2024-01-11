@@ -1,11 +1,7 @@
 //! Testing suppport for the database layer
 
-extern crate test;
-
 use super::*;
 use rusqlite::{Connection, Transaction};
-use std::sync::atomic::{AtomicU64, Ordering};
-pub use test::Bencher;
 
 /// Sets ups a fresh database instance in memory and fills, with the test data set and provides a
 /// transaction handle.
@@ -22,7 +18,7 @@ pub fn with_test_data(op: impl FnOnce(&mut Transaction)) {
     transaction(&mut conn, op)
 }
 
-static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
+// static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Sets up a fresh database instance on disk and provides the connection handle.
 ///
@@ -36,25 +32,25 @@ static DB_COUNTER: AtomicU64 = AtomicU64::new(0);
 ///
 /// The disk location of the database instance can be set by the environment variable
 /// `BEEGFS_TEST_DB_DIR`.
-pub fn setup_on_disk_db() -> rusqlite::Connection {
-    let benchmark_dir =
-        std::env::var("BEEGFS_TEST_DB_DIR").unwrap_or("/tmp/beegfs_test_db".to_string());
-
-    let counter = DB_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let path = format!("{benchmark_dir}/{counter}.db");
-
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(&path);
-    initialize(&path).unwrap();
-
-    let conn = rusqlite::Connection::open(&path).unwrap();
-    connection::setup_connection(&conn).unwrap();
-
-    conn.execute_batch(include_str!("schema/test_data.sql"))
-        .unwrap();
-
-    conn
-}
+// pub fn setup_on_disk_db() -> rusqlite::Connection {
+//     let benchmark_dir =
+//         std::env::var("BEEGFS_TEST_DB_DIR").unwrap_or("/tmp/beegfs_test_db".to_string());
+//
+//     let counter = DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+//     let path = format!("{benchmark_dir}/{counter}.db");
+//
+//     let _ = std::fs::remove_file(&path);
+//     let _ = std::fs::remove_file(&path);
+//     initialize(&path).unwrap();
+//
+//     let conn = rusqlite::Connection::open(&path).unwrap();
+//     connection::setup_connection(&conn).unwrap();
+//
+//     conn.execute_batch(include_str!("schema/test_data.sql"))
+//         .unwrap();
+//
+//     conn
+// }
 
 /// Sets up a transaction for the given [rusqlite::Connection] and executes the provided code.
 ///

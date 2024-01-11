@@ -73,7 +73,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[N
                 name: row.get(4)?,
             })
         })?
-        .try_collect()?;
+        .collect::<rusqlite::Result<Arc<_>>>()?;
 
     Ok(nics)
 }

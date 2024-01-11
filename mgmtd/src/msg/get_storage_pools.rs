@@ -91,7 +91,7 @@ pub(super) async fn handle(
                     },
                 })
             })
-            .try_collect::<Vec<StoragePool>>() as Result<_>
+            .collect::<Result<Vec<StoragePool>>>() as Result<_>
     }
     .await
     {

@@ -41,7 +41,7 @@ pub fn exceeded_quota_ids(
 
     let ids = stmt
         .query_map(params![id_type, quota_type, pool_id], |row| row.get(0))?
-        .try_collect()?;
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(ids)
 }
@@ -78,7 +78,7 @@ pub fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaE
                 pool_id: row.get(3)?,
             })
         })?
-        .try_collect()?;
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(res)
 }

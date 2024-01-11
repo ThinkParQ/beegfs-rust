@@ -1,8 +1,0 @@
-[alias]
-mgmtd-test = ["test", "--package=net-test", "--tests", "--", "--test-threads=1"]
-
-# Use vendored sources instead of crates.io
-# [source.crates-io]
-# replace-with = "vendored-sources"
-# [source.vendored-sources]
-# directory = "vendor"

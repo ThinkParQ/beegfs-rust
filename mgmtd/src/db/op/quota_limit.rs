@@ -211,66 +211,66 @@ mod test {
         })
     }
 
-    const BENCH_QUOTA_ID_NUM: u32 = 1000;
-
-    #[bench]
-    fn bench_quota_limits_read(b: &mut Bencher) {
-        let mut conn = setup_on_disk_db();
-        let mut counter = 0;
-
-        transaction(&mut conn, |tx| {
-            update(
-                tx,
-                (1..=BENCH_QUOTA_ID_NUM).map(|e| {
-                    (
-                        QuotaIDType::User,
-                        1,
-                        SpaceAndInodeLimits {
-                            quota_id: e,
-                            space: Some(e.into()),
-                            inodes: None,
-                        },
-                    )
-                }),
-            )
-            .unwrap();
-        });
-
-        b.iter(|| {
-            transaction(&mut conn, |tx| {
-                quota_limit::with_quota_id_list(tx, 1..=BENCH_QUOTA_ID_NUM, 1, QuotaIDType::User)
-                    .unwrap();
-            });
-
-            counter += 1;
-        })
-    }
-
-    #[bench]
-    fn bench_quota_limits_write(b: &mut Bencher) {
-        let mut conn = setup_on_disk_db();
-        let mut counter = 0;
-
-        b.iter(|| {
-            transaction(&mut conn, |tx| {
-                update(
-                    tx,
-                    (1..=BENCH_QUOTA_ID_NUM).map(|e| {
-                        (
-                            QuotaIDType::User,
-                            1,
-                            SpaceAndInodeLimits {
-                                quota_id: (e + counter),
-                                space: Some((e + counter).into()),
-                                inodes: None,
-                            },
-                        )
-                    }),
-                )
-                .unwrap();
-            });
-
-            counter += 1;
-        })
-    }
+    // const BENCH_QUOTA_ID_NUM: u32 = 1000;
+    //
+    // #[bench]
+    // fn bench_quota_limits_read(b: &mut Bencher) {
+    //     let mut conn = setup_on_disk_db();
+    //     let mut counter = 0;
+    //
+    //     transaction(&mut conn, |tx| {
+    //         update(
+    //             tx,
+    //             (1..=BENCH_QUOTA_ID_NUM).map(|e| {
+    //                 (
+    //                     QuotaIDType::User,
+    //                     1,
+    //                     SpaceAndInodeLimits {
+    //                         quota_id: e,
+    //                         space: Some(e.into()),
+    //                         inodes: None,
+    //                     },
+    //                 )
+    //             }),
+    //         )
+    //         .unwrap();
+    //     });
+    //
+    //     b.iter(|| {
+    //         transaction(&mut conn, |tx| {
+    //             quota_limit::with_quota_id_list(tx, 1..=BENCH_QUOTA_ID_NUM, 1, QuotaIDType::User)
+    //                 .unwrap();
+    //         });
+    //
+    //         counter += 1;
+    //     })
+    // }
+    //
+    // #[bench]
+    // fn bench_quota_limits_write(b: &mut Bencher) {
+    //     let mut conn = setup_on_disk_db();
+    //     let mut counter = 0;
+    //
+    //     b.iter(|| {
+    //         transaction(&mut conn, |tx| {
+    //             update(
+    //                 tx,
+    //                 (1..=BENCH_QUOTA_ID_NUM).map(|e| {
+    //                     (
+    //                         QuotaIDType::User,
+    //                         1,
+    //                         SpaceAndInodeLimits {
+    //                             quota_id: (e + counter),
+    //                             space: Some((e + counter).into()),
+    //                             inodes: None,
+    //                         },
+    //                     )
+    //                 }),
+    //             )
+    //             .unwrap();
+    //         });
+    //
+    //         counter += 1;
+    //     })
+    // }
 }

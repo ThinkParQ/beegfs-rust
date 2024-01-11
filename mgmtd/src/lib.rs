@@ -1,11 +1,5 @@
 //! The BeeGFS managment service
 
-#![feature(test)]
-#![feature(fs_try_exists)]
-#![feature(iterator_try_collect)]
-#![feature(try_blocks)]
-#![feature(slice_group_by)]
-
 pub mod config;
 mod context;
 pub mod db;

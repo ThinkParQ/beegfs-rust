@@ -26,7 +26,7 @@ pub fn get_all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
                 alias: row.get(1)?,
             })
         })?
-        .try_collect()?;
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(res)
 }

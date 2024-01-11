@@ -25,7 +25,7 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
     let msg2 = msg.clone();
     let info = ctx.info;
 
-    let res: Result<_> = try {
+    let res: Result<_> = async {
         let db_res = ctx
             .db
             .op(move |tx| {
@@ -120,8 +120,9 @@ pub(super) async fn update(msg: RegisterNode, ctx: &Context) -> NodeID {
                 .collect::<Arc<_>>(),
         );
 
-        db_res
-    };
+        Ok(db_res)
+    }
+    .await;
 
     match res {
         Ok((_node_uid, node_id, meta_root)) => {

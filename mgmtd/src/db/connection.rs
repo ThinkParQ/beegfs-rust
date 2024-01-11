@@ -11,7 +11,7 @@ use std::path::Path;
 ///
 /// Automatically creates the parent folder if it doesn't exist yest.
 pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
-    if std::fs::try_exists(&path)? {
+    if path.as_ref().try_exists()? {
         bail!("Database file {path:?} already exists");
     }
 

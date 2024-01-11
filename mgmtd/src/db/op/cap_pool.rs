@@ -134,7 +134,7 @@ fn select(
                 })
             },
         )?
-        .try_collect()?;
+        .collect::<rusqlite::Result<Vec<_>>>()?;
 
     Ok(cap_pools)
 }
@@ -311,29 +311,29 @@ mod test {
         })
     }
 
-    #[bench]
-    fn bench_get_all_cap_pools(b: &mut Bencher) {
-        let mut conn = setup_on_disk_db();
-        let mut counter = 0;
-
-        b.iter(|| {
-            transaction(&mut conn, |tx| {
-                for_storage_targets(tx, &FIXED_LIMITS[0].0, None).unwrap();
-            });
-
-            transaction(&mut conn, |tx| {
-                for_meta_targets(tx, &FIXED_LIMITS[0].0, None).unwrap();
-            });
-
-            transaction(&mut conn, |tx| {
-                for_storage_buddy_groups(tx, &FIXED_LIMITS[0].0, None).unwrap();
-            });
-
-            transaction(&mut conn, |tx| {
-                for_meta_buddy_groups(tx, &FIXED_LIMITS[0].0, None).unwrap();
-            });
-
-            counter += 1;
-        })
-    }
+    // #[bench]
+    // fn bench_get_all_cap_pools(b: &mut Bencher) {
+    //     let mut conn = setup_on_disk_db();
+    //     let mut counter = 0;
+    //
+    //     b.iter(|| {
+    //         transaction(&mut conn, |tx| {
+    //             for_storage_targets(tx, &FIXED_LIMITS[0].0, None).unwrap();
+    //         });
+    //
+    //         transaction(&mut conn, |tx| {
+    //             for_meta_targets(tx, &FIXED_LIMITS[0].0, None).unwrap();
+    //         });
+    //
+    //         transaction(&mut conn, |tx| {
+    //             for_storage_buddy_groups(tx, &FIXED_LIMITS[0].0, None).unwrap();
+    //         });
+    //
+    //         transaction(&mut conn, |tx| {
+    //             for_meta_buddy_groups(tx, &FIXED_LIMITS[0].0, None).unwrap();
+    //         });
+    //
+    //         counter += 1;
+    //     })
+    // }
 }
