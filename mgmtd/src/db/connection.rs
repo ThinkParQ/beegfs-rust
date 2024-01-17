@@ -47,7 +47,8 @@ impl Connection {
             tokio_rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
                 .await?;
 
-        conn.call(|conn| setup_connection(conn)).await?;
+        conn.call(|conn| setup_connection(conn).map_err(|err| err.into()))
+            .await?;
 
         log::info!("Opened database at {:?}", path);
 
@@ -71,17 +72,18 @@ impl Connection {
         self.conn
             .call(move |conn| {
                 let mut tx = conn.transaction()?;
-                let res = op(&mut tx)?;
+                let res = op(&mut tx).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
                 tx.commit()?;
 
                 Ok(res)
             })
             .await
+            .map_err(|err| err.into())
     }
 }
 
 /// Sets connection parameters on an SQLite connection.
-pub fn setup_connection(conn: &rusqlite::Connection) -> Result<()> {
+pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     // We use the carray extension to bind arrays to parameters
     rusqlite::vtab::array::load_module(conn)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;

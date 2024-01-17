@@ -35,9 +35,7 @@ tokio = { workspace = true, features = [
     "time",
     "io-util",
 ] }
-# current newest version 0.4.0 cannot be used due to changes to error type:
-# https://github.com/programatik29/tokio-rusqlite/issues/20
-tokio-rusqlite = "0.3.0"
+tokio-rusqlite = "0.5.0"
 toml = "~0"
 tonic = { workspace = true }
 
