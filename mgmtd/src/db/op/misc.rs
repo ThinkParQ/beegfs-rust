@@ -31,8 +31,7 @@ pub fn find_new_id<T: FromSql + std::fmt::Display>(
 
     let id = tx.query_row(
         &format!(
-            r#"
-            SELECT COALESCE(
+            "SELECT COALESCE(
                 (SELECT MAX(t1.{field}) + 1 AS new
                     FROM {table} AS t1
                     LEFT JOIN {table} AS t2 ON t2.{field} = t1.{field} + 1
@@ -46,8 +45,7 @@ pub fn find_new_id<T: FromSql + std::fmt::Display>(
                 (SELECT {min} WHERE NOT EXISTS
                     (SELECT NULL FROM {table} WHERE {field} = {min})
                 )
-            );
-            "#
+            )"
         ),
         [],
         |row| row.get::<_, T>(0),
@@ -68,29 +66,28 @@ pub enum MetaRoot {
 
 /// Retrieves the meta root information of the BeeGFS system.
 pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT mt.node_id, mn.node_uid, ri.buddy_group_id
-        FROM root_inode AS ri
-        LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
-        LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
-        "#
-    ))?;
-
-    Ok(
-        match stmt
-            .query_row([], |row| {
+    let res = tx
+        .query_row_cached(
+            sql!(
+                "SELECT mt.node_id, mn.node_uid, ri.buddy_group_id
+                FROM root_inode AS ri
+                LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
+                LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id"
+            ),
+            [],
+            |row| {
                 Ok(match row.get::<_, Option<NodeID>>(0)? {
                     Some(node_id) => MetaRoot::Normal(node_id, row.get(1)?),
                     None => MetaRoot::Mirrored(row.get(2)?),
                 })
-            })
-            .optional()?
-        {
-            Some(meta_root) => meta_root,
-            None => MetaRoot::Unknown,
-        },
-    )
+            },
+        )
+        .optional()?;
+
+    Ok(match res {
+        Some(meta_root) => meta_root,
+        None => MetaRoot::Unknown,
+    })
 }
 
 /// Switch the system over to use a buddy mirror group as meta root.
@@ -100,14 +97,12 @@ pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
 pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     tx.execute_checked(
         sql!(
-            r#"
-            UPDATE root_inode
+            "UPDATE root_inode
             SET target_id = NULL, buddy_group_id = (
                 SELECT mg.buddy_group_id
                 FROM root_inode AS ri
                 INNER JOIN meta_buddy_groups AS mg ON mg.primary_target_id = ri.target_id
-            )
-            "#
+            )"
         ),
         [],
         1..=1,
@@ -115,15 +110,13 @@ pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
 
     tx.execute_checked(
         sql!(
-            r#"
-            UPDATE targets SET consistency = "needs_resync"
+            "UPDATE targets SET consistency = 'needs_resync'
             WHERE target_uid = (
                 SELECT mt.target_uid
                 FROM root_inode AS ri
                 INNER JOIN meta_buddy_groups AS mg USING(buddy_group_id)
                 INNER JOIN meta_targets AS mt ON mt.target_id = mg.secondary_target_id
-            )
-            "#
+            )"
         ),
         [],
         1..=1,

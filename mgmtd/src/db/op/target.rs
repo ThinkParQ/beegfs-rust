@@ -25,17 +25,15 @@ pub struct Target {
 
 /// Retrieve a list of targets filtered by node type.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<Target>> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT target_uid, target_id, node_type, node_uid, node_id, pool_id,
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT target_uid, target_id, node_type, node_uid, node_id, pool_id,
             free_space, free_inodes, consistency, last_contact_s
-        FROM all_targets_v
-        WHERE node_type = ?1 AND node_id IS NOT NULL;
-        "#
-    ))?;
-
-    let res = stmt
-        .query_map([node_type], |row| {
+            FROM all_targets_v
+            WHERE node_type = ?1 AND node_id IS NOT NULL;"
+        ),
+        [node_type],
+        |row| {
             Ok(Target {
                 target_uid: row.get(0)?,
                 target_id: row.get(1)?,
@@ -48,10 +46,8 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<
                 consistency: row.get(8)?,
                 last_contact: Duration::from_secs(row.get(9)?),
             })
-        })?
-        .try_collect()?;
-
-    Ok(res)
+        },
+    )?)
 }
 
 /// Retrieve the global UID for the given target ID and type.
@@ -63,15 +59,13 @@ pub fn get_uid(
     target_id: TargetID,
     node_type: NodeTypeServer,
 ) -> Result<Option<EntityUID>> {
-    let res: Option<EntityUID> = tx
+    Ok(tx
         .query_row_cached(
             sql!("SELECT target_uid FROM all_targets_v WHERE node_id = ?1 AND node_type = ?2"),
             params![target_id, node_type],
             |row| row.get(0),
         )
-        .optional()?;
-
-    Ok(res)
+        .optional()?)
 }
 
 /// Ensures that the list of given targets actually exists and returns an appropriate error if not.
@@ -88,6 +82,7 @@ pub fn validate_ids(
             sql!("SELECT COUNT(*) FROM storage_targets WHERE target_id IN rarray(?1)")
         }
     };
+
     let count: usize =
         tx.query_row_cached(stmt, [&rarray_param(target_ids.iter().copied())], |row| {
             row.get(0)
@@ -136,13 +131,11 @@ pub fn insert_or_ignore_storage(
     alias: &str,
 ) -> Result<TargetID> {
     let target_id = if let Some(target_id) = target_id {
-        let mut stmt = tx.prepare_cached(sql!(
-            "SELECT COUNT(*) FROM storage_targets_v WHERE target_id = ?1"
-        ))?;
-
-        let count = stmt.query_row(params![target_id], |row| row.get::<_, i32>(0))?;
-
-        drop(stmt);
+        let count = tx.query_row_cached(
+            sql!("SELECT COUNT(*) FROM storage_targets_v WHERE target_id = ?1"),
+            params![target_id],
+            |row| row.get::<_, i32>(0),
+        )?;
 
         if count == 0 {
             insert(tx, target_id, NodeTypeServer::Storage, None, alias)?;
@@ -181,8 +174,8 @@ fn insert(
             }
             NodeTypeServer::Storage => {
                 sql!(
-                    "INSERT INTO storage_targets (target_id, target_uid, node_id) VALUES (?1, ?2, \
-                     ?3)"
+                    "INSERT INTO storage_targets (target_id, target_uid, node_id)
+                    VALUES (?1, ?2, ?3)"
                 )
             }
         },
@@ -202,12 +195,10 @@ pub fn update_consistency_states(
     node_type: NodeTypeServer,
 ) -> Result<usize> {
     let mut update = tx.prepare_cached(sql!(
-        r#"
-        UPDATE targets SET consistency = ?3
+        "UPDATE targets SET consistency = ?3
         WHERE consistency != ?3 AND target_uid = (
             SELECT target_uid FROM all_targets_v WHERE target_id = ?1 AND node_type = ?2
-        )
-        "#
+        )"
     ))?;
 
     let mut updated = 0;
@@ -295,21 +286,17 @@ pub fn get_and_update_capacities(
     node_type: NodeTypeServer,
 ) -> Result<Vec<(TargetID, TargetCapacities)>> {
     let mut select = tx.prepare_cached(sql!(
-        r#"
-        SELECT total_space, total_inodes, free_space, free_inodes
+        "SELECT total_space, total_inodes, free_space, free_inodes
         FROM all_targets_v
-        WHERE target_id = ?1 AND node_type = ?2;
-        "#
+        WHERE target_id = ?1 AND node_type = ?2;"
     ))?;
 
     let mut update = tx.prepare_cached(sql!(
-        r#"
-        UPDATE targets
+        "UPDATE targets
         SET total_space = ?1, total_inodes = ?2, free_space = ?3, free_inodes = ?4
         WHERE target_uid = (
             SELECT target_uid FROM all_targets_v WHERE target_id = ?5 AND node_type = ?6
-        )
-        "#
+        )"
     ))?;
 
     let mut old_values = vec![];

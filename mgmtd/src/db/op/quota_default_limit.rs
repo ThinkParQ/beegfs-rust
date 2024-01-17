@@ -19,23 +19,23 @@ pub fn get_with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<
     storage_pool::get_uid(tx, pool_id)?
         .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
 
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
-        FROM quota_default_limits_combined_v
-        WHERE pool_id = ?1
-        "#
-    ))?;
-
-    let limits = stmt
-        .query_row(params![pool_id], |row| {
-            Ok(DefaultLimits {
-                user_space_limit: row.get(0)?,
-                user_inodes_limit: row.get(1)?,
-                group_space_limit: row.get(2)?,
-                group_inodes_limit: row.get(3)?,
-            })
-        })
+    let limits = tx
+        .query_row_cached(
+            sql!(
+                "SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
+                FROM quota_default_limits_combined_v
+                WHERE pool_id = ?1"
+            ),
+            params![pool_id],
+            |row| {
+                Ok(DefaultLimits {
+                    user_space_limit: row.get(0)?,
+                    user_inodes_limit: row.get(1)?,
+                    group_space_limit: row.get(2)?,
+                    group_inodes_limit: row.get(3)?,
+                })
+            },
+        )
         .optional()?;
 
     Ok(limits.unwrap_or_default())
@@ -51,17 +51,16 @@ pub fn upsert(
     quota_type: QuotaType,
     value: u64,
 ) -> Result<()> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value)
-        VALUES (?1, ?2, ?3, ?4)
-        ON CONFLICT (id_type, quota_type, pool_id) DO
-        UPDATE SET value = ?4
-        WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
-        "#
-    ))?;
-
-    stmt.execute(params![id_type, quota_type, pool_id, value])?;
+    tx.execute_cached(
+        sql!(
+            "INSERT INTO quota_default_limits (id_type, quota_type, pool_id, value)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT (id_type, quota_type, pool_id) DO
+            UPDATE SET value = ?4
+            WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
+        ),
+        params![id_type, quota_type, pool_id, value],
+    )?;
 
     Ok(())
 }
@@ -78,14 +77,13 @@ pub fn delete(
     storage_pool::get_uid(tx, pool_id)?
         .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
 
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        DELETE FROM quota_default_limits
-        WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
-        "#
-    ))?;
-
-    stmt.execute(params![id_type, quota_type, pool_id])?;
+    tx.execute_cached(
+        sql!(
+            "DELETE FROM quota_default_limits
+            WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
+        ),
+        params![id_type, quota_type, pool_id],
+    )?;
 
     Ok(())
 }

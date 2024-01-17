@@ -21,20 +21,18 @@ pub struct BuddyGroup {
 }
 /// Retrieve a list of nodes filtered by node type.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<BuddyGroup>> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT
             buddy_group_id, primary_node_id, secondary_node_id,
             primary_target_id, secondary_target_id, pool_id,
             primary_free_space, primary_free_inodes,
             secondary_free_space, secondary_free_inodes
-        FROM all_buddy_groups_v
-        WHERE node_type = ?1;
-        "#
-    ))?;
-
-    let res = stmt
-        .query_map([node_type], |row| {
+            FROM all_buddy_groups_v
+            WHERE node_type = ?1;"
+        ),
+        [node_type],
+        |row| {
             Ok(BuddyGroup {
                 id: row.get(0)?,
                 primary_node_id: row.get(1)?,
@@ -47,10 +45,8 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<
                 secondary_free_space: row.get(8)?,
                 secondary_free_inodes: row.get(9)?,
             })
-        })?
-        .try_collect()?;
-
-    Ok(res)
+        },
+    )?)
 }
 
 /// Retrieve the global UID for the given buddy group ID and type.
@@ -65,8 +61,8 @@ pub fn get_uid(
     let res: Option<EntityUID> = tx
         .query_row_cached(
             sql!(
-                "SELECT buddy_group_uid FROM all_buddy_groups_v WHERE buddy_group_id = ?1 AND \
-                 node_type = ?2"
+                "SELECT buddy_group_uid FROM all_buddy_groups_v
+                WHERE buddy_group_id = ?1 AND node_type = ?2"
             ),
             params![buddy_group_id, node_type],
             |row| row.get(0),
@@ -169,20 +165,18 @@ pub fn insert(
         match node_type {
             NodeTypeServer::Meta => {
                 sql!(
-                    r#"
-                    INSERT INTO meta_buddy_groups
+                    "INSERT INTO meta_buddy_groups
                     (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id)
-                    VALUES (?1, ?2, ?3, ?4)
-                    "#
+                    VALUES (?1, ?2, ?3, ?4)"
                 )
             }
             NodeTypeServer::Storage => {
                 sql!(
-                    r#"
-                    INSERT INTO storage_buddy_groups
-                    (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id, pool_id)
-                    VALUES (?1, ?2, ?3, ?4, (SELECT pool_id FROM storage_targets WHERE target_id = ?3))
-                    "#
+                    "INSERT INTO storage_buddy_groups
+                    (buddy_group_id, buddy_group_uid, primary_target_id,
+                        secondary_target_id, pool_id)
+                    VALUES (?1, ?2, ?3, ?4,
+                        (SELECT pool_id FROM storage_targets WHERE target_id = ?3))"
                 )
             }
         },
@@ -198,14 +192,10 @@ pub(crate) fn update_storage_pools(
     new_pool_id: StoragePoolID,
     buddy_group_ids: &[BuddyGroupID],
 ) -> Result<()> {
-    let mut stmt = tx.prepare_cached(sql!(
-        "UPDATE storage_buddy_groups SET pool_id = ?1 WHERE buddy_group_id = ?2"
-    ))?;
-
-    let mut updated = 0;
-    for id in buddy_group_ids {
-        updated += stmt.execute(params![new_pool_id, id])?;
-    }
+    let updated = tx.execute_cached(
+        sql!("UPDATE storage_buddy_groups SET pool_id = ?1 WHERE buddy_group_id IN rarray(?2)"),
+        params![new_pool_id, rarray_param(buddy_group_ids.iter().copied())],
+    )?;
 
     if updated != buddy_group_ids.len() {
         bail!(
@@ -247,45 +237,36 @@ pub fn check_and_swap_buddies(
     tx: &mut Transaction,
     timeout: Duration,
 ) -> Result<Vec<(BuddyGroupID, NodeTypeServer)>> {
-    let affected_groups: Vec<(BuddyGroupID, NodeTypeServer)> = {
-        let mut select = tx.prepare_cached(sql!(
-            r#"
-            SELECT buddy_group_id, node_type FROM all_buddy_groups_v
+    let affected_groups = tx.query_map_collect(
+        sql!(
+            "SELECT buddy_group_id, node_type FROM all_buddy_groups_v
             WHERE (
                 primary_last_contact_s >= ?1
                 OR
-                primary_consistency == "needs_resync"
+                primary_consistency == 'needs_resync'
             )
-            AND secondary_consistency == "good"
-            AND secondary_last_contact_s < (?1 / 2)
-            "#
-        ))?;
+                AND secondary_consistency == 'good'
+                AND secondary_last_contact_s < (?1 / 2)"
+        ),
+        [timeout.as_secs()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
 
-        let affected_groups = select
-            .query_map([timeout.as_secs()], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .try_collect()?;
-
-        #[allow(clippy::let_and_return)]
-        affected_groups
-    };
-
-    for (id, node_type) in &affected_groups {
+    for &(id, node_type) in &affected_groups {
         tx.execute_checked(
             match node_type {
                 NodeTypeServer::Meta => sql!(
-                    r#"
-                    UPDATE meta_buddy_groups
-                    SET primary_target_id = secondary_target_id, secondary_target_id = primary_target_id
-                    WHERE buddy_group_id = ?1
-                    "#
+                    "UPDATE meta_buddy_groups
+                    SET primary_target_id = secondary_target_id,
+                        secondary_target_id = primary_target_id
+                    WHERE buddy_group_id = ?1"
                 ),
                 NodeTypeServer::Storage => sql!(
-                    r#"
-                    UPDATE storage_buddy_groups
-                    SET primary_target_id = secondary_target_id, secondary_target_id = primary_target_id
-                    WHERE buddy_group_id = ?1
-                    "#
-                )
+                    "UPDATE storage_buddy_groups
+                    SET primary_target_id = secondary_target_id,
+                        secondary_target_id = primary_target_id
+                    WHERE buddy_group_id = ?1"
+                ),
             },
             [id],
             1..=1,
@@ -313,15 +294,13 @@ pub fn prepare_storage_deletion(
 
     let node_uids = tx.query_row(
         sql!(
-            r#"
-            SELECT psn.node_uid, ssn.node_uid
+            "SELECT psn.node_uid, ssn.node_uid
             FROM storage_buddy_groups AS g
             INNER JOIN storage_targets AS pst ON pst.target_id = g.primary_target_id
             INNER JOIN storage_nodes AS psn ON psn.node_id = pst.node_id
             INNER JOIN storage_targets AS sst ON sst.target_id = g.secondary_target_id
             INNER JOIN storage_nodes AS ssn ON ssn.node_id = sst.node_id
-            WHERE buddy_group_id = ?1;
-            "#
+            WHERE buddy_group_id = ?1;"
         ),
         [id],
         |row| Ok((row.get(0)?, row.get(1)?)),
@@ -448,11 +427,9 @@ mod test {
     fn swap_buddies_on_timeout() {
         with_test_data(|tx| {
             tx.execute(
-                r#"
-                UPDATE nodes
-                SET last_contact = DATETIME("now", "-1 hour")
-                WHERE node_uid IN (101001, 102001)
-                "#,
+                "UPDATE nodes
+                SET last_contact = DATETIME('now', '-1 hour')
+                WHERE node_uid IN (101001, 102001)",
                 [],
             )
             .unwrap();
@@ -478,11 +455,9 @@ mod test {
             // Trigger timeout for all buddy nodes (including secondaries). This should not cause a
             // switchover
             tx.execute(
-                r#"
-                UPDATE nodes
-                SET last_contact = DATETIME("now", "-1 hour")
-                WHERE node_uid IN (101001, 101002, 102001, 102002)
-                "#,
+                "UPDATE nodes
+                SET last_contact = DATETIME('now', '-1 hour')
+                WHERE node_uid IN (101001, 101002, 102001, 102002)",
                 [],
             )
             .unwrap();
@@ -532,13 +507,8 @@ mod test {
     #[test]
     fn prepare_storage_deletion_returns_correct_node_uids() {
         with_test_data(|tx| {
-            tx.execute(
-                r#"
-                DELETE FROM nodes WHERE node_type = "client"
-                "#,
-                [],
-            )
-            .unwrap();
+            tx.execute("DELETE FROM nodes WHERE node_type = 'client'", [])
+                .unwrap();
 
             let res = super::prepare_storage_deletion(tx, 1).unwrap();
 

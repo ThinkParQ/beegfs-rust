@@ -1,7 +1,6 @@
 //! Functions for node management
 
 use super::*;
-use itertools::Itertools;
 use rusqlite::OptionalExtension;
 use std::time::Duration;
 
@@ -17,16 +16,14 @@ pub struct Node {
 
 /// Retrieve a list of nodes filtered by node type.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT node_uid, node_id, node_type, alias, port
-        FROM all_nodes_v
-        WHERE node_type = ?1
-        "#
-    ))?;
-
-    let res = stmt
-        .query_map([node_type], |row| {
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT node_uid, node_id, node_type, alias, port
+            FROM all_nodes_v
+            WHERE node_type = ?1"
+        ),
+        [node_type],
+        |row| {
             Ok(Node {
                 uid: row.get(0)?,
                 id: row.get(1)?,
@@ -34,10 +31,8 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<No
                 alias: row.get(3)?,
                 port: row.get(4)?,
             })
-        })?
-        .try_collect()?;
-
-    Ok(res)
+        },
+    )?)
 }
 
 /// Retrieve the global UID for the given node ID and type.
@@ -78,12 +73,9 @@ pub fn is_uid(tx: &mut Transaction, node_uid: EntityUID) -> Result<bool> {
 pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
     let affected = {
         let mut stmt = tx.prepare_cached(sql!(
-            r#"
-            DELETE FROM nodes
-            WHERE
-                DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
-                AND node_uid IN (SELECT node_uid FROM client_nodes)
-            "#
+            "DELETE FROM nodes
+            WHERE DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
+                AND node_uid IN (SELECT node_uid FROM client_nodes)"
         ))?;
         stmt.execute(params![timeout.as_secs()])?
     };
@@ -101,10 +93,8 @@ pub fn insert(
 ) -> Result<()> {
     tx.execute_cached(
         sql!(
-            r#"
-            INSERT INTO nodes (node_uid, node_type, port, last_contact)
-            VALUES (?1, ?2, ?3, DATETIME('now'))
-            "#
+            "INSERT INTO nodes (node_uid, node_type, port, last_contact)
+            VALUES (?1, ?2, ?3, DATETIME('now'))"
         ),
         params![node_uid, node_type, new_port],
     )?;
@@ -146,29 +136,25 @@ pub fn update_last_contact_for_targets(
     tx: &mut Transaction,
     target_ids: &[TargetID],
     node_type: NodeTypeServer,
-) -> rusqlite::Result<usize> {
-    let stmt = sql!(
-        r#"
-        UPDATE nodes AS n SET last_contact = DATETIME('now')
-        WHERE n.node_uid IN (
-            SELECT DISTINCT node_uid FROM all_targets_v WHERE target_id IN rarray(?1) AND node_type = ?2
-        )
-        "#
-    );
-
-    tx.execute_cached(
-        stmt,
+) -> Result<usize> {
+    Ok(tx.execute_cached(
+        sql!(
+            "UPDATE nodes AS n SET last_contact = DATETIME('now')
+            WHERE n.node_uid IN (
+            SELECT DISTINCT node_uid FROM all_targets_v
+            WHERE target_id IN rarray(?1) AND node_type = ?2)"
+        ),
         params![&rarray_param(target_ids.iter().copied()), node_type],
-    )
+    )?)
 }
 
 /// Delete a node from the database.
-pub fn delete(tx: &mut Transaction, node_uid: EntityUID) -> rusqlite::Result<usize> {
-    tx.execute_checked_cached(
+pub fn delete(tx: &mut Transaction, node_uid: EntityUID) -> Result<usize> {
+    Ok(tx.execute_checked_cached(
         sql!("DELETE FROM nodes WHERE node_uid = ?1"),
         params![node_uid],
         1..=1,
-    )
+    )?)
 }
 
 #[cfg(test)]

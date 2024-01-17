@@ -20,30 +20,22 @@ pub fn exceeded_quota_ids(
     // Quota is calculated per pool, so if a target ID is given, use its assigned pools ID.
     let pool_id = match pool_or_target_id {
         PoolOrTargetID::PoolID(pool_id) => pool_id,
-        PoolOrTargetID::TargetID(target_id) => {
-            let mut stmt = tx.prepare_cached(sql!(
-                r#"
-                SELECT pool_id FROM storage_targets WHERE target_id = ?1
-                "#
-            ))?;
-
-            stmt.query_row([target_id], |row| row.get(0))?
-        }
+        PoolOrTargetID::TargetID(target_id) => tx.query_row_cached(
+            sql!("SELECT pool_id FROM storage_targets WHERE target_id = ?1"),
+            [target_id],
+            |row| row.get(0),
+        )?,
     };
 
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT DISTINCT quota_id
-        FROM exceeded_quota_v
-        WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3
-        "#
-    ))?;
-
-    let ids = stmt
-        .query_map(params![id_type, quota_type, pool_id], |row| row.get(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    Ok(ids)
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT DISTINCT quota_id
+            FROM exceeded_quota_v
+            WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
+        ),
+        params![id_type, quota_type, pool_id],
+        |row| row.get(0),
+    )?)
 }
 
 /// Represents one ID exceeding one of the four quota limits.
@@ -62,25 +54,18 @@ pub struct ExceededQuotaEntry {
 /// Since an ID can exceed more than one of the four limits and also on multiple storage pools, it
 /// can be returned more than once (with the respective information stored in [ExceededQuotaEntry]).
 pub fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT quota_id, id_type, quota_type, pool_id
-        FROM exceeded_quota_v
-        "#
-    ))?;
-
-    let res = stmt
-        .query_map([], |row| {
+    Ok(tx.query_map_collect(
+        sql!("SELECT quota_id, id_type, quota_type, pool_id FROM exceeded_quota_v"),
+        [],
+        |row| {
             Ok(ExceededQuotaEntry {
                 quota_id: row.get(0)?,
                 id_type: row.get(1)?,
                 quota_type: row.get(2)?,
                 pool_id: row.get(3)?,
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    Ok(res)
+        },
+    )?)
 }
 
 /// A quota usage entry containing space and inode usage for a user or group/
@@ -99,19 +84,15 @@ pub fn upsert(
     data: impl IntoIterator<Item = QuotaData>,
 ) -> Result<()> {
     let mut insert_stmt = tx.prepare_cached(sql!(
-        r#"
-        INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
+        "INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
         VALUES (?1, ?2, ?3 ,?4 ,?5)
         ON CONFLICT (quota_id, id_type, quota_type, target_id) DO
-        UPDATE SET value = ?5
-        "#
+        UPDATE SET value = ?5"
     ))?;
 
     let mut delete_stmt = tx.prepare_cached(sql!(
-        r#"
-        DELETE FROM quota_usage
-        WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND target_id = ?4
-        "#
+        "DELETE FROM quota_usage
+        WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND target_id = ?4"
     ))?;
 
     for d in data {

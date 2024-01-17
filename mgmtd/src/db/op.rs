@@ -43,6 +43,15 @@ trait TransactionExt {
     where
         P: Params,
         F: FnOnce(&Row<'_>) -> rusqlite::Result<T>;
+
+    fn query_map_collect<R, C>(
+        &mut self,
+        sql: &str,
+        params: impl Params,
+        f: impl FnMut(&Row) -> rusqlite::Result<R>,
+    ) -> rusqlite::Result<C>
+    where
+        C: FromIterator<R>;
 }
 
 /// Extends [rusqlite::Transaction] with convenience methods.
@@ -96,6 +105,23 @@ impl TransactionExt for Transaction<'_> {
     {
         let mut stmt = self.prepare_cached(sql)?;
         stmt.query_row(params, f)
+    }
+
+    fn query_map_collect<R, C>(
+        &mut self,
+        sql: &str,
+        params: impl Params,
+        f: impl FnMut(&Row) -> rusqlite::Result<R>,
+    ) -> rusqlite::Result<C>
+    where
+        C: FromIterator<R>,
+    {
+        let mut stmt = self.prepare_cached(sql)?;
+        let res = stmt
+            .query_map(params, f)?
+            .collect::<rusqlite::Result<C>>()?;
+
+        Ok(res)
     }
 }
 

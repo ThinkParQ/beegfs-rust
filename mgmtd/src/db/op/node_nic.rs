@@ -20,12 +20,10 @@ pub struct NodeNic {
 /// A Vec containing (EntityUID, Vec<SocketAddr>) entries.
 pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketAddr>)>> {
     let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT nn.node_uid, nn.addr, n.port
+        "SELECT nn.node_uid, nn.addr, n.port
         FROM node_nics AS nn
         INNER JOIN nodes AS n USING(node_uid)
-        ORDER BY nn.node_uid ASC
-        "#
+        ORDER BY nn.node_uid ASC"
     ))?;
 
     let mut rows = stmt.query([])?;
@@ -53,18 +51,16 @@ pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketA
 /// # Return value
 /// A Vec containing [NodeNic] entries.
 pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
-    let mut stmt = tx.prepare_cached(sql!(
-        r#"
-        SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-        FROM node_nics AS nn
-        INNER JOIN nodes AS n USING(node_uid)
-        WHERE n.node_type = ?1
-        ORDER BY nn.node_uid ASC
-        "#
-    ))?;
-
-    let nics = stmt
-        .query_map(params![node_type], |row| {
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+             FROM node_nics AS nn
+             INNER JOIN nodes AS n USING(node_uid)
+             WHERE n.node_type = ?1
+             ORDER BY nn.node_uid ASC"
+        ),
+        params![node_type],
+        |row| {
             Ok(NodeNic {
                 node_uid: row.get(0)?,
                 addr: row.get::<_, [u8; 4]>(1)?.into(),
@@ -72,10 +68,8 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[N
                 nic_type: row.get(3)?,
                 name: row.get(4)?,
             })
-        })?
-        .collect::<rusqlite::Result<Arc<_>>>()?;
-
-    Ok(nics)
+        },
+    )?)
 }
 
 #[derive(Debug)]

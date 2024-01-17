@@ -1,6 +1,4 @@
 use super::*;
-use itertools::Itertools;
-use rusqlite::ToSql;
 use std::ops::RangeInclusive;
 
 #[derive(Clone, Debug)]
@@ -11,19 +9,26 @@ pub struct SpaceAndInodeLimits {
     pub inodes: Option<u64>,
 }
 
+impl SpaceAndInodeLimits {
+    fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(SpaceAndInodeLimits {
+            quota_id: row.get(0)?,
+            space: row.get(1)?,
+            inodes: row.get(2)?,
+        })
+    }
+}
+
 pub fn with_quota_id_range(
     tx: &mut Transaction,
     quota_id_range: RangeInclusive<QuotaID>,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
-    fetch(
-        tx,
+    Ok(tx.query_map_collect(
         sql!(
-            r#"
-            SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-            WHERE quota_id >= ?1 AND quota_id <= ?2 AND pool_id == ?3 AND id_type = ?4
-            "#
+            "SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
+            WHERE quota_id >= ?1 AND quota_id <= ?2 AND pool_id == ?3 AND id_type = ?4"
         ),
         params![
             quota_id_range.start(),
@@ -31,7 +36,8 @@ pub fn with_quota_id_range(
             pool_id,
             id_type
         ],
-    )
+        SpaceAndInodeLimits::from_row,
+    )?)
 }
 
 pub fn with_quota_id_list(
@@ -40,17 +46,15 @@ pub fn with_quota_id_list(
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
-    fetch(
-        tx,
+    Ok(tx.query_map_collect(
         sql!(
-            r#"
-            SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
+            "SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
             WHERE pool_id == ?1 AND id_type = ?2
-            AND quota_id IN rarray(?3)
-            "#
+            AND quota_id IN rarray(?3)"
         ),
         params![pool_id, id_type, &rarray_param(quota_ids)],
-    )
+        SpaceAndInodeLimits::from_row,
+    )?)
 }
 
 pub fn all(
@@ -58,34 +62,12 @@ pub fn all(
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
-    fetch(
-        tx,
-        r#"
-        SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-        WHERE pool_id == ?1 AND id_type = ?2
-        "#,
+    Ok(tx.query_map_collect(
+        "SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
+        WHERE pool_id == ?1 AND id_type = ?2",
         params![pool_id, id_type],
-    )
-}
-
-fn fetch(
-    tx: &mut Transaction,
-    stmt: &str,
-    params: &[&dyn ToSql],
-) -> Result<Vec<SpaceAndInodeLimits>> {
-    let mut stmt = tx.prepare_cached(stmt)?;
-
-    let res = stmt
-        .query_map(params, |row| {
-            Ok(SpaceAndInodeLimits {
-                quota_id: row.get(0)?,
-                space: row.get(1)?,
-                inodes: row.get(2)?,
-            })
-        })?
-        .try_collect()?;
-
-    Ok(res)
+        SpaceAndInodeLimits::from_row,
+    )?)
 }
 
 pub fn update(
@@ -93,19 +75,15 @@ pub fn update(
     iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
 ) -> Result<()> {
     let mut insert_stmt = tx.prepare_cached(sql!(
-        r#"
-        INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value)
+        "INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value)
         VALUES(?1, ?2, ?3 ,?4 ,?5)
         ON CONFLICT (quota_id, id_type, quota_type, pool_id) DO
-        UPDATE SET value = ?5
-        "#
+        UPDATE SET value = ?5"
     ))?;
 
     let mut delete_stmt = tx.prepare_cached(sql!(
-        r#"
-        DELETE FROM quota_limits
-        WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND pool_id == ?4
-        "#
+        "DELETE FROM quota_limits
+        WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND pool_id == ?4"
     ))?;
 
     for l in iter {
