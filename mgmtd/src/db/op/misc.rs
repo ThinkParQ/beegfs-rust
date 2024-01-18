@@ -20,7 +20,7 @@ use std::ops::RangeInclusive;
 ///
 /// # Warning
 /// Vulnerable to sql injection, do not call with user supplied input!
-pub fn find_new_id<T: FromSql + std::fmt::Display>(
+pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
     tx: &mut Transaction,
     table: &str,
     field: &str,
@@ -58,14 +58,14 @@ pub fn find_new_id<T: FromSql + std::fmt::Display>(
 ///
 /// Contains info on which type of meta root there is and on which node or buddy group it is stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MetaRoot {
+pub(crate) enum MetaRoot {
     Unknown,
     Normal(NodeID, EntityUID),
     Mirrored(BuddyGroupID),
 }
 
 /// Retrieves the meta root information of the BeeGFS system.
-pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
+pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
     let res = tx
         .query_row_cached(
             sql!(
@@ -94,7 +94,7 @@ pub fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
 ///
 /// Gets the meta target with the root inode and moves the root inode to the buddy group which
 /// contains that target as primary target. Then a resync for the secondary target is triggered.
-pub fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
+pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     tx.execute_checked(
         sql!(
             "UPDATE root_inode

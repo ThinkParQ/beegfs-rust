@@ -6,7 +6,7 @@ use std::time::Duration;
 
 /// Represents a node entry.
 #[derive(Clone, Debug)]
-pub struct Node {
+pub(crate) struct Node {
     pub uid: EntityUID,
     pub id: NodeID,
     pub node_type: NodeType,
@@ -27,7 +27,7 @@ impl Node {
 }
 
 /// Retrieve a list of all nodes
-pub fn get_all(tx: &mut Transaction) -> Result<Vec<Node>> {
+pub(crate) fn get_all(tx: &mut Transaction) -> Result<Vec<Node>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT node_uid, node_id, node_type, alias, port
@@ -39,7 +39,7 @@ pub fn get_all(tx: &mut Transaction) -> Result<Vec<Node>> {
 }
 
 /// Retrieve a list of nodes filtered by node type.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
+pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT node_uid, node_id, node_type, alias, port
@@ -55,7 +55,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<No
 ///
 /// # Return value
 /// Returns `None` if the entry doesn't exist.
-pub fn get_uid(
+pub(crate) fn get_uid(
     tx: &mut Transaction,
     node_id: NodeID,
     node_type: NodeType,
@@ -71,22 +71,11 @@ pub fn get_uid(
     Ok(res)
 }
 
-/// Checks if a node with the given UID exists
-pub fn is_uid(tx: &mut Transaction, node_uid: EntityUID) -> Result<bool> {
-    let count: i64 = tx.query_row_cached(
-        sql!("SELECT COUNT(*) FROM nodes WHERE node_uid = ?1"),
-        params![node_uid],
-        |row| row.get(0),
-    )?;
-
-    Ok(count > 0)
-}
-
 /// Delete client nodes with a last contact time bigger than `timeout`.
 ///
 /// # Return value
 /// Returns the number of deleted clients.
-pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
+pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
     let affected = {
         let mut stmt = tx.prepare_cached(sql!(
             "DELETE FROM nodes
@@ -100,7 +89,7 @@ pub fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<u
 }
 
 /// Inserts a node into the database.
-pub fn insert(
+pub(crate) fn insert(
     tx: &mut Transaction,
     node_id: NodeID,
     node_uid: EntityUID,
@@ -132,7 +121,7 @@ pub fn insert(
 }
 
 /// Updates a node in the database.
-pub fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> Result<()> {
+pub(crate) fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> Result<()> {
     tx.execute_checked_cached(
         sql!("UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2"),
         params![new_port, node_uid],
@@ -148,7 +137,7 @@ pub fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> Resu
 /// that are used to update these. This doesn't make sense (a node is the entity that can be
 /// unreachable, not a target), but since there is currently no way to know from which node these
 /// messages come, the nodes to update are determined using target IDs.
-pub fn update_last_contact_for_targets(
+pub(crate) fn update_last_contact_for_targets(
     tx: &mut Transaction,
     target_ids: &[TargetID],
     node_type: NodeTypeServer,
@@ -165,7 +154,7 @@ pub fn update_last_contact_for_targets(
 }
 
 /// Delete a node from the database.
-pub fn delete(tx: &mut Transaction, node_uid: EntityUID) -> Result<usize> {
+pub(crate) fn delete(tx: &mut Transaction, node_uid: EntityUID) -> Result<usize> {
     Ok(tx.execute_checked_cached(
         sql!("DELETE FROM nodes WHERE node_uid = ?1"),
         params![node_uid],

@@ -1,26 +1,26 @@
 #[cfg(test)]
 use super::test::*;
+use crate::error::TypedError;
 use crate::types::*;
 use anyhow::{anyhow, bail, Result};
 use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension, Params, Row, Transaction};
-use shared::error::*;
 use shared::types::{BuddyGroupID, EntityUID, NodeID, Port, QuotaID, StoragePoolID, TargetID};
 use sql_check::sql;
 use std::ops::RangeBounds;
 use std::rc::Rc;
 
-pub mod buddy_group;
-pub mod cap_pool;
-pub mod entity;
-pub mod misc;
-pub mod node;
-pub mod node_nic;
-pub mod quota_default_limit;
-pub mod quota_limit;
-pub mod quota_usage;
-pub mod storage_pool;
-pub mod target;
+pub(crate) mod buddy_group;
+pub(crate) mod cap_pool;
+pub(crate) mod entity;
+pub(crate) mod misc;
+pub(crate) mod node;
+pub(crate) mod node_nic;
+pub(crate) mod quota_default_limit;
+pub(crate) mod quota_limit;
+pub(crate) mod quota_usage;
+pub(crate) mod storage_pool;
+pub(crate) mod target;
 
 /// Convienence methods meant for extending [rusqlite::Transaction].
 ///

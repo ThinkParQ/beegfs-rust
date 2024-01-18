@@ -2,7 +2,7 @@
 use super::*;
 
 /// A pool ID or target ID
-pub enum PoolOrTargetID {
+pub(crate) enum PoolOrTargetID {
     PoolID(StoragePoolID),
     TargetID(TargetID),
 }
@@ -11,7 +11,7 @@ pub enum PoolOrTargetID {
 ///
 /// Since the request message can
 /// contain a pool ID or a target ID, both are accepted here as well.
-pub fn exceeded_quota_ids(
+pub(crate) fn exceeded_quota_ids(
     tx: &mut Transaction,
     pool_or_target_id: PoolOrTargetID,
     id_type: QuotaIDType,
@@ -42,7 +42,7 @@ pub fn exceeded_quota_ids(
 ///
 /// Contains additional information on which limit has been exceeded and on which storage pool.
 #[derive(Clone, Debug)]
-pub struct ExceededQuotaEntry {
+pub(crate) struct ExceededQuotaEntry {
     pub quota_id: QuotaID,
     pub id_type: QuotaIDType,
     pub quota_type: QuotaType,
@@ -53,7 +53,7 @@ pub struct ExceededQuotaEntry {
 ///
 /// Since an ID can exceed more than one of the four limits and also on multiple storage pools, it
 /// can be returned more than once (with the respective information stored in [ExceededQuotaEntry]).
-pub fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
+pub(crate) fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
     Ok(tx.query_map_collect(
         sql!("SELECT quota_id, id_type, quota_type, pool_id FROM exceeded_quota_v"),
         [],
@@ -70,7 +70,7 @@ pub fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaE
 
 /// A quota usage entry containing space and inode usage for a user or group/
 #[derive(Clone, Debug)]
-pub struct QuotaData {
+pub(crate) struct QuotaData {
     pub quota_id: QuotaID,
     pub id_type: QuotaIDType,
     pub space: u64,
@@ -78,7 +78,7 @@ pub struct QuotaData {
 }
 
 /// Inserts or updates quota usage entries for a storage target.
-pub fn upsert(
+pub(crate) fn upsert(
     tx: &mut Transaction,
     target_id: TargetID,
     data: impl IntoIterator<Item = QuotaData>,

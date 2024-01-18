@@ -7,7 +7,7 @@ use std::sync::Arc;
 ///
 /// # Return value
 /// A Vec containing (EntityUID, Vec<SocketAddr>) entries.
-pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketAddr>)>> {
+pub(crate) fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketAddr>)>> {
     let mut stmt = tx.prepare_cached(sql!(
         "SELECT nn.node_uid, nn.addr, n.port
         FROM node_nics AS nn
@@ -38,7 +38,7 @@ pub fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketA
 /// Represents a network interface entry
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub struct NodeNic {
+pub(crate) struct NodeNic {
     pub node_uid: EntityUID,
     pub addr: Ipv4Addr,
     pub port: Port,
@@ -59,7 +59,7 @@ impl NodeNic {
 }
 
 /// Retrieves all node nics
-pub fn get_all(tx: &mut Transaction) -> Result<Arc<[NodeNic]>> {
+pub(crate) fn get_all(tx: &mut Transaction) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
@@ -73,7 +73,7 @@ pub fn get_all(tx: &mut Transaction) -> Result<Arc<[NodeNic]>> {
 }
 
 /// Retrieves all node nics for the given node type.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
+pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
@@ -88,7 +88,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[N
 }
 
 #[derive(Debug)]
-pub struct ReplaceNic<'a> {
+pub(crate) struct ReplaceNic<'a> {
     pub nic_type: NicType,
     pub addr: &'a Ipv4Addr,
     pub name: &'a str,
@@ -96,7 +96,7 @@ pub struct ReplaceNic<'a> {
 
 /// Replaces all node nics for the given node by UID.
 // TODO Accept fitting structure, so we don't have to provide unused port anymore
-pub fn replace<'a>(
+pub(crate) fn replace<'a>(
     tx: &mut Transaction,
     node_uid: EntityUID,
     nics: impl IntoIterator<Item = ReplaceNic<'a>>,

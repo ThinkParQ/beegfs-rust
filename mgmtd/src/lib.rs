@@ -4,6 +4,7 @@ mod beemsg;
 pub mod config;
 mod context;
 pub mod db;
+mod error;
 mod grpc;
 mod quota;
 mod timer;

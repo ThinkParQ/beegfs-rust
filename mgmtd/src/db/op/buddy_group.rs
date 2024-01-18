@@ -7,27 +7,25 @@ use std::time::Duration;
 
 /// Represents a buddy group entry.
 #[derive(Clone, Debug)]
-pub struct BuddyGroup {
+pub(crate) struct BuddyGroup {
     pub id: BuddyGroupID,
-    pub primary_node_id: NodeID,
-    pub secondary_node_id: NodeID,
     pub primary_target_id: TargetID,
     pub secondary_target_id: TargetID,
+    #[allow(unused)]
     pub pool_id: Option<StoragePoolID>,
-    pub primary_free_space: Option<u64>,
-    pub primary_free_inodes: Option<u64>,
-    pub secondary_free_space: Option<u64>,
-    pub secondary_free_inodes: Option<u64>,
 }
+
 /// Retrieve a list of nodes filtered by node type.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<BuddyGroup>> {
+pub(crate) fn get_with_type(
+    tx: &mut Transaction,
+    node_type: NodeTypeServer,
+) -> Result<Vec<BuddyGroup>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT
-            buddy_group_id, primary_node_id, secondary_node_id,
-            primary_target_id, secondary_target_id, pool_id,
-            primary_free_space, primary_free_inodes,
-            secondary_free_space, secondary_free_inodes
+            buddy_group_id,
+            primary_target_id, secondary_target_id,
+            pool_id
             FROM all_buddy_groups_v
             WHERE node_type = ?1;"
         ),
@@ -35,15 +33,9 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<
         |row| {
             Ok(BuddyGroup {
                 id: row.get(0)?,
-                primary_node_id: row.get(1)?,
-                secondary_node_id: row.get(2)?,
-                primary_target_id: row.get(3)?,
-                secondary_target_id: row.get(4)?,
-                pool_id: row.get(5)?,
-                primary_free_space: row.get(6)?,
-                primary_free_inodes: row.get(7)?,
-                secondary_free_space: row.get(8)?,
-                secondary_free_inodes: row.get(9)?,
+                primary_target_id: row.get(1)?,
+                secondary_target_id: row.get(2)?,
+                pool_id: row.get(3)?,
             })
         },
     )?)
@@ -53,7 +45,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<
 ///
 /// # Return value
 /// Returns `None` if the entry doesn't exist.
-pub fn get_uid(
+pub(crate) fn get_uid(
     tx: &mut Transaction,
     buddy_group_id: BuddyGroupID,
     node_type: NodeTypeServer,
@@ -74,7 +66,7 @@ pub fn get_uid(
 
 /// Ensures that the list of given buddy groups actually exists and returns an appropriate error if
 /// not.
-pub fn validate_ids(
+pub(crate) fn validate_ids(
     tx: &mut Transaction,
     buddy_group_ids: &[BuddyGroupID],
     node_type: NodeTypeServer,
@@ -112,7 +104,7 @@ pub fn validate_ids(
 ///
 /// # Return value
 /// Returns the ID of the new buddy group.
-pub fn insert(
+pub(crate) fn insert(
     tx: &mut Transaction,
     buddy_group_id: Option<BuddyGroupID>,
     node_type: NodeTypeServer,
@@ -233,7 +225,7 @@ pub(crate) fn reset_storage_pool(
 /// # Return value
 /// Returns a Vec containing tuples with the ID and the node type of buddy groups which have been
 /// swapped.
-pub fn check_and_swap_buddies(
+pub(crate) fn check_and_swap_buddies(
     tx: &mut Transaction,
     timeout: Duration,
 ) -> Result<Vec<(BuddyGroupID, NodeTypeServer)>> {
@@ -281,7 +273,7 @@ pub fn check_and_swap_buddies(
 /// # Return value
 /// Returns the UIDs of the primary and the secondary node which own the primary and secondary
 /// target of the given group.
-pub fn prepare_storage_deletion(
+pub(crate) fn prepare_storage_deletion(
     tx: &mut Transaction,
     id: BuddyGroupID,
 ) -> Result<(EntityUID, EntityUID)> {
@@ -313,7 +305,7 @@ pub fn prepare_storage_deletion(
 ///
 /// This expects that the nodes owning the affected targets have already been notified and the
 /// groups deleted.
-pub fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
+pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
     tx.execute_checked(
         sql!("DELETE FROM storage_buddy_groups WHERE buddy_group_id = ?1"),
         [buddy_group_id],

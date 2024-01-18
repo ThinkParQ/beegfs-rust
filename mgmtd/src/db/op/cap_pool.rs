@@ -25,7 +25,7 @@ pub struct EntityWithCapPool {
 }
 
 /// Calculate capacity pools for meta targets
-pub fn for_meta_targets(
+pub(crate) fn for_meta_targets(
     tx: &mut Transaction,
     cap_pool_meta_limits: &CapPoolLimits,
     cap_pool_dynamic_meta_limits: Option<&CapPoolDynamicLimits>,
@@ -39,7 +39,7 @@ pub fn for_meta_targets(
 }
 
 /// Calculate capacity pools for storage targets
-pub fn for_storage_targets(
+pub(crate) fn for_storage_targets(
     tx: &mut Transaction,
     cap_pool_storage_limits: &CapPoolLimits,
     cap_pool_dynamic_storage_limits: Option<&CapPoolDynamicLimits>,
@@ -53,7 +53,7 @@ pub fn for_storage_targets(
 }
 
 /// Calculate capacity pools for meta buddy groups
-pub fn for_meta_buddy_groups(
+pub(crate) fn for_meta_buddy_groups(
     tx: &mut Transaction,
     cap_pool_meta_limits: &CapPoolLimits,
     cap_pool_dynamic_meta_limits: Option<&CapPoolDynamicLimits>,
@@ -67,7 +67,7 @@ pub fn for_meta_buddy_groups(
 }
 
 /// Calculate capacity pools for storage buddy groups
-pub fn for_storage_buddy_groups(
+pub(crate) fn for_storage_buddy_groups(
     tx: &mut Transaction,
     cap_pool_storage_limits: &CapPoolLimits,
     cap_pool_dynamic_storage_limits: Option<&CapPoolDynamicLimits>,

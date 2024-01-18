@@ -7,7 +7,7 @@ use rusqlite::OptionalExtension;
 
 /// A set of quota default limits.
 #[derive(Debug, Clone, Default)]
-pub struct DefaultLimits {
+pub(crate) struct DefaultLimits {
     pub user_space_limit: Option<u64>,
     pub user_inodes_limit: Option<u64>,
     pub group_space_limit: Option<u64>,
@@ -15,7 +15,10 @@ pub struct DefaultLimits {
 }
 
 /// Retrieves the default limits for the given storage pool ID.
-pub fn get_with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<DefaultLimits> {
+pub(crate) fn get_with_pool_id(
+    tx: &mut Transaction,
+    pool_id: StoragePoolID,
+) -> Result<DefaultLimits> {
     storage_pool::get_uid(tx, pool_id)?
         .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
 
@@ -44,7 +47,7 @@ pub fn get_with_pool_id(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<
 /// Inserts or updates one default limit for the given storage pool ID.
 ///
 /// Affects one of the four limits ((user, group) x (space, inode)).
-pub fn upsert(
+pub(crate) fn upsert(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
@@ -68,7 +71,7 @@ pub fn upsert(
 /// Deletes one default limit for the given storage pool ID.
 ///
 /// Affects one of the four limits ((user, group) x (space, inode)).
-pub fn delete(
+pub(crate) fn delete(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,

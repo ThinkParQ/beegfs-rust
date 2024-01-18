@@ -5,7 +5,7 @@ use rusqlite::{Connection, Transaction};
 
 /// Sets ups a fresh database instance in memory and fills, with the test data set and provides a
 /// transaction handle.
-pub fn with_test_data(op: impl FnOnce(&mut Transaction)) {
+pub(crate) fn with_test_data(op: impl FnOnce(&mut Transaction)) {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
     connection::setup_connection(&conn).unwrap();
 
@@ -55,7 +55,7 @@ pub fn with_test_data(op: impl FnOnce(&mut Transaction)) {
 /// Sets up a transaction for the given [rusqlite::Connection] and executes the provided code.
 ///
 /// Meant for tests and does not return results.
-pub fn transaction(conn: &mut Connection, op: impl FnOnce(&mut Transaction)) {
+pub(crate) fn transaction(conn: &mut Connection, op: impl FnOnce(&mut Transaction)) {
     let mut tx = conn.transaction().unwrap();
     op(&mut tx);
     tx.commit().unwrap();

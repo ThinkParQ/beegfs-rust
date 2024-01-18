@@ -5,13 +5,13 @@ use rusqlite::OptionalExtension;
 
 /// A storage pool entry.
 #[derive(Clone, Debug)]
-pub struct StoragePool {
+pub(crate) struct StoragePool {
     pub pool_id: StoragePoolID,
     pub alias: String,
 }
 
 /// Retrieves all storage pool entries, including the default pool.
-pub fn get_all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
+pub(crate) fn get_all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT p.pool_id, alias FROM storage_pools AS p
@@ -31,7 +31,7 @@ pub fn get_all(tx: &mut Transaction) -> Result<Vec<StoragePool>> {
 ///
 /// # Return value
 /// Returns `None` if the entry doesn't exist.
-pub fn get_uid(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<Option<EntityUID>> {
+pub(crate) fn get_uid(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<Option<EntityUID>> {
     Ok(tx
         .query_row_cached(
             sql!("SELECT pool_uid FROM storage_pools WHERE pool_id = ?1"),
@@ -42,7 +42,11 @@ pub fn get_uid(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<Option<En
 }
 
 /// Inserts a storage pool entry and assigns the given targets and buddy groups to the new pool.
-pub fn insert(tx: &mut Transaction, pool_id: StoragePoolID, pool_uid: EntityUID) -> Result<()> {
+pub(crate) fn insert(
+    tx: &mut Transaction,
+    pool_id: StoragePoolID,
+    pool_uid: EntityUID,
+) -> Result<()> {
     tx.execute_checked(
         sql!("INSERT INTO storage_pools (pool_id, pool_uid) VALUES (?1, ?2)"),
         params![pool_id, pool_uid],
@@ -53,7 +57,7 @@ pub fn insert(tx: &mut Transaction, pool_id: StoragePoolID, pool_uid: EntityUID)
 }
 
 /// Deletes a storage pool entry
-pub fn delete(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<()> {
+pub(crate) fn delete(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<()> {
     tx.execute_checked(
         sql!("DELETE FROM storage_pools WHERE pool_id = ?1"),
         params![pool_id],

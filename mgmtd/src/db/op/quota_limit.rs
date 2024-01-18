@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub struct SpaceAndInodeLimits {
+pub(crate) struct SpaceAndInodeLimits {
     pub quota_id: QuotaID,
     pub space: Option<u64>,
     pub inodes: Option<u64>,
@@ -19,7 +19,7 @@ impl SpaceAndInodeLimits {
     }
 }
 
-pub fn with_quota_id_range(
+pub(crate) fn with_quota_id_range(
     tx: &mut Transaction,
     quota_id_range: RangeInclusive<QuotaID>,
     pool_id: StoragePoolID,
@@ -40,7 +40,7 @@ pub fn with_quota_id_range(
     )?)
 }
 
-pub fn with_quota_id_list(
+pub(crate) fn with_quota_id_list(
     tx: &mut Transaction,
     quota_ids: impl IntoIterator<Item = QuotaID>,
     pool_id: StoragePoolID,
@@ -57,7 +57,7 @@ pub fn with_quota_id_list(
     )?)
 }
 
-pub fn all(
+pub(crate) fn all(
     tx: &mut Transaction,
     pool_id: StoragePoolID,
     id_type: QuotaIDType,
@@ -70,7 +70,7 @@ pub fn all(
     )?)
 }
 
-pub fn update(
+pub(crate) fn update(
     tx: &mut Transaction,
     iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
 ) -> Result<()> {

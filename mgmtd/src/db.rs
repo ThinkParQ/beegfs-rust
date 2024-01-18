@@ -11,6 +11,6 @@ mod op;
 #[cfg(test)]
 mod test;
 
-pub use connection::{initialize, Connection};
-pub use op::*;
-pub use shared::error::*;
+pub use connection::initialize;
+pub(crate) use connection::Connection;
+pub(crate) use op::*;

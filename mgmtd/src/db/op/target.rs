@@ -9,42 +9,36 @@ use std::time::Duration;
 ///
 /// Since this is also used for meta targets, pool_id is optional.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct Target {
-    pub target_uid: EntityUID,
+pub(crate) struct Target {
     pub target_id: TargetID,
-    pub node_type: NodeTypeServer,
     pub node_uid: EntityUID,
     pub node_id: NodeID,
     pub pool_id: Option<StoragePoolID>,
-    pub free_space: Option<u64>,
-    pub free_inodes: Option<u64>,
     pub consistency: TargetConsistencyState,
     pub last_contact: Duration,
 }
 
 /// Retrieve a list of targets filtered by node type.
-pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<Vec<Target>> {
+pub(crate) fn get_with_type(
+    tx: &mut Transaction,
+    node_type: NodeTypeServer,
+) -> Result<Vec<Target>> {
     Ok(tx.query_map_collect(
         sql!(
-            "SELECT target_uid, target_id, node_type, node_uid, node_id, pool_id,
-            free_space, free_inodes, consistency, last_contact_s
+            "SELECT target_id, node_uid, node_id, pool_id,
+            consistency, last_contact_s
             FROM all_targets_v
             WHERE node_type = ?1 AND node_id IS NOT NULL;"
         ),
         [node_type],
         |row| {
             Ok(Target {
-                target_uid: row.get(0)?,
-                target_id: row.get(1)?,
-                node_type: row.get(2)?,
-                node_uid: row.get(3)?,
-                node_id: row.get(4)?,
-                pool_id: row.get(5)?,
-                free_space: row.get(6)?,
-                free_inodes: row.get(7)?,
-                consistency: row.get(8)?,
-                last_contact: Duration::from_secs(row.get(9)?),
+                target_id: row.get(0)?,
+                node_uid: row.get(1)?,
+                node_id: row.get(2)?,
+                pool_id: row.get(3)?,
+                consistency: row.get(4)?,
+                last_contact: Duration::from_secs(row.get(5)?),
             })
         },
     )?)
@@ -54,7 +48,7 @@ pub fn get_with_type(tx: &mut Transaction, node_type: NodeTypeServer) -> Result<
 ///
 /// # Return value
 /// Returns `None` if the entry doesn't exist.
-pub fn get_uid(
+pub(crate) fn get_uid(
     tx: &mut Transaction,
     target_id: TargetID,
     node_type: NodeTypeServer,
@@ -69,7 +63,7 @@ pub fn get_uid(
 }
 
 /// Ensures that the list of given targets actually exists and returns an appropriate error if not.
-pub fn validate_ids(
+pub(crate) fn validate_ids(
     tx: &mut Transaction,
     target_ids: &[TargetID],
     node_type: NodeTypeServer,
@@ -107,7 +101,7 @@ pub fn validate_ids(
 /// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
 /// meta target per meta node with their IDs being the same. Due to that restriction, the type
 /// `NodeID` is expected.
-pub fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &str) -> Result<()> {
+pub(crate) fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &str) -> Result<()> {
     insert(tx, node_id, NodeTypeServer::Meta, Some(node_id), alias)?;
 
     // If this is the first meta target, set it as meta root
@@ -125,7 +119,7 @@ pub fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &str) -> Result
 ///
 /// # Return value
 /// Returns the ID of the new target.
-pub fn insert_or_ignore_storage(
+pub(crate) fn insert_or_ignore_storage(
     tx: &mut Transaction,
     target_id: Option<TargetID>,
     alias: &str,
@@ -189,7 +183,7 @@ fn insert(
 ///
 /// # Return value
 /// Returns the number of affected entries.
-pub fn update_consistency_states(
+pub(crate) fn update_consistency_states(
     tx: &mut Transaction,
     changes: impl IntoIterator<Item = (TargetID, TargetConsistencyState)>,
     node_type: NodeTypeServer,
@@ -210,7 +204,7 @@ pub fn update_consistency_states(
 }
 
 /// Change the storage pool of the given targets IDs to a new one.
-pub fn update_storage_pools(
+pub(crate) fn update_storage_pools(
     tx: &mut Transaction,
     new_pool_id: StoragePoolID,
     target_ids: &[TargetID],
@@ -231,7 +225,10 @@ pub fn update_storage_pools(
 }
 
 /// Reset all storage targets belonging to the given storage pool to the default pool.
-pub fn reset_storage_pool(tx: &mut Transaction, pool_id: StoragePoolID) -> rusqlite::Result<usize> {
+pub(crate) fn reset_storage_pool(
+    tx: &mut Transaction,
+    pool_id: StoragePoolID,
+) -> rusqlite::Result<usize> {
     tx.execute_cached(
         sql!("UPDATE storage_targets SET pool_id = 1 WHERE pool_id = ?"),
         [pool_id],
@@ -242,7 +239,7 @@ pub fn reset_storage_pool(tx: &mut Transaction, pool_id: StoragePoolID) -> rusql
 ///
 /// # Return value
 /// Returns the number of affected entries
-pub fn update_storage_node_mappings(
+pub(crate) fn update_storage_node_mappings(
     tx: &mut Transaction,
     target_ids: &[TargetID],
     new_node_id: NodeID,
@@ -269,7 +266,7 @@ pub fn update_storage_node_mappings(
 /// Represents the storage capacities of a storage target.
 ///
 /// Values are `None` if there is no information available.
-pub struct TargetCapacities {
+pub(crate) struct TargetCapacities {
     pub total_space: Option<u64>,
     pub total_inodes: Option<u64>,
     pub free_space: Option<u64>,
@@ -280,7 +277,7 @@ pub struct TargetCapacities {
 ///
 /// # Return value
 /// Vector of tuples containing the target ID and the pre-update capacity info.
-pub fn get_and_update_capacities(
+pub(crate) fn get_and_update_capacities(
     tx: &mut Transaction,
     items: impl IntoIterator<Item = (TargetID, TargetCapacities)>,
     node_type: NodeTypeServer,
@@ -328,7 +325,7 @@ pub fn get_and_update_capacities(
 }
 
 /// Deletes a storage target.
-pub fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
+pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
     tx.execute_checked_cached(
         sql!("DELETE FROM storage_targets WHERE target_id = ?1"),
         params![target_id],

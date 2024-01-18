@@ -36,13 +36,13 @@ pub fn initialize(path: impl AsRef<Path> + Debug) -> Result<()> {
 
 /// Wraps an async database connection and provides means to use it
 #[derive(Clone, Debug)]
-pub struct Connection {
+pub(crate) struct Connection {
     conn: tokio_rusqlite::Connection,
 }
 
 impl Connection {
     /// Opens a new asynchronous SQLite connection.
-    pub async fn open(path: impl AsRef<Path> + Debug) -> Result<Self> {
+    pub(crate) async fn open(path: impl AsRef<Path> + Debug) -> Result<Self> {
         let conn =
             tokio_rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
                 .await?;
@@ -62,7 +62,7 @@ impl Connection {
     ///
     /// Database access is provided using a single thread, so blocking or heavy computation must be
     /// avoided.
-    pub async fn op<
+    pub(crate) async fn op<
         T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>,
         R: Send + 'static,
     >(
@@ -83,7 +83,7 @@ impl Connection {
 }
 
 /// Sets connection parameters on an SQLite connection.
-pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+pub(crate) fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     // We use the carray extension to bind arrays to parameters
     rusqlite::vtab::array::load_module(conn)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;

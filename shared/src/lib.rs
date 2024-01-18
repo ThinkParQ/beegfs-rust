@@ -10,7 +10,6 @@ mod impl_macros;
 pub mod bee_serde;
 pub mod beemsg;
 pub mod conn;
-pub mod error;
 pub mod journald_logger;
 pub mod parser;
 pub mod shutdown;

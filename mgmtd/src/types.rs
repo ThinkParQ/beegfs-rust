@@ -20,7 +20,7 @@ macro_rules! impl_enum_to_sql_str {
 
         impl $type {
             #[allow(dead_code)]
-            pub fn as_sql_str(&self) -> &'static str {
+            pub(crate) fn as_sql_str(&self) -> &'static str {
                 match self {
                     $(
                         Self::$variant => $text,
@@ -76,7 +76,7 @@ macro_rules! impl_enum_to_sql_str {
 /// A node type. There is no Management variant here since we don't store info about ourselves in
 /// the database and don't allow it at all (that wouldn't make sense).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum NodeType {
+pub(crate) enum NodeType {
     Meta,
     Storage,
     Client,
@@ -113,7 +113,7 @@ impl From<NodeType> for shared::types::NodeType {
 /// In a lot of operations, only meta or storage makes sense, so we provide this extra enum for
 /// that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum NodeTypeServer {
+pub(crate) enum NodeTypeServer {
     Meta,
     Storage,
 }
@@ -143,7 +143,7 @@ impl From<NodeTypeServer> for shared::types::NodeType {
 
 /// The entity type
 #[derive(Clone, Debug)]
-pub enum EntityType {
+pub(crate) enum EntityType {
     Node,
     Target,
     BuddyGroup,
@@ -157,7 +157,7 @@ impl_enum_to_sql_str!(EntityType,
 );
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CapacityPool {
+pub(crate) enum CapacityPool {
     Normal,
     Low,
     Emergency,
@@ -176,7 +176,7 @@ impl From<CapacityPool> for shared::beemsg::misc::CapacityPool {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum TargetConsistencyState {
+pub(crate) enum TargetConsistencyState {
     #[default]
     Good,
     NeedsResync,
@@ -190,7 +190,7 @@ impl_enum_to_sql_str!(TargetConsistencyState,
 impl_from_and_into!(TargetConsistencyState, shared::types::TargetConsistencyState, Good <=> Good, NeedsResync <=> NeedsResync, Bad <=> Bad);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum QuotaIDType {
+pub(crate) enum QuotaIDType {
     User,
     Group,
 }
@@ -201,7 +201,7 @@ impl_enum_to_sql_str!(QuotaIDType,
 impl_from_and_into!(QuotaIDType, shared::types::QuotaIDType, User <=> User, Group <=> Group);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum QuotaType {
+pub(crate) enum QuotaType {
     Space,
     Inodes,
 }
@@ -212,7 +212,7 @@ impl_enum_to_sql_str!(QuotaType,
 impl_from_and_into!(QuotaType, shared::types::QuotaType, Space <=> Space, Inodes <=> Inodes);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum NicType {
+pub(crate) enum NicType {
     Ethernet,
     Sdp,
     Rdma,

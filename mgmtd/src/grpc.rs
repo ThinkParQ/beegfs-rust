@@ -11,7 +11,7 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 
 /// Serve gRPC requests on the `grpc_port` extracted from the config
-pub fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
+pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
     let builder = Server::builder();
 
     // If gRPC TLS is enabled, configure the server accordingly

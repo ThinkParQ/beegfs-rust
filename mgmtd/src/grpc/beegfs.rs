@@ -6,7 +6,7 @@ use shared::error_chain;
 
 /// gRPC server implementation
 #[derive(Debug)]
-pub struct ManagementService {
+pub(crate) struct ManagementService {
     pub ctx: Context,
 }
 

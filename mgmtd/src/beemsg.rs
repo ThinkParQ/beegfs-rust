@@ -5,7 +5,7 @@
 
 use crate::context::Context;
 use crate::db;
-use crate::db::TypedError;
+use crate::error::TypedError;
 use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{bail, Result};
 use shared::beemsg::misc::{GenericResponse, TRY_AGAIN};
