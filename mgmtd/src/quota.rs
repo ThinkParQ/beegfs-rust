@@ -6,10 +6,11 @@ use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
 use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{anyhow, Context as AnyhowContext, Result};
+use shared::beemsg::quota::{
+    GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
+};
+use shared::beemsg::OpsErr;
 use shared::log_error_chain;
-use shared::msg::get_quota_info::{GetQuotaInfo, GetQuotaInfoResp};
-use shared::msg::set_exceeded_quota::{SetExceededQuota, SetExceededQuotaResp};
-use shared::msg::OpsErr;
 use shared::types::QuotaID;
 use std::collections::HashSet;
 use std::path::Path;

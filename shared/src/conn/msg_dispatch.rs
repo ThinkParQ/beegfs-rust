@@ -2,7 +2,7 @@
 
 use super::msg_buf::MsgBuf;
 use super::stream::Stream;
-use crate::msg::{Msg, MsgID};
+use crate::beemsg::{Msg, MsgID};
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;

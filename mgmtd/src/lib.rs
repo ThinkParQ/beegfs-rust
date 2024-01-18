@@ -1,10 +1,10 @@
 //! The BeeGFS managment service
 
+mod beemsg;
 pub mod config;
 mod context;
 pub mod db;
 mod grpc;
-mod msg;
 mod quota;
 mod timer;
 mod types;

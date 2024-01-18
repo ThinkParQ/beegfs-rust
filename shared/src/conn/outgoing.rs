@@ -1,10 +1,10 @@
 //! Outgoing communication functionality
 use super::msg_buf::MsgBuf;
 use super::store::Store;
+use crate::beemsg::misc::AuthenticateChannel;
+use crate::beemsg::{self, Msg};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::msg::authenticate_channel::AuthenticateChannel;
-use crate::msg::{self, Msg};
 use crate::types::{AuthenticationSecret, EntityUID};
 use anyhow::{bail, Context, Result};
 use std::fmt::Debug;
@@ -42,7 +42,7 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and receives the response.
-    pub async fn request<M: msg::Msg, R: msg::Msg>(
+    pub async fn request<M: beemsg::Msg, R: beemsg::Msg>(
         &self,
         node_uid: EntityUID,
         msg: &M,
@@ -63,7 +63,7 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
-    pub async fn send<M: msg::Msg>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
+    pub async fn send<M: beemsg::Msg>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
         log::debug!(target: "msg", "SEND to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();

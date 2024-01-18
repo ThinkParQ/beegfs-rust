@@ -19,8 +19,8 @@
 //! make sure the buffer is used the appropriate way.
 use super::stream::Stream;
 use crate::bee_serde::{BeeSerde, Deserializer, Serializer};
-use crate::msg::header::Header;
-use crate::msg::{Msg, MsgID};
+use crate::beemsg::header::Header;
+use crate::beemsg::{Msg, MsgID};
 use anyhow::{bail, Result};
 use bytes::BytesMut;
 use std::net::SocketAddr;

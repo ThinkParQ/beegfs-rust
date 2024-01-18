@@ -1,3 +1,4 @@
+//! gRPC server and handlers
 mod beegfs;
 
 use crate::context::Context;

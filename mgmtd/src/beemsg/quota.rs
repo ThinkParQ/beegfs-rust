@@ -1,0 +1,295 @@
+use super::*;
+use crate::db::quota_limit::SpaceAndInodeLimits;
+use crate::db::quota_usage::PoolOrTargetID;
+use crate::types::QuotaType;
+use shared::beemsg::quota::*;
+
+impl Handler for GetDefaultQuota {
+    type Response = GetDefaultQuotaResp;
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        match ctx
+            .db
+            .op(move |tx| {
+                // Check pool ID exists
+                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
+                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
+                }
+
+                let res = db::quota_default_limit::get_with_pool_id(tx, self.pool_id)?;
+
+                Ok(res)
+            })
+            .await
+        {
+            Ok(res) => GetDefaultQuotaResp {
+                limits: QuotaDefaultLimits {
+                    user_space_limit: res.user_space_limit.unwrap_or_default(),
+                    user_inode_limit: res.user_inodes_limit.unwrap_or_default(),
+                    group_space_limit: res.group_space_limit.unwrap_or_default(),
+                    group_inode_limit: res.group_inodes_limit.unwrap_or_default(),
+                },
+            },
+            Err(err) => {
+                log_error_chain!(
+                    err,
+                    "Getting default quota info for storage pool {} failed",
+                    self.pool_id
+                );
+
+                GetDefaultQuotaResp {
+                    limits: QuotaDefaultLimits::default(),
+                }
+            }
+        }
+    }
+}
+
+impl Handler for SetDefaultQuota {
+    type Response = SetDefaultQuotaResp;
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        match ctx
+            .db
+            .op(move |tx| {
+                // Check pool ID exists
+                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
+                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
+                }
+
+                match self.space {
+                    0 => db::quota_default_limit::delete(
+                        tx,
+                        self.pool_id,
+                        self.id_type.into(),
+                        QuotaType::Space,
+                    )?,
+                    n => db::quota_default_limit::upsert(
+                        tx,
+                        self.pool_id,
+                        self.id_type.into(),
+                        QuotaType::Space,
+                        n,
+                    )?,
+                };
+
+                match self.inodes {
+                    0 => db::quota_default_limit::delete(
+                        tx,
+                        self.pool_id,
+                        self.id_type.into(),
+                        QuotaType::Inodes,
+                    )?,
+                    n => db::quota_default_limit::upsert(
+                        tx,
+                        self.pool_id,
+                        self.id_type.into(),
+                        QuotaType::Inodes,
+                        n,
+                    )?,
+                };
+
+                Ok(())
+            })
+            .await
+        {
+            Ok(_) => {
+                log::info!(
+                    "Set default quota of type {:?} for storage pool {}",
+                    self.id_type,
+                    self.pool_id,
+                );
+                SetDefaultQuotaResp { result: 1 }
+            }
+
+            Err(err) => {
+                log_error_chain!(
+                    err,
+                    "Setting default quota of type {:?} for storage pool {} failed",
+                    self.id_type,
+                    self.pool_id
+                );
+                SetDefaultQuotaResp { result: 0 }
+            }
+        }
+    }
+}
+
+impl Handler for GetQuotaInfo {
+    type Response = GetQuotaInfoResp;
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        // TODO Respect the requested transfer method. Or, at least, query by target, not by storage
+        // pool (since this and only this is used by ctl for the request).
+
+        let pool_id = self.pool_id;
+
+        match ctx
+            .db
+            .op(move |tx| {
+                // Check pool id exists
+                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
+                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
+                }
+
+                let limits = match self.query_type {
+                    QuotaQueryType::None => return Ok(vec![]),
+                    QuotaQueryType::Single => db::quota_limit::with_quota_id_range(
+                        tx,
+                        self.id_range_start..=self.id_range_start,
+                        self.pool_id,
+                        self.id_type.into(),
+                    )?,
+                    QuotaQueryType::Range => db::quota_limit::with_quota_id_range(
+                        tx,
+                        self.id_range_start..=self.id_range_end,
+                        self.pool_id,
+                        self.id_type.into(),
+                    )?,
+                    QuotaQueryType::List => db::quota_limit::with_quota_id_list(
+                        tx,
+                        self.id_list,
+                        self.pool_id,
+                        self.id_type.into(),
+                    )?,
+                    QuotaQueryType::All => {
+                        // This is actually unused on the old ctl side, if --all is provided, it
+                        // sends a list
+                        db::quota_limit::all(tx, self.pool_id, self.id_type.into())?
+                    }
+                };
+
+                let res = limits
+                    .into_iter()
+                    .map(|limit| QuotaEntry {
+                        space: limit.space.unwrap_or_default(),
+                        inodes: limit.inodes.unwrap_or_default(),
+                        id: limit.quota_id,
+                        id_type: self.id_type,
+                        valid: 1,
+                    })
+                    .collect();
+
+                Ok(res)
+            })
+            .await
+        {
+            Ok(data) => GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::Unknown,
+                quota_entry: data,
+            },
+            Err(err) => {
+                log_error_chain!(
+                    err,
+                    "Getting quota info for storage pool {} failed",
+                    pool_id,
+                );
+
+                GetQuotaInfoResp {
+                    quota_inode_support: QuotaInodeSupport::Unknown,
+                    quota_entry: vec![],
+                }
+            }
+        }
+    }
+}
+
+impl Handler for SetQuota {
+    type Response = SetQuotaResp;
+
+    async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Self::Response {
+        match ctx
+            .db
+            .op(move |tx| {
+                // Check pool ID exists
+                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
+                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
+                }
+
+                db::quota_limit::update(
+                    tx,
+                    self.quota_entry.into_iter().map(|e| {
+                        (
+                            e.id_type.into(),
+                            self.pool_id,
+                            SpaceAndInodeLimits {
+                                quota_id: e.id,
+                                space: match e.space {
+                                    0 => None,
+                                    n => Some(n),
+                                },
+                                inodes: match e.inodes {
+                                    0 => None,
+                                    n => Some(n),
+                                },
+                            },
+                        )
+                    }),
+                )
+            })
+            .await
+        {
+            Ok(_) => {
+                log::info!("Set quota for storage pool {}", self.pool_id,);
+                SetQuotaResp { result: 1 }
+            }
+
+            Err(err) => {
+                log_error_chain!(
+                    err,
+                    "Setting quota for storage pool {} failed",
+                    self.pool_id
+                );
+
+                SetQuotaResp { result: 0 }
+            }
+        }
+    }
+}
+
+impl Handler for RequestExceededQuota {
+    type Response = RequestExceededQuotaResp;
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        match ctx
+            .db
+            .op(move |tx| {
+                let exceeded_ids = db::quota_usage::exceeded_quota_ids(
+                    tx,
+                    if self.pool_id != 0 {
+                        PoolOrTargetID::PoolID(self.pool_id)
+                    } else {
+                        PoolOrTargetID::TargetID(self.target_id)
+                    },
+                    self.id_type.into(),
+                    self.quota_type.into(),
+                )?;
+
+                Ok(SetExceededQuota {
+                    pool_id: self.pool_id,
+                    id_type: self.id_type,
+                    quota_type: self.quota_type,
+                    exceeded_quota_ids: exceeded_ids,
+                })
+            })
+            .await
+        {
+            Ok(inner) => RequestExceededQuotaResp {
+                result: OpsErr::SUCCESS,
+                inner,
+            },
+            Err(err) => {
+                log_error_chain!(
+                    err,
+                    "Fetching exceeded quota IDs for storage pool {} or target {} failed",
+                    self.pool_id,
+                    self.target_id
+                );
+                RequestExceededQuotaResp {
+                    result: OpsErr::INTERNAL,
+                    inner: SetExceededQuota::default(),
+                }
+            }
+        }
+    }
+}

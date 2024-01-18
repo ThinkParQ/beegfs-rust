@@ -164,6 +164,17 @@ pub enum CapacityPool {
 }
 impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
 
+impl From<CapacityPool> for shared::beemsg::misc::CapacityPool {
+    fn from(value: CapacityPool) -> Self {
+        use shared::beemsg::misc::CapacityPool as BMC;
+        match value {
+            CapacityPool::Normal => BMC::Normal,
+            CapacityPool::Low => BMC::Low,
+            CapacityPool::Emergency => BMC::Emergency,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum TargetConsistencyState {
     #[default]

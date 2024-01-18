@@ -1,6 +1,6 @@
 //! Interfaces and implementations for in-app interaction between tasks or threads.
 
-use crate::msg::dispatch_request;
+use crate::beemsg::dispatch_request;
 use crate::{db, StaticInfo};
 use anyhow::Result;
 use shared::conn::msg_dispatch::*;
