@@ -122,13 +122,12 @@ pub(crate) fn insert(
 
 /// Updates a node in the database.
 pub(crate) fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> Result<()> {
-    tx.execute_checked_cached(
+    let affected = tx.execute_cached(
         sql!("UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2"),
         params![new_port, node_uid],
-        1..=1,
     )?;
 
-    Ok(())
+    check_affected_rows(affected, [1])
 }
 
 /// Updates the `last_contact` time for all the nodes belonging to the passed targets.
@@ -154,12 +153,13 @@ pub(crate) fn update_last_contact_for_targets(
 }
 
 /// Delete a node from the database.
-pub(crate) fn delete(tx: &mut Transaction, node_uid: EntityUID) -> Result<usize> {
-    Ok(tx.execute_checked_cached(
+pub(crate) fn delete(tx: &mut Transaction, node_uid: EntityUID) -> Result<()> {
+    let affected = tx.execute_cached(
         sql!("DELETE FROM nodes WHERE node_uid = ?1"),
         params![node_uid],
-        1..=1,
-    )?)
+    )?;
+
+    check_affected_rows(affected, [1])
 }
 
 #[cfg(test)]

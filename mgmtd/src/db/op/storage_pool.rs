@@ -47,24 +47,22 @@ pub(crate) fn insert(
     pool_id: StoragePoolID,
     pool_uid: EntityUID,
 ) -> Result<()> {
-    tx.execute_checked(
+    let affected = tx.execute(
         sql!("INSERT INTO storage_pools (pool_id, pool_uid) VALUES (?1, ?2)"),
         params![pool_id, pool_uid],
-        1..=1,
     )?;
 
-    Ok(())
+    check_affected_rows(affected, [1])
 }
 
 /// Deletes a storage pool entry
 pub(crate) fn delete(tx: &mut Transaction, pool_id: StoragePoolID) -> Result<()> {
-    tx.execute_checked(
+    let affected = tx.execute(
         sql!("DELETE FROM storage_pools WHERE pool_id = ?1"),
         params![pool_id],
-        1..=1,
     )?;
 
-    Ok(())
+    check_affected_rows(affected, [1])
 }
 
 #[cfg(test)]

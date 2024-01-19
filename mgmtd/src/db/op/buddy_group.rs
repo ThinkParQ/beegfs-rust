@@ -245,7 +245,7 @@ pub(crate) fn check_and_swap_buddies(
     )?;
 
     for &(id, node_type) in &affected_groups {
-        tx.execute_checked(
+        let affected = tx.execute(
             match node_type {
                 NodeTypeServer::Meta => sql!(
                     "UPDATE meta_buddy_groups
@@ -261,8 +261,9 @@ pub(crate) fn check_and_swap_buddies(
                 ),
             },
             [id],
-            1..=1,
         )?;
+
+        check_affected_rows(affected, [1])?;
     }
 
     Ok(affected_groups)
@@ -306,13 +307,12 @@ pub(crate) fn prepare_storage_deletion(
 /// This expects that the nodes owning the affected targets have already been notified and the
 /// groups deleted.
 pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
-    tx.execute_checked(
+    let affected = tx.execute(
         sql!("DELETE FROM storage_buddy_groups WHERE buddy_group_id = ?1"),
         [buddy_group_id],
-        1..=1,
     )?;
 
-    Ok(())
+    check_affected_rows(affected, [1])
 }
 
 #[cfg(test)]

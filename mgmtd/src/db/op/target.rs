@@ -326,13 +326,12 @@ pub(crate) fn get_and_update_capacities(
 
 /// Deletes a storage target.
 pub(crate) fn delete_storage(tx: &mut Transaction, target_id: TargetID) -> Result<()> {
-    tx.execute_checked_cached(
+    let affected = tx.execute_cached(
         sql!("DELETE FROM storage_targets WHERE target_id = ?1"),
         params![target_id],
-        1..=1,
     )?;
 
-    Ok(())
+    check_affected_rows(affected, [1])
 }
 
 #[cfg(test)]

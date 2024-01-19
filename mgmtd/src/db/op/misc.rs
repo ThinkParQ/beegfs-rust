@@ -95,7 +95,7 @@ pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
 /// Gets the meta target with the root inode and moves the root inode to the buddy group which
 /// contains that target as primary target. Then a resync for the secondary target is triggered.
 pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
-    tx.execute_checked(
+    let affected = tx.execute(
         sql!(
             "UPDATE root_inode
             SET target_id = NULL, buddy_group_id = (
@@ -105,10 +105,11 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
             )"
         ),
         [],
-        1..=1,
     )?;
 
-    tx.execute_checked(
+    check_affected_rows(affected, [1])?;
+
+    let affected = tx.execute(
         sql!(
             "UPDATE targets SET consistency = 'needs_resync'
             WHERE target_uid = (
@@ -119,10 +120,9 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
             )"
         ),
         [],
-        1..=1,
     )?;
 
-    Ok(())
+    check_affected_rows(affected, [1])
 }
 
 #[cfg(test)]
