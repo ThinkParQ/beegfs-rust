@@ -410,11 +410,43 @@ pub(crate) fn calc_reachability_state(
     contact_age: Duration,
     timeout: Duration,
 ) -> TargetReachabilityState {
-    if contact_age < timeout {
-        TargetReachabilityState::Online
-    } else if contact_age < timeout / 2 {
+    if contact_age > timeout {
+        TargetReachabilityState::Offline
+    } else if contact_age > timeout / 2 {
         TargetReachabilityState::ProbablyOffline
     } else {
-        TargetReachabilityState::Offline
+        TargetReachabilityState::Online
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_calc_reachability_state() {
+        assert_eq!(
+            TargetReachabilityState::Online,
+            calc_reachability_state(Duration::from_secs(5), Duration::from_secs(60))
+        );
+
+        assert_eq!(
+            TargetReachabilityState::Online,
+            calc_reachability_state(Duration::from_secs(30), Duration::from_secs(60))
+        );
+
+        assert_eq!(
+            TargetReachabilityState::ProbablyOffline,
+            calc_reachability_state(Duration::from_secs(31), Duration::from_secs(60))
+        );
+
+        assert_eq!(
+            TargetReachabilityState::ProbablyOffline,
+            calc_reachability_state(Duration::from_secs(60), Duration::from_secs(60))
+        );
+
+        assert_eq!(
+            TargetReachabilityState::Offline,
+            calc_reachability_state(Duration::from_secs(61), Duration::from_secs(60))
+        );
     }
 }
