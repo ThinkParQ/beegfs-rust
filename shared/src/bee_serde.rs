@@ -19,8 +19,8 @@ pub trait BeeSerde {
 pub struct Serializer<'a> {
     /// The target buffer
     target_buf: &'a mut BytesMut,
-    /// BeeGFS message feature flags obtained from the message definition, used for
-    /// conditional serialization by certain messages.
+    /// BeeGFS message feature flags obtained, used for conditional serialization by certain
+    /// messages. To be set by the serialization function.
     pub msg_feature_flags: u16,
     /// The number of bytes written to the buffer
     bytes_written: usize,
@@ -43,10 +43,10 @@ impl<'a> Serializer<'a> {
     /// conditional serialization on some messages.
     /// `msg_feature_flags` is supposed to be obtained from the message definition, and is used
     /// for conditional serialization by certain messages.
-    pub fn new(target_buf: &'a mut BytesMut, msg_feature_flags: u16) -> Self {
+    pub fn new(target_buf: &'a mut BytesMut) -> Self {
         Self {
             target_buf,
-            msg_feature_flags,
+            msg_feature_flags: 0,
             bytes_written: 0,
         }
     }
@@ -491,7 +491,7 @@ mod test {
     fn primitives() {
         let mut buf = BytesMut::new();
 
-        let mut ser = Serializer::new(&mut buf, 0);
+        let mut ser = Serializer::new(&mut buf);
         ser.u8(123).unwrap();
         ser.i8(-123).unwrap();
         ser.u16(22222).unwrap();
@@ -525,7 +525,7 @@ mod test {
 
         let mut buf = BytesMut::new();
 
-        let mut ser = Serializer::new(&mut buf, 0);
+        let mut ser = Serializer::new(&mut buf);
         ser.bytes(&bytes).unwrap();
         ser.bytes(&bytes).unwrap();
 
@@ -544,7 +544,7 @@ mod test {
 
         let mut buf = BytesMut::new();
 
-        let mut ser = Serializer::new(&mut buf, 0);
+        let mut ser = Serializer::new(&mut buf);
         ser.cstr(&str, 0).unwrap();
         ser.cstr(&str, 4).unwrap();
         ser.cstr(&str, 5).unwrap();
@@ -641,7 +641,7 @@ mod test {
 
         let mut buf = BytesMut::new();
 
-        let mut ser = Serializer::new(&mut buf, 0);
+        let mut ser = Serializer::new(&mut buf);
 
         s.serialize(&mut ser).unwrap();
 

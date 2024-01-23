@@ -59,12 +59,12 @@ impl MsgBuf {
         // Catching serialization errors to ensure buffer is unsplit afterwards in all cases
         let res = (|| {
             // Serialize body
-            let mut ser_body = Serializer::new(&mut body, msg.build_feature_flags());
+            let mut ser_body = Serializer::new(&mut body);
             msg.serialize(&mut ser_body)?;
 
             // Create and serialize header
-            let header = Header::new(ser_body.bytes_written(), M::ID, msg.build_feature_flags());
-            let mut ser_header = Serializer::new(&mut self.buf, msg.build_feature_flags());
+            let header = Header::new(ser_body.bytes_written(), M::ID, ser_body.msg_feature_flags);
+            let mut ser_header = Serializer::new(&mut self.buf);
             header.serialize(&mut ser_header)?;
 
             *self.header = header;

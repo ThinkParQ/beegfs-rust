@@ -54,57 +54,47 @@ impl ModifyStoragePool {
 
 impl Msg for ModifyStoragePool {
     const ID: MsgID = 1068;
-
-    fn build_feature_flags(&self) -> u16 {
-        let mut flags = 0;
-        if self.alias.is_some() {
-            flags += Self::HAS_DESC;
-        }
-        if !self.add_target_ids.is_empty() {
-            flags += Self::HAS_ADD_TARGETS;
-        }
-        if !self.remove_target_ids.is_empty() {
-            flags += Self::HAS_REMOVE_TARGETS;
-        }
-        if !self.add_buddy_group_ids.is_empty() {
-            flags += Self::HAS_ADD_GROUPS;
-        }
-        if !self.remove_buddy_group_ids.is_empty() {
-            flags += Self::HAS_REMOVE_GROUPS;
-        }
-
-        flags
-    }
 }
 
 /// Custom BeeSerde impl because actions depend on flags set in the msg header
 impl BeeSerde for ModifyStoragePool {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        let flags = ser.msg_feature_flags;
-
         self.pool_id.serialize(ser)?;
 
-        if flags & Self::HAS_DESC != 0 {
+        if self.alias.is_some() {
+            ser.msg_feature_flags += Self::HAS_DESC;
+
             if let Some(inner) = self.alias.as_ref() {
                 ser.cstr(inner.as_ref(), 0)?;
             } else {
                 ser.cstr(&[], 0)?;
             }
         }
-        if flags & Self::HAS_ADD_TARGETS != 0 {
+        if !self.add_target_ids.is_empty() {
+            ser.msg_feature_flags += Self::HAS_ADD_TARGETS;
+
             ser.seq(self.add_target_ids.iter(), true, |ser, e| e.serialize(ser))?;
         }
-        if flags & Self::HAS_REMOVE_TARGETS != 0 {
+
+        if !self.remove_target_ids.is_empty() {
+            ser.msg_feature_flags += Self::HAS_REMOVE_TARGETS;
+
             ser.seq(self.remove_target_ids.iter(), true, |ser, e| {
                 e.serialize(ser)
             })?;
         }
-        if flags & Self::HAS_ADD_GROUPS != 0 {
+
+        if !self.add_buddy_group_ids.is_empty() {
+            ser.msg_feature_flags += Self::HAS_ADD_GROUPS;
+
             ser.seq(self.add_buddy_group_ids.iter(), true, |ser, e| {
                 e.serialize(ser)
             })?;
         }
-        if flags & Self::HAS_REMOVE_GROUPS != 0 {
+
+        if !self.remove_buddy_group_ids.is_empty() {
+            ser.msg_feature_flags += Self::HAS_REMOVE_GROUPS;
+
             ser.seq(self.remove_buddy_group_ids.iter(), true, |ser, e| {
                 e.serialize(ser)
             })?;

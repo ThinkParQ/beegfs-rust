@@ -24,14 +24,6 @@ pub type MsgID = u16;
 pub trait Msg: BeeSerde + std::fmt::Debug + Clone + Send + Sync + 'static {
     /// Message type as defined in NetMessageTypes.h
     const ID: MsgID;
-
-    /// Returns the feature flags
-    ///
-    /// Feature flags are a u16 field in the message header and are sometimes used to control
-    /// (de-)serialization. This function provides them to the serializer.
-    fn build_feature_flags(&self) -> u16 {
-        0
-    }
 }
 
 /// Matches the `FhgfsOpsErr` value from the BeeGFS C/C++ codebase.
