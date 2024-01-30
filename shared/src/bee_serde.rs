@@ -78,8 +78,12 @@ impl<'a> Serializer<'a> {
         self.u8(0)?;
 
         if align_to != 0 {
-            let padding = (v.len() + 1) % align_to;
+            // Total amount of bytes written for this CStr modulo align_to - results in the number
+            // of pad bytes to add for alignment
+            let padding = (v.len() + 4 + 1) % align_to;
+
             if padding != 0 {
+                // Yes, this does actually not achieve alignment - but we have to mimic the C++ code
                 self.zeroes(align_to - padding)?;
             }
         }
@@ -253,9 +257,12 @@ impl<'a> Deserializer<'a> {
         }
 
         if align_to != 0 {
-            let padding = (v.len() + 1) % align_to;
+            // Total amount of bytes read for this CStr modulo align_to - results in the number
+            // of pad bytes to skip due to alignment
+            let padding = (v.len() + 4 + 1) % align_to;
 
             if padding != 0 {
+                // Yes, this does actually not achieve alignment - but we have to mimic the C++ code
                 self.skip(align_to - padding)?;
             }
         }
@@ -551,7 +558,9 @@ mod test {
 
         assert_eq!(
             // alignment applies to string length + null byte terminator
-            (4 + 4 + 1) + (4 + 4 + 1 + 3) + (4 + 4 + 1),
+            // Last one with align_to = 5 is intended and correct: Wrote 9 bytes, 9 % align_to = 1,
+            // align_to - 1 = 4
+            (4 + 4 + 1) + (4 + 4 + 1) + (4 + 4 + 1 + 4),
             ser.bytes_written
         );
 
