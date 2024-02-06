@@ -57,52 +57,7 @@ impl Msg for ModifyStoragePool {
 }
 
 /// Custom BeeSerde impl because actions depend on flags set in the msg header
-impl BeeSerde for ModifyStoragePool {
-    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        self.pool_id.serialize(ser)?;
-
-        if self.alias.is_some() {
-            ser.msg_feature_flags += Self::HAS_DESC;
-
-            if let Some(inner) = self.alias.as_ref() {
-                ser.cstr(inner.as_ref(), 0)?;
-            } else {
-                ser.cstr(&[], 0)?;
-            }
-        }
-        if !self.add_target_ids.is_empty() {
-            ser.msg_feature_flags += Self::HAS_ADD_TARGETS;
-
-            ser.seq(self.add_target_ids.iter(), true, |ser, e| e.serialize(ser))?;
-        }
-
-        if !self.remove_target_ids.is_empty() {
-            ser.msg_feature_flags += Self::HAS_REMOVE_TARGETS;
-
-            ser.seq(self.remove_target_ids.iter(), true, |ser, e| {
-                e.serialize(ser)
-            })?;
-        }
-
-        if !self.add_buddy_group_ids.is_empty() {
-            ser.msg_feature_flags += Self::HAS_ADD_GROUPS;
-
-            ser.seq(self.add_buddy_group_ids.iter(), true, |ser, e| {
-                e.serialize(ser)
-            })?;
-        }
-
-        if !self.remove_buddy_group_ids.is_empty() {
-            ser.msg_feature_flags += Self::HAS_REMOVE_GROUPS;
-
-            ser.seq(self.remove_buddy_group_ids.iter(), true, |ser, e| {
-                e.serialize(ser)
-            })?;
-        }
-
-        Ok(())
-    }
-
+impl Deserializable for ModifyStoragePool {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         let flags = des.msg_feature_flags;
 
@@ -207,7 +162,7 @@ pub struct TargetCapacityPools {
     pub target_map: HashMap<TargetID, NodeID>,
 }
 
-impl BeeSerde for TargetCapacityPools {
+impl Serializable for TargetCapacityPools {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.seq(self.pools.iter(), true, |ser, e| {
             ser.seq(e.iter(), true, |ser, e| e.serialize(ser))
@@ -228,7 +183,9 @@ impl BeeSerde for TargetCapacityPools {
         )?;
         Ok(())
     }
+}
 
+impl Deserializable for TargetCapacityPools {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         Ok(Self {
             pools: des.seq(true, |des| des.seq(true, |des| TargetID::deserialize(des)))?,
@@ -257,13 +214,15 @@ pub struct BuddyGroupCapacityPools {
     pub pools: Vec<Vec<BuddyGroupID>>,
 }
 
-impl BeeSerde for BuddyGroupCapacityPools {
+impl Serializable for BuddyGroupCapacityPools {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.seq(self.pools.iter(), true, |ser, e| {
             ser.seq(e.iter(), true, |ser, e| e.serialize(ser))
         })
     }
+}
 
+impl Deserializable for BuddyGroupCapacityPools {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         Ok(Self {
             pools: des.seq(true, |des| {

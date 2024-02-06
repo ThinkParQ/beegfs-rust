@@ -120,7 +120,7 @@ impl Msg for GetNodeCapacityPoolsResp {
 }
 
 // Custom BeeSerde impl because nested sequences / maps are not supported by the macro
-impl BeeSerde for GetNodeCapacityPoolsResp {
+impl Serializable for GetNodeCapacityPoolsResp {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.map(
             self.pools.iter(),
@@ -132,16 +132,6 @@ impl BeeSerde for GetNodeCapacityPoolsResp {
                 })
             },
         )
-    }
-
-    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        Ok(Self {
-            pools: des.map(
-                false,
-                |des| StoragePoolID::deserialize(des),
-                |des| des.seq(true, |des| des.seq(true, |des| des.u16())),
-            )?,
-        })
     }
 }
 

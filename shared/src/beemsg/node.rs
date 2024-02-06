@@ -61,7 +61,7 @@ impl Default for Nic {
     }
 }
 
-impl BeeSerde for Nic {
+impl Serializable for Nic {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.u32(u32::from_le_bytes(self.addr.octets()))?;
 
@@ -75,7 +75,9 @@ impl BeeSerde for Nic {
         ser.zeroes(3)?;
         Ok(())
     }
+}
 
+impl Deserializable for Nic {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         let mut s = Self {
             addr: des.u32()?.to_le_bytes().into(),

@@ -7,9 +7,11 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
-/// Enables (de-)serialization from / into BeeGFS custom message format
-pub trait BeeSerde {
+pub trait Serializable {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()>;
+}
+
+pub trait Deserializable {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self>
     where
         Self: Sized;
@@ -390,7 +392,7 @@ pub struct Int<Output>(PhantomData<Output>);
 impl<Input, Target> BeeSerdeAs<Input> for Int<Target>
 where
     Input: TryInto<Target> + Copy,
-    Target: TryInto<Input> + BeeSerde,
+    Target: TryInto<Input> + Serializable + Deserializable,
     anyhow::Error: From<<Input as TryInto<Target>>::Error> + From<Target::Error>,
 {
     fn serialize_as(data: &Input, ser: &mut Serializer<'_>) -> Result<()> {
@@ -409,7 +411,9 @@ where
 /// `T` must implement [BeeSerde].
 pub struct Seq<const INCLUDE_SIZE: bool, T>(PhantomData<T>);
 
-impl<const INCLUDE_SIZE: bool, T: BeeSerde> BeeSerdeAs<Vec<T>> for Seq<INCLUDE_SIZE, T> {
+impl<const INCLUDE_SIZE: bool, T: Serializable + Deserializable> BeeSerdeAs<Vec<T>>
+    for Seq<INCLUDE_SIZE, T>
+{
     fn serialize_as(data: &Vec<T>, ser: &mut Serializer<'_>) -> Result<()> {
         ser.seq(data.iter(), INCLUDE_SIZE, |ser, e| e.serialize(ser))
     }
@@ -425,8 +429,11 @@ impl<const INCLUDE_SIZE: bool, T: BeeSerde> BeeSerdeAs<Vec<T>> for Seq<INCLUDE_S
 /// `K` must implement [BeeSerde] and [Hash], `V` must implement [BeeSerde].
 pub struct Map<const INCLUDE_SIZE: bool, K, V>(PhantomData<(K, V)>);
 
-impl<const INCLUDE_SIZE: bool, K: BeeSerde + Eq + Hash, V: BeeSerde> BeeSerdeAs<HashMap<K, V>>
-    for Map<INCLUDE_SIZE, K, V>
+impl<
+        const INCLUDE_SIZE: bool,
+        K: Serializable + Deserializable + Eq + Hash,
+        V: Serializable + Deserializable,
+    > BeeSerdeAs<HashMap<K, V>> for Map<INCLUDE_SIZE, K, V>
 {
     fn serialize_as(data: &HashMap<K, V>, ser: &mut Serializer<'_>) -> Result<()> {
         ser.map(
@@ -469,11 +476,13 @@ where
 // Implement BeeSerde for all integer primitives including conversion into bool
 macro_rules! impl_traits_for_primitive {
     ($t:ident) => {
-        impl BeeSerde for $t {
+        impl Serializable for $t {
             fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
                 ser.$t(*self)
             }
+        }
 
+        impl Deserializable for $t {
             fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
                 des.$t()
             }
@@ -584,7 +593,7 @@ mod test {
             pub c2: HashMap<u16, Vec<Vec<u8>>>,
         }
 
-        impl BeeSerde for S {
+        impl Serializable for S {
             fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
                 ser.u8(self.var_u8).unwrap();
                 ser.u64(self.var_u64).unwrap();
@@ -619,7 +628,9 @@ mod test {
 
                 Ok(())
             }
+        }
 
+        impl Deserializable for S {
             fn deserialize(des: &mut Deserializer<'_>) -> Result<Self>
             where
                 Self: Sized,

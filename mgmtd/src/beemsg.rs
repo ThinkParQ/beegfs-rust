@@ -8,6 +8,7 @@ use crate::db;
 use crate::error::TypedError;
 use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{bail, Result};
+use shared::bee_serde::Serializable;
 use shared::beemsg::misc::{GenericResponse, TRY_AGAIN};
 use shared::beemsg::{Msg, OpsErr};
 use shared::conn::msg_dispatch::*;
@@ -156,7 +157,11 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
     )
 }
 
-pub async fn notify_nodes(ctx: &Context, node_types: &'static [NodeType], msg: &impl Msg) {
+pub async fn notify_nodes<M: Msg + Serializable>(
+    ctx: &Context,
+    node_types: &'static [NodeType],
+    msg: &M,
+) {
     log::debug!(target: "mgmtd::msg", "NOTIFICATION to {:?}: {:?}",
             node_types, msg);
 

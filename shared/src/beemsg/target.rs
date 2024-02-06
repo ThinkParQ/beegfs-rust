@@ -19,7 +19,7 @@ impl Msg for GetTargetMappingsResp {
     const ID: MsgID = 1026;
 }
 
-impl BeeSerde for GetTargetMappingsResp {
+impl Serializable for GetTargetMappingsResp {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.map(
             self.mapping.iter(),
@@ -27,16 +27,6 @@ impl BeeSerde for GetTargetMappingsResp {
             |ser, k| k.serialize(ser),
             |ser, v| ser.u32((*v).into()),
         )
-    }
-
-    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        Ok(Self {
-            mapping: des.map(
-                false,
-                |des| TargetID::deserialize(des),
-                |des| Ok(des.u32()?.try_into()?),
-            )?,
-        })
     }
 }
 
@@ -84,11 +74,13 @@ impl_enum_to_int!(TargetReachabilityState,
     Offline => 2
 );
 
-impl BeeSerde for TargetReachabilityState {
+impl Serializable for TargetReachabilityState {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.u8((*self).into())
     }
+}
 
+impl Deserializable for TargetReachabilityState {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         des.u8()?.try_into()
     }

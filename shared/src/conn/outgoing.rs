@@ -1,8 +1,9 @@
 //! Outgoing communication functionality
 use super::msg_buf::MsgBuf;
 use super::store::Store;
+use crate::bee_serde::{Deserializable, Serializable};
 use crate::beemsg::misc::AuthenticateChannel;
-use crate::beemsg::{self, Msg};
+use crate::beemsg::Msg;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::types::{AuthenticationSecret, EntityUID};
@@ -42,7 +43,7 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and receives the response.
-    pub async fn request<M: beemsg::Msg, R: beemsg::Msg>(
+    pub async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
         node_uid: EntityUID,
         msg: &M,
@@ -63,7 +64,7 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
-    pub async fn send<M: beemsg::Msg>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
+    pub async fn send<M: Msg + Serializable>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
         log::debug!(target: "msg", "SEND to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();
@@ -184,7 +185,7 @@ impl Pool {
         Ok(())
     }
 
-    pub async fn broadcast_datagram<M: Msg>(
+    pub async fn broadcast_datagram<M: Msg + Serializable>(
         &self,
         peers: impl IntoIterator<Item = EntityUID>,
         msg: &M,
@@ -215,7 +216,7 @@ impl Pool {
 /// Sends a msg to a node by [SocketAddr] and receives the response.
 ///
 /// Does not use stored connections.
-pub async fn request_by_addr<M: Msg, R: Msg>(
+pub async fn request_by_addr<M: Msg + Serializable, R: Msg + Deserializable>(
     dest: &SocketAddr,
     msg: &M,
     auth_secret: Option<AuthenticationSecret>,
@@ -239,7 +240,7 @@ pub async fn request_by_addr<M: Msg, R: Msg>(
 /// Sends a msg to a node by [SocketAddr] without receiving a response.
 ///
 /// Does not use stored connections.
-pub async fn send_by_addr<M: Msg>(
+pub async fn send_by_addr<M: Msg + Serializable>(
     dest: &SocketAddr,
     msg: &M,
     auth_secret: Option<AuthenticationSecret>,

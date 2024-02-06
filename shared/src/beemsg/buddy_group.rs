@@ -144,14 +144,16 @@ impl Msg for SetMirrorBuddyGroupResp {
     const ID: MsgID = 1046;
 }
 
-impl BeeSerde for SetMirrorBuddyGroupResp {
+impl Serializable for SetMirrorBuddyGroupResp {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         self.result.serialize(ser)?;
         self.buddy_group_id.serialize(ser)?;
         ser.zeroes(2)?;
         Ok(())
     }
+}
 
+impl Deserializable for SetMirrorBuddyGroupResp {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         let r = Self {
             result: OpsErr::deserialize(des)?,

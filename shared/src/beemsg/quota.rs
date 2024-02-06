@@ -116,7 +116,7 @@ impl Msg for GetQuotaInfo {
 }
 
 // Custom BeeSerde impl because (de-)serialization actions depend on msg data
-impl BeeSerde for GetQuotaInfo {
+impl Serializable for GetQuotaInfo {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.i32(self.query_type.into())?;
         ser.i32(self.id_type.into())?;
@@ -135,7 +135,9 @@ impl BeeSerde for GetQuotaInfo {
         self.pool_id.serialize(ser)?;
         Ok(())
     }
+}
 
+impl Deserializable for GetQuotaInfo {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         let query_type: QuotaQueryType = des.i32()?.try_into()?;
 

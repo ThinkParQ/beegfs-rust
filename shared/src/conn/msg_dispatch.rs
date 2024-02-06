@@ -2,6 +2,7 @@
 
 use super::msg_buf::MsgBuf;
 use super::stream::Stream;
+use crate::bee_serde::{Deserializable, Serializable};
 use crate::beemsg::{Msg, MsgID};
 use anyhow::Result;
 use std::fmt::Debug;
@@ -22,11 +23,11 @@ pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
 /// Abstracts away the underlying protocol (TCP or UDP), so the message handler doesn't need
 /// to know about that.
 pub trait Request: Send + Sync {
-    fn respond(self, msg: &impl Msg) -> impl Future<Output = Result<()>> + Send;
+    fn respond<M: Msg + Serializable>(self, msg: &M) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
     fn addr(&self) -> SocketAddr;
     fn msg_id(&self) -> MsgID;
-    fn deserialize_msg<M: Msg>(&self) -> Result<M>;
+    fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
 }
 
 /// Represents a request made via a TCP stream
@@ -37,7 +38,7 @@ pub struct StreamRequest<'a> {
 }
 
 impl<'a> Request for StreamRequest<'a> {
-    async fn respond(self, msg: &impl Msg) -> Result<()> {
+    async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         self.buf.serialize_msg(msg)?;
         self.buf.write_to_stream(self.stream).await
     }
@@ -56,7 +57,7 @@ impl<'a> Request for StreamRequest<'a> {
         self.stream.addr()
     }
 
-    fn deserialize_msg<M: Msg>(&self) -> Result<M> {
+    fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
         self.buf.deserialize_msg()
     }
 
@@ -74,7 +75,7 @@ pub struct SocketRequest<'a> {
 }
 
 impl<'a> Request for SocketRequest<'a> {
-    async fn respond(self, msg: &impl Msg) -> Result<()> {
+    async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
 
         self.msg_buf
@@ -90,7 +91,7 @@ impl<'a> Request for SocketRequest<'a> {
         self.peer_addr
     }
 
-    fn deserialize_msg<M: Msg>(&self) -> Result<M> {
+    fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
         self.msg_buf.deserialize_msg()
     }
 

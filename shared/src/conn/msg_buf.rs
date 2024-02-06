@@ -18,7 +18,7 @@
 //! provide old or garbage data. The same applies for the opposite direction. It's up to the user to
 //! make sure the buffer is used the appropriate way.
 use super::stream::Stream;
-use crate::bee_serde::{BeeSerde, Deserializer, Serializer};
+use crate::bee_serde::{Deserializable, Deserializer, Serializable, Serializer};
 use crate::beemsg::header::Header;
 use crate::beemsg::{Msg, MsgID};
 use anyhow::{bail, Result};
@@ -44,7 +44,7 @@ pub struct MsgBuf {
 
 impl MsgBuf {
     /// Serializes a BeeGFS message into the buffer
-    pub fn serialize_msg<M: Msg>(&mut self, msg: &M) -> Result<()> {
+    pub fn serialize_msg<M: Msg + Serializable>(&mut self, msg: &M) -> Result<()> {
         self.buf.truncate(0);
 
         if self.buf.capacity() < Header::LEN {
@@ -83,7 +83,7 @@ impl MsgBuf {
     /// # Panic
     /// The function will panic if the buffer has not been filled with data before (e.g. by
     /// reading from stream or receiving from a socket)
-    pub fn deserialize_msg<M: Msg>(&self) -> Result<M> {
+    pub fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
         let mut des = Deserializer::new(&self.buf[Header::LEN..], self.header.msg_feature_flags);
         M::deserialize(&mut des)
     }

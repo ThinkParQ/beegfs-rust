@@ -92,11 +92,13 @@ impl_enum_to_int!(TargetConsistencyState,
     Bad => 2
 );
 
-impl BeeSerde for TargetConsistencyState {
+impl Serializable for TargetConsistencyState {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.u8((*self).into())
     }
+}
 
+impl Deserializable for TargetConsistencyState {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         des.u8()?.try_into()
     }
