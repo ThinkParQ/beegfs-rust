@@ -2,8 +2,8 @@
 
 use super::msg_buf::MsgBuf;
 use super::stream::Stream;
+use crate::bee_msg::{Msg, MsgID};
 use crate::bee_serde::{Deserializable, Serializable};
-use crate::beemsg::{Msg, MsgID};
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;

@@ -1,8 +1,8 @@
 use super::target::calc_reachability_state;
 use super::*;
 use crate::db::misc::MetaRoot;
-use shared::beemsg::buddy_group::*;
-use shared::beemsg::misc::RefreshCapacityPools;
+use shared::bee_msg::buddy_group::*;
+use shared::bee_msg::misc::RefreshCapacityPools;
 
 impl Handler for GetMirrorBuddyGroups {
     type Response = GetMirrorBuddyGroupsResp;

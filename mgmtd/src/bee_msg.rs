@@ -8,9 +8,9 @@ use crate::db;
 use crate::error::TypedError;
 use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{bail, Result};
+use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
+use shared::bee_msg::{Msg, OpsErr};
 use shared::bee_serde::Serializable;
-use shared::beemsg::misc::{GenericResponse, TRY_AGAIN};
-use shared::beemsg::{Msg, OpsErr};
 use shared::conn::msg_dispatch::*;
 use shared::log_error_chain;
 use std::collections::HashMap;
@@ -113,7 +113,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         };
     }
 
-    use shared::beemsg::*;
+    use shared::bee_msg::*;
 
     // Defines the concrete message to be handled by which handler. See function description for
     // details.

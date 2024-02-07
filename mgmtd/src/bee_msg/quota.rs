@@ -2,7 +2,7 @@ use super::*;
 use crate::db::quota_limit::SpaceAndInodeLimits;
 use crate::db::quota_usage::PoolOrTargetID;
 use crate::types::QuotaType;
-use shared::beemsg::quota::*;
+use shared::bee_msg::quota::*;
 
 impl Handler for GetDefaultQuota {
     type Response = GetDefaultQuotaResp;

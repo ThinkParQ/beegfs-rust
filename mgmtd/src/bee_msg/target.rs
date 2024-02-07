@@ -1,8 +1,8 @@
 use super::*;
 use crate::db::target::TargetCapacities;
 use crate::types::{NodeType, NodeTypeServer, TargetConsistencyState};
-use shared::beemsg::misc::RefreshCapacityPools;
-use shared::beemsg::target::*;
+use shared::bee_msg::misc::RefreshCapacityPools;
+use shared::bee_msg::target::*;
 use std::time::Duration;
 
 impl Handler for GetTargetMappings {

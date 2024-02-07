@@ -1,5 +1,5 @@
 use super::*;
-use shared::beemsg::misc::*;
+use shared::bee_msg::misc::*;
 use shared::types::StoragePoolID;
 
 impl Handler for Ack {

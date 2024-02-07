@@ -18,9 +18,9 @@
 //! provide old or garbage data. The same applies for the opposite direction. It's up to the user to
 //! make sure the buffer is used the appropriate way.
 use super::stream::Stream;
+use crate::bee_msg::header::Header;
+use crate::bee_msg::{Msg, MsgID};
 use crate::bee_serde::{Deserializable, Deserializer, Serializable, Serializer};
-use crate::beemsg::header::Header;
-use crate::beemsg::{Msg, MsgID};
 use anyhow::{bail, Result};
 use bytes::BytesMut;
 use std::net::SocketAddr;

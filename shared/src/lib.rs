@@ -7,8 +7,8 @@
 #[macro_use]
 mod impl_macros;
 
+pub mod bee_msg;
 pub mod bee_serde;
-pub mod beemsg;
 pub mod conn;
 pub mod journald_logger;
 pub mod parser;

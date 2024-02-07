@@ -3,8 +3,8 @@
 use super::msg_buf::MsgBuf;
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
-use crate::beemsg::misc::AuthenticateChannel;
-use crate::beemsg::Msg;
+use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::Msg;
 use crate::shutdown::Shutdown;
 use anyhow::{bail, Result};
 use std::net::SocketAddr;

@@ -1,9 +1,9 @@
 //! Outgoing communication functionality
 use super::msg_buf::MsgBuf;
 use super::store::Store;
+use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::Msg;
 use crate::bee_serde::{Deserializable, Serializable};
-use crate::beemsg::misc::AuthenticateChannel;
-use crate::beemsg::Msg;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::types::{AuthenticationSecret, EntityUID};

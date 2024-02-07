@@ -164,9 +164,9 @@ pub(crate) enum CapacityPool {
 }
 impl_enum_to_sql_str!(CapacityPool, Normal => "normal", Low => "low", Emergency => "emergency");
 
-impl From<CapacityPool> for shared::beemsg::misc::CapacityPool {
+impl From<CapacityPool> for shared::bee_msg::misc::CapacityPool {
     fn from(value: CapacityPool) -> Self {
-        use shared::beemsg::misc::CapacityPool as BMC;
+        use shared::bee_msg::misc::CapacityPool as BMC;
         match value {
             CapacityPool::Normal => BMC::Normal,
             CapacityPool::Low => BMC::Low,

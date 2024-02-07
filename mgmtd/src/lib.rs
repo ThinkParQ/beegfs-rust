@@ -1,6 +1,6 @@
 //! The BeeGFS managment service
 
-mod beemsg;
+mod bee_msg;
 pub mod config;
 mod context;
 pub mod db;

@@ -4,7 +4,7 @@ use crate::context::Context;
 use crate::db::{self};
 use crate::quota::update_and_distribute;
 use crate::types::NodeType;
-use shared::beemsg::target::RefreshTargetStates;
+use shared::bee_msg::target::RefreshTargetStates;
 use shared::log_error_chain;
 use shared::shutdown::Shutdown;
 use std::time::Duration;
@@ -90,7 +90,7 @@ async fn switchover(ctx: Context, mut shutdown: Shutdown) {
                         "A switchover was triggered for the following buddy groups: {swapped:?}"
                     );
 
-                    crate::beemsg::notify_nodes(
+                    crate::bee_msg::notify_nodes(
                         &ctx,
                         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                         &RefreshTargetStates { ack_id: "".into() },

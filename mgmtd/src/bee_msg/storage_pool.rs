@@ -1,7 +1,7 @@
 use super::*;
 use crate::types::{EntityType, NodeType, NodeTypeServer};
-use shared::beemsg::misc::CapacityPool;
-use shared::beemsg::storage_pool::*;
+use shared::bee_msg::misc::CapacityPool;
+use shared::bee_msg::storage_pool::*;
 use shared::types::{BuddyGroupID, NodeID, TargetID, DEFAULT_STORAGE_POOL};
 
 impl Handler for AddStoragePool {
