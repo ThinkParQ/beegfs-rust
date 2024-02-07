@@ -85,7 +85,6 @@ impl<'a> Serializer<'a> {
             let padding = (v.len() + 4 + 1) % align_to;
 
             if padding != 0 {
-                // Yes, this does actually not achieve alignment - but we have to mimic the C++ code
                 self.zeroes(align_to - padding)?;
             }
         }
@@ -98,7 +97,7 @@ impl<'a> Serializer<'a> {
     /// "Sequence" is implemented for containers like `std::vector` and `std::list` and works the
     /// same for all.
     ///
-    /// `include_total_size` determines wether the total size of the sequence shall be included in
+    /// `include_total_size` determines whether the total size of the sequence shall be included in
     /// the serialized data. Must match the original message definition. Some BeeGFS messages /
     /// types use this, some don't.
     ///
@@ -156,7 +155,7 @@ impl<'a> Serializer<'a> {
     ///
     /// "map" is implemented for maps like `std::map`.
     ///
-    /// `include_total_size` determines wether the total size of the map shall be included in
+    /// `include_total_size` determines whether the total size of the map shall be included in
     /// the serialized data. Must match the original message definition. Some BeeGFS messages /
     /// types use this, some don't.
     ///
@@ -264,7 +263,6 @@ impl<'a> Deserializer<'a> {
             let padding = (v.len() + 4 + 1) % align_to;
 
             if padding != 0 {
-                // Yes, this does actually not achieve alignment - but we have to mimic the C++ code
                 self.skip(align_to - padding)?;
             }
         }
@@ -277,7 +275,7 @@ impl<'a> Deserializer<'a> {
     /// "Sequence" is implemented for containers like `std::vector` and `std::list` and works the
     /// same for all.
     ///
-    /// `include_total_size` determines wether the total size of the sequence is included in
+    /// `include_total_size` determines whether the total size of the sequence is included in
     /// the serialized data. Must match the original message definition. Some BeeGFS messages /
     /// types use this, some don't.
     ///
@@ -305,7 +303,7 @@ impl<'a> Deserializer<'a> {
     ///
     /// "map" is implemented for maps like `std::map`.
     ///
-    /// `include_total_size` determines wether the total size of the map is included in
+    /// `include_total_size` determines whether the total size of the map is included in
     /// the serialized data. Must match the original message definition. Some BeeGFS messages /
     /// types use this, some don't.
     ///
@@ -372,7 +370,7 @@ impl<'a> Deserializer<'a> {
 /// ```ignore
 /// #[derive(Debug, BeeSerde)]
 /// pub struct ExampleMsg {
-///     // Serializer doesn't know by itself wether or not C/C++ BeeGFS serializer expects sequence
+///     // Serializer doesn't know by itself whether or not C/C++ BeeGFS serializer expects sequence
 ///     // size included or not - in this case it is not
 ///     #[bee_serde(as = Seq<false, _>)]
 ///     int_sequence: Vec<u32>,
