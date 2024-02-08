@@ -21,6 +21,7 @@ pub type StoragePoolID = u16;
 pub type QuotaID = u32;
 
 pub const MGMTD_ID: NodeID = 1;
+pub const MGMTD_ALIAS: &str = "Management";
 pub const DEFAULT_STORAGE_POOL: StoragePoolID = 1;
 
 /// The node type as used by most BeeGFS messages

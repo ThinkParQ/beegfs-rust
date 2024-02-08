@@ -4,7 +4,7 @@ use crate::types::EntityType;
 use db::misc::MetaRoot;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
-use shared::types::{NodeID, MGMTD_ID};
+use shared::types::{NodeID, MGMTD_ALIAS, MGMTD_ID};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -12,6 +12,35 @@ impl Handler for GetNodes {
     type Response = GetNodesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        if self.node_type == shared::types::NodeType::Management {
+            let nic_list = ctx
+                .info
+                .network_addrs
+                .iter()
+                .map(|e| Nic {
+                    addr: e.addr,
+                    name: e.name.clone().into_bytes(),
+                    nic_type: shared::types::NicType::Ethernet,
+                })
+                .collect();
+
+            let nodes = [Node {
+                alias: MGMTD_ALIAS.into(),
+                nic_list,
+                num_id: MGMTD_ID,
+                port: ctx.info.user_config.beegfs_port,
+                _unused_tcp_port: ctx.info.user_config.beegfs_port,
+                node_type: shared::types::NodeType::Management,
+            }]
+            .into();
+
+            return GetNodesResp {
+                nodes,
+                root_num_id: 0,
+                is_root_mirrored: 0,
+            };
+        }
+
         match ctx
             .db
             .op(move |tx| {
@@ -143,7 +172,7 @@ impl Handler for RegisterNode {
     }
 }
 
-/// Processes incoming node information. Registeres new nodes if config allows it
+/// Processes incoming node information. Registers new nodes if config allows it
 async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
     let msg2 = msg.clone();
     let info = ctx.info;
@@ -225,7 +254,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     node_uid,
                     node_id,
                     match node_type {
-                        // In case this is a meta node, the requestor expects info about the meta
+                        // In case this is a meta node, the requester expects info about the meta
                         // root
                         NodeType::Meta => db::misc::get_meta_root(tx)?,
                         _ => MetaRoot::Unknown,
