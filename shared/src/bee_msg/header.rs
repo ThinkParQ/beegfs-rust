@@ -54,7 +54,9 @@ impl Header {
         }
 
         let mut des = Deserializer::new(buf, 0);
-        Header::deserialize(&mut des)
+        let des_header = Header::deserialize(&mut des)?;
+        des.finish()?;
+        Ok(des_header)
     }
 
     /// The expected total message length this header belongs to

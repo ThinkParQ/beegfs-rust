@@ -85,7 +85,9 @@ impl MsgBuf {
     /// reading from stream or receiving from a socket)
     pub fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
         let mut des = Deserializer::new(&self.buf[Header::LEN..], self.header.msg_feature_flags);
-        M::deserialize(&mut des)
+        let des_msg = M::deserialize(&mut des)?;
+        des.finish()?;
+        Ok(des_msg)
     }
 
     /// Reads a BeeGFS message from a stream into the buffer

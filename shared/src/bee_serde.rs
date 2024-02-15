@@ -220,6 +220,17 @@ impl<'a> Deserializer<'a> {
         }
     }
 
+    /// Checks that the whole buffer has been consumed - meant to be called after deserialization
+    /// as a sanity check.
+    pub fn finish(&self) -> Result<()> {
+        let len = self.source_buf.len();
+        if len > 0 {
+            bail!("Did not consume the whole buffer, {len} bytes are left");
+        }
+
+        Ok(())
+    }
+
     fn_deserialize_primitive!(u8, get_u8);
     fn_deserialize_primitive!(i8, get_i8);
     fn_deserialize_primitive!(u16, get_u16_le);
@@ -529,8 +540,7 @@ mod test {
         assert_eq!(-0x1ABBCCDDEEFF1122, des.i64().unwrap());
 
         assert!(des.u64().is_err());
-
-        assert_eq!(0, des.source_buf.remaining());
+        des.finish().unwrap();
     }
 
     #[test]
@@ -549,7 +559,7 @@ mod test {
         assert_eq!(bytes, des.bytes(6).unwrap());
         assert_eq!(bytes, des.bytes(6).unwrap());
 
-        assert_eq!(0, des.source_buf.remaining());
+        des.finish().unwrap();
     }
 
     #[test]
@@ -576,7 +586,7 @@ mod test {
         assert_eq!(str, des.cstr(4).unwrap());
         assert_eq!(str, des.cstr(5).unwrap());
 
-        assert_eq!(0, des.source_buf.remaining());
+        des.finish().unwrap();
     }
 
     #[test]
@@ -677,5 +687,29 @@ mod test {
         let s2 = S::deserialize(&mut des).unwrap();
 
         assert_eq!(s, s2);
+        des.finish().unwrap();
+    }
+
+    #[test]
+    fn wrong_buffer_len() {
+        let bytes: Vec<u8> = vec![0, 1, 2, 3, 4, 5];
+
+        let mut buf = BytesMut::new();
+        let mut ser = Serializer::new(&mut buf);
+        ser.bytes(&bytes).unwrap();
+
+        let mut des = Deserializer::new(&buf, 0);
+        des.bytes(5).unwrap();
+
+        // Some buffer left
+        des.finish().unwrap_err();
+
+        // Consume too much
+        des.bytes(2).unwrap_err();
+
+        des.bytes(1).unwrap();
+
+        // Complete buffer consumed
+        des.finish().unwrap();
     }
 }
