@@ -176,7 +176,7 @@ pub struct ChangeTargetConsistencyStates {
     pub old_states: Vec<TargetConsistencyState>,
     #[bee_serde(as = Seq<true, _>)]
     pub new_states: Vec<TargetConsistencyState>,
-    #[bee_serde(as = CStr<0>)]
+    #[bee_serde(as = CStr<4>)]
     pub ack_id: Vec<u8>,
 }
 
