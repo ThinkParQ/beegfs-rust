@@ -21,7 +21,7 @@ use super::stream::Stream;
 use crate::bee_msg::header::Header;
 use crate::bee_msg::{Msg, MsgID};
 use crate::bee_serde::{Deserializable, Deserializer, Serializable, Serializer};
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -60,12 +60,15 @@ impl MsgBuf {
         let res = (|| {
             // Serialize body
             let mut ser_body = Serializer::new(&mut body);
-            msg.serialize(&mut ser_body)?;
+            msg.serialize(&mut ser_body)
+                .context("BeeMsg header serialization failed")?;
 
             // Create and serialize header
             let header = Header::new(ser_body.bytes_written(), M::ID, ser_body.msg_feature_flags);
             let mut ser_header = Serializer::new(&mut self.buf);
-            header.serialize(&mut ser_header)?;
+            header
+                .serialize(&mut ser_header)
+                .context("BeeMsg body serialization failed")?;
 
             *self.header = header;
 
@@ -84,9 +87,11 @@ impl MsgBuf {
     /// The function will panic if the buffer has not been filled with data before (e.g. by
     /// reading from stream or receiving from a socket)
     pub fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
+        const ERR_CTX: &str = "BeeMsg body deserialization failed";
+
         let mut des = Deserializer::new(&self.buf[Header::LEN..], self.header.msg_feature_flags);
-        let des_msg = M::deserialize(&mut des)?;
-        des.finish()?;
+        let des_msg = M::deserialize(&mut des).context(ERR_CTX)?;
+        des.finish().context(ERR_CTX)?;
         Ok(des_msg)
     }
 
@@ -97,7 +102,8 @@ impl MsgBuf {
         }
 
         stream.read_exact(&mut self.buf[0..Header::LEN]).await?;
-        let header = Header::from_buf(&self.buf[0..Header::LEN])?;
+        let header = Header::from_buf(&self.buf[0..Header::LEN])
+            .context("BeeMsg header deserialization failed")?;
         let msg_len = header.msg_len();
 
         if self.buf.len() != msg_len {
