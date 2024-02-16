@@ -7,6 +7,7 @@ use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::Msg;
 use crate::shutdown::Shutdown;
 use anyhow::{bail, Result};
+use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, UdpSocket};
@@ -88,7 +89,7 @@ async fn stream_loop(
     loop {
         // Wait for available data
         if let Err(err) = stream.readable().await {
-            log::debug!("Closed stream from {:?}: {err}", stream.addr());
+            log::debug!("Closed stream from {:?}: {err:#}", stream.addr());
             return;
         }
 
@@ -100,7 +101,15 @@ async fn stream_loop(
         )
         .await
         {
-            log::debug!("Closed stream from {:?}: {err}", stream.addr());
+            // If the error comes from the connection being closed, we only log a debug message
+            if let Some(inner) = err.downcast_ref::<io::Error>() {
+                if let ErrorKind::UnexpectedEof = inner.kind() {
+                    log::debug!("Closed stream from {:?}: {err:#}", stream.addr());
+                    return;
+                }
+            }
+
+            log::error!("Closed stream from {:?}: {err:#}", stream.addr());
             return;
         }
     }
@@ -110,7 +119,7 @@ async fn stream_loop(
 /// Checks the authentication flag on the [`Stream`] if `stream_authentication_required` is set.
 ///
 /// The dispatcher is responsible for deserializing the message, dispatching it to the correct
-/// hander and sending back a response using the [`StreamRequest`] handle.
+/// handler and sending back a response using the [`StreamRequest`] handle.
 async fn read_stream(
     stream: &mut Stream,
     buf: &mut MsgBuf,
@@ -183,7 +192,7 @@ pub fn recv_udp(
 /// Receives a datagram from the given socket into and forwards it to the dispatcher.
 ///
 /// The dispatcher is responsible for deserializing the message, dispatching it to the correct
-/// hander and sending back a message using the [`SocketRequest`] handle.
+/// handler and sending back a message using the [`SocketRequest`] handle.
 async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) -> Result<()> {
     // We use a new buffer for each incoming datagram. This is not ideal, but since each incoming
     // message spawns a new task (below) and we don't know how long the processing takes, we cannot
