@@ -854,6 +854,7 @@ dependencies = [
 [[package]]
 name = "protobuf"
 version = "0.1.0"
+source = "git+https://github.com/thinkparq/protobuf?tag=v0.0.1#a0310d014fe1883b0007b8de79882458ce895c03"
 dependencies = [
  "prost",
  "tonic",
