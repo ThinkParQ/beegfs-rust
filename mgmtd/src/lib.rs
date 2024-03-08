@@ -1,4 +1,4 @@
-//! The BeeGFS managment service
+//! The BeeGFS management service
 
 mod bee_msg;
 pub mod config;

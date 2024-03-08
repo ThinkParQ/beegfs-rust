@@ -50,7 +50,7 @@ END;
 
 CREATE TABLE storage_nodes (
     node_id INTEGER PRIMARY KEY
-        CHECK(node_id BETWEEN 1 AND 0xFFFF),
+        CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
     node_uid INTEGER UNIQUE NOT NULL,
 
     node_type TEXT GENERATED ALWAYS AS ("storage"),
@@ -66,7 +66,7 @@ END;
 
 CREATE TABLE client_nodes (
     node_id INTEGER PRIMARY KEY
-        CHECK(node_id BETWEEN 1 AND 0xFFFF),
+        CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
     node_uid INTEGER UNIQUE NOT NULL,
 
     node_type TEXT GENERATED ALWAYS AS ("client"),

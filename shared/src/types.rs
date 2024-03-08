@@ -16,7 +16,7 @@ pub type EntityUID = i64;
 pub type TargetID = u16;
 pub type BuddyGroupID = u16;
 pub type Port = u16;
-pub type NodeID = u16;
+pub type NodeID = u32;
 pub type StoragePoolID = u16;
 pub type QuotaID = u32;
 

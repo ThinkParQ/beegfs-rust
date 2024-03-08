@@ -101,13 +101,19 @@ pub(crate) fn validate_ids(
 /// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
 /// meta target per meta node with their IDs being the same. Due to that restriction, the type
 /// `NodeID` is expected.
-pub(crate) fn insert_meta(tx: &mut Transaction, node_id: NodeID, alias: &str) -> Result<()> {
-    insert(tx, node_id, NodeTypeServer::Meta, Some(node_id), alias)?;
+pub(crate) fn insert_meta(tx: &mut Transaction, target_id: TargetID, alias: &str) -> Result<()> {
+    insert(
+        tx,
+        target_id,
+        NodeTypeServer::Meta,
+        Some(target_id.into()),
+        alias,
+    )?;
 
     // If this is the first meta target, set it as meta root
     tx.execute(
         sql!("INSERT OR IGNORE INTO root_inode (target_id) VALUES (?1)"),
-        params![node_id],
+        params![target_id],
     )?;
 
     Ok(())
@@ -149,6 +155,7 @@ fn insert(
     tx: &mut Transaction,
     target_id: TargetID,
     node_type: NodeTypeServer,
+    // This is optional because storage targets come "unmapped"
     node_id: Option<NodeID>,
     alias: &str,
 ) -> Result<()> {
