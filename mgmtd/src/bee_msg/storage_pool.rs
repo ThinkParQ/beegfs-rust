@@ -8,7 +8,7 @@ impl Handler for AddStoragePool {
     type Response = AddStoragePoolResp;
 
     async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 let alias = &std::str::from_utf8(&self.alias)?;
@@ -48,8 +48,9 @@ impl Handler for AddStoragePool {
 
                 Ok(pool_id)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(actual_id) => {
                 log::info!(
                     "Added new storage pool with ID {} (Requested: {})",
@@ -88,7 +89,7 @@ impl Handler for GetStoragePools {
     type Response = GetStoragePoolsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let pools = match async move {
+        let res = async move {
             let config = &ctx.info.user_config;
 
             let (targets, pools, buddy_groups) = ctx
@@ -171,8 +172,9 @@ impl Handler for GetStoragePools {
                 })
                 .collect::<Result<Vec<StoragePool>>>() as Result<_>
         }
-        .await
-        {
+        .await;
+
+        let pools = match res {
             Ok(pools) => pools,
             Err(err) => {
                 log_error_chain!(err, "Getting storage pools failed");
@@ -280,7 +282,7 @@ impl Handler for RemoveStoragePool {
     type Response = RemoveStoragePoolResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check ID exists
@@ -300,8 +302,9 @@ impl Handler for RemoveStoragePool {
 
                 Ok(())
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Storage pool {} removed", self.pool_id,);
 

@@ -171,7 +171,7 @@ impl Serializable for TargetCapacityPools {
             ser.map(
                 e.iter(),
                 false,
-                |ser, k| ser.u32((*k).into()),
+                |ser, k| ser.u32(*k),
                 |ser, v| ser.seq(v.iter(), true, |ser, e| e.serialize(ser)),
             )
         })?;
@@ -179,7 +179,7 @@ impl Serializable for TargetCapacityPools {
             self.target_map.iter(),
             false,
             |ser, k| k.serialize(ser),
-            |ser, v| ser.u32((*v).into()),
+            |ser, v| ser.u32(*v),
         )?;
         Ok(())
     }
@@ -192,15 +192,11 @@ impl Deserializable for TargetCapacityPools {
             grouped_target_pools: des.seq(true, |des| {
                 des.map(
                     false,
-                    |des| Ok(des.u32()?.try_into()?),
+                    |des| des.u32(),
                     |des| des.seq(true, |des| TargetID::deserialize(des)),
                 )
             })?,
-            target_map: des.map(
-                false,
-                |des| TargetID::deserialize(des),
-                |des| Ok(des.u32()?.try_into()?),
-            )?,
+            target_map: des.map(false, |des| TargetID::deserialize(des), |des| des.u32())?,
         })
     }
 }

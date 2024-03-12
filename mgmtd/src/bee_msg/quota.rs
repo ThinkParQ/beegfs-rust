@@ -8,7 +8,7 @@ impl Handler for GetDefaultQuota {
     type Response = GetDefaultQuotaResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check pool ID exists
@@ -20,8 +20,9 @@ impl Handler for GetDefaultQuota {
 
                 Ok(res)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(res) => GetDefaultQuotaResp {
                 limits: QuotaDefaultLimits {
                     user_space_limit: res.user_space_limit.unwrap_or_default(),
@@ -49,7 +50,7 @@ impl Handler for SetDefaultQuota {
     type Response = SetDefaultQuotaResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check pool ID exists
@@ -91,8 +92,9 @@ impl Handler for SetDefaultQuota {
 
                 Ok(())
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(_) => {
                 log::info!(
                     "Set default quota of type {:?} for storage pool {}",
@@ -124,7 +126,7 @@ impl Handler for GetQuotaInfo {
 
         let pool_id = self.pool_id;
 
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check pool id exists
@@ -172,8 +174,9 @@ impl Handler for GetQuotaInfo {
 
                 Ok(res)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(data) => GetQuotaInfoResp {
                 quota_inode_support: QuotaInodeSupport::Unknown,
                 quota_entry: data,
@@ -198,7 +201,7 @@ impl Handler for SetQuota {
     type Response = SetQuotaResp;
 
     async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check pool ID exists
@@ -227,8 +230,9 @@ impl Handler for SetQuota {
                     }),
                 )
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Set quota for storage pool {}", self.pool_id,);
                 SetQuotaResp { result: 1 }
@@ -251,7 +255,7 @@ impl Handler for RequestExceededQuota {
     type Response = RequestExceededQuotaResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 let exceeded_ids = db::quota_usage::exceeded_quota_ids(
@@ -272,8 +276,9 @@ impl Handler for RequestExceededQuota {
                     exceeded_quota_ids: exceeded_ids,
                 })
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(inner) => RequestExceededQuotaResp {
                 result: OpsErr::SUCCESS,
                 inner,

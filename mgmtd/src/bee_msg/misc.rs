@@ -54,7 +54,7 @@ impl Handler for RefreshCapacityPools {
     type Response = Ack;
 
     async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        // This message is superfluos and therefore ignored. It is meant to tell the
+        // This message is superfluous and therefore ignored. It is meant to tell the
         // mgmtd to trigger a capacity pool pull immediately after a node starts.
         // meta and storage send a SetTargetInfo before this msg though,
         // so we handle triggering pulls there.
@@ -69,7 +69,7 @@ impl Handler for GetNodeCapacityPools {
     type Response = GetNodeCapacityPoolsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let pools = match async move {
+        let res = async move {
             // We return raw u16 here as ID because BeeGFS expects a u16 that can be
             // either a NodeNUmID, TargetNumID or BuddyGroupID
 
@@ -177,8 +177,9 @@ impl Handler for GetNodeCapacityPools {
 
             Ok(result) as Result<_>
         }
-        .await
-        {
+        .await;
+
+        let pools = match res {
             Ok(pools) => pools,
             Err(err) => {
                 log_error_chain!(

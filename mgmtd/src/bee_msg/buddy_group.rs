@@ -54,7 +54,7 @@ impl Handler for GetStatesAndBuddyGroups {
     type Response = GetStatesAndBuddyGroupsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 let node_type = self.node_type.try_into()?;
@@ -64,8 +64,9 @@ impl Handler for GetStatesAndBuddyGroups {
 
                 Ok((targets, groups))
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok((targets, groups)) => {
                 let states: HashMap<_, _> = targets
                     .into_iter()
@@ -119,7 +120,7 @@ impl Handler for RemoveBuddyGroup {
     type Response = RemoveBuddyGroupResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match async {
+        let res = async {
             let node_type: NodeTypeServer = self.node_type.try_into()?;
 
             if node_type != NodeTypeServer::Storage {
@@ -157,8 +158,9 @@ impl Handler for RemoveBuddyGroup {
 
             Ok(())
         }
-        .await
-        {
+        .await;
+
+        match res {
             Ok(_) => RemoveBuddyGroupResp {
                 result: OpsErr::SUCCESS,
             },
@@ -185,7 +187,7 @@ impl Handler for SetMetadataMirroring {
     type Response = SetMetadataMirroringResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match async {
+        let res = async {
             match ctx.db.op(db::misc::get_meta_root).await? {
                 MetaRoot::Normal(_, node_uid) => {
                     let _: SetMetadataMirroringResp = ctx.conn.request(node_uid, &self).await?;
@@ -198,8 +200,9 @@ impl Handler for SetMetadataMirroring {
 
             Ok(()) as Result<()>
         }
-        .await
-        {
+        .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Enabled metadata mirroring");
 
@@ -222,7 +225,7 @@ impl Handler for SetMirrorBuddyGroup {
     type Response = SetMirrorBuddyGroupResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 let node_type = self.node_type.try_into()?;
@@ -254,8 +257,9 @@ impl Handler for SetMirrorBuddyGroup {
                     self.secondary_target_id,
                 )
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(actual_id) => {
                 log::info!(
                     "Added new {:?} buddy group with ID {} (Requested: {})",

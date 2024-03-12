@@ -68,7 +68,7 @@ impl management_server::Management for ManagementService {
 
                 Node {
                     uid: node.uid,
-                    node_id: node.id.into(),
+                    node_id: node.id,
                     r#type,
                     alias: node.alias,
                     beemsg_port: node.port.into(),

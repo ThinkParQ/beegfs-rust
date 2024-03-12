@@ -12,7 +12,7 @@ impl Handler for GetNodes {
     type Response = GetNodesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 let node_type = self.node_type.into();
@@ -27,8 +27,9 @@ impl Handler for GetNodes {
 
                 Ok(res)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(res) => GetNodesResp {
                 nodes: res
                     .0
@@ -53,7 +54,7 @@ impl Handler for GetNodes {
                     .collect(),
                 root_num_id: match res.2 {
                     MetaRoot::Unknown => 0,
-                    MetaRoot::Normal(node_id, _) => node_id.into(),
+                    MetaRoot::Normal(node_id, _) => node_id,
                     MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
                 },
                 is_root_mirrored: match res.2 {
@@ -171,7 +172,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
         let db_res = ctx
             .db
             .op(move |tx| {
-                let node_type = msg.node_type.try_into()?;
+                let node_type = msg.node_type.into();
 
                 let node_uid = if msg.node_id == 0 {
                     // No node ID given => new node
@@ -311,7 +312,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     node_num_id: node_id,
                     root_num_id: match meta_root {
                         MetaRoot::Unknown => 0,
-                        MetaRoot::Normal(node_id, _) => node_id.into(),
+                        MetaRoot::Normal(node_id, _) => node_id,
                         MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
                     },
                     is_root_mirrored: match meta_root {
@@ -345,18 +346,19 @@ impl Handler for RemoveNode {
     type Response = RemoveNodeResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
-                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type.try_into()?)?
+                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type.into())?
                     .ok_or_else(|| TypedError::value_not_found("node ID", self.node_id))?;
 
                 db::node::delete(tx, node_uid)?;
 
                 Ok(())
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Removed {:?} node with ID {}", self.node_type, self.node_id,);
 
