@@ -668,6 +668,7 @@ dependencies = [
  "log",
  "prost",
  "protobuf",
+ "regex",
  "rusqlite",
  "sd-notify",
  "serde",

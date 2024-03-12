@@ -5,8 +5,8 @@ CREATE TABLE entities (
         CHECK(uid >= 0),
     entity_type TEXT NOT NULL
         CHECK(entity_type IN ("node", "target", "buddy_group", "storage_pool")),
-    alias TEXT UNIQUE NOT NULL
-        CHECK(LENGTH(alias) > 0),
+    alias TEXT UNIQUE NOT NULL COLLATE NOCASE
+        CHECK(LENGTH(alias) > 0 AND alias NOT GLOB "*[^0-9a-zA-Z_.-]*"),
 
     UNIQUE(uid, entity_type)
 ) STRICT;
