@@ -181,7 +181,6 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
         let db_res = ctx
             .db
             .op(move |tx| {
-                let alias = &std::str::from_utf8(&msg.node_alias)?;
                 let node_type = msg.node_type.try_into()?;
 
                 let node_uid = if msg.node_id == 0 {
@@ -194,7 +193,6 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
 
                 let (node_id, node_uid) = if let Some(node_uid) = node_uid {
                     // Existing node, update data
-                    db::entity::update_alias(tx, node_uid, alias)?;
                     db::node::update(tx, node_uid, msg.port)?;
 
                     (msg.node_id, node_uid)
@@ -205,11 +203,6 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     if !info.user_config.registration_enable {
                         bail!("Registration of new nodes is not allowed");
                     }
-
-                    // Check alias doesnt exist yet
-                    if db::entity::get_uid(tx, alias)?.is_some() {
-                        bail!(TypedError::value_exists("Alias", alias));
-                    };
 
                     // Services send a 0 value when they want the new node to be assigned an ID
                     // automatically
@@ -224,8 +217,22 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                         msg.node_id
                     };
 
+                    let mut alias = std::str::from_utf8(&msg.node_alias)?.to_owned();
+
+                    // Check alias doesnt exist yet
+                    if db::entity::get_uid(tx, &alias)?.is_some() {
+                        // If it does already exist (e.g. when multiple servers are started on the
+                        // same host, we make a unique alias by appending some extra info)
+                        alias = format!(
+                            "{}_{}_{}",
+                            std::str::from_utf8(&msg.node_alias)?,
+                            node_type.as_sql_str(),
+                            node_id
+                        );
+                    };
+
                     // Insert new entity and node entry
-                    let node_uid = db::entity::insert(tx, EntityType::Node, alias)?;
+                    let node_uid = db::entity::insert(tx, EntityType::Node, &alias)?;
                     db::node::insert(tx, node_id, node_uid, node_type, msg.port)?;
 
                     // if this is a meta node, auto-add a corresponding meta target after the node.
@@ -237,7 +244,8 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                         // node IDs are not allowed to be bigger than u16
                         let Ok(target_id) = TargetID::try_from(node_id) else {
                             bail!(
-                                "{node_id} is not a valid meta node ID (must be between 1 and 65535)"
+                                "{node_id} is not a valid meta node ID \
+                                (must be between 1 and 65535)"
                             );
                         };
 
