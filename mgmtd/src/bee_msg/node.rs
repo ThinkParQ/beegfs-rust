@@ -4,7 +4,7 @@ use crate::types::EntityType;
 use db::misc::MetaRoot;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
-use shared::types::{NodeID, TargetID, MGMTD_ALIAS, MGMTD_ID};
+use shared::types::{NodeID, TargetID, MGMTD_ID, MGMTD_UID};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -12,39 +12,10 @@ impl Handler for GetNodes {
     type Response = GetNodesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        if self.node_type == shared::types::NodeType::Management {
-            let nic_list = ctx
-                .info
-                .network_addrs
-                .iter()
-                .map(|e| Nic {
-                    addr: e.addr,
-                    name: e.name.clone().into_bytes(),
-                    nic_type: shared::types::NicType::Ethernet,
-                })
-                .collect();
-
-            let nodes = [Node {
-                alias: MGMTD_ALIAS.into(),
-                nic_list,
-                num_id: MGMTD_ID,
-                port: ctx.info.user_config.beegfs_port,
-                _unused_tcp_port: ctx.info.user_config.beegfs_port,
-                node_type: shared::types::NodeType::Management,
-            }]
-            .into();
-
-            return GetNodesResp {
-                nodes,
-                root_num_id: 0,
-                is_root_mirrored: 0,
-            };
-        }
-
         match ctx
             .db
             .op(move |tx| {
-                let node_type = self.node_type.try_into()?;
+                let node_type = self.node_type.into();
                 let res = (
                     db::node::get_with_type(tx, node_type)?,
                     db::node_nic::get_with_type(tx, node_type)?,
@@ -135,27 +106,46 @@ impl Handler for HeartbeatRequest {
     type Response = Heartbeat;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        let res = ctx
+            .db
+            .op(|tx| {
+                Ok((
+                    db::entity::get_alias(tx, MGMTD_UID)?
+                        .ok_or_else(|| TypedError::value_not_found("UID", MGMTD_UID))?,
+                    db::node_nic::get_with_node(tx, MGMTD_UID)?,
+                ))
+            })
+            .await;
+
+        let (alias, nics) = match res {
+            Ok((alias, nics)) => (
+                alias,
+                nics.iter()
+                    .map(|e| Nic {
+                        addr: e.addr,
+                        name: e.name.clone().into_bytes(),
+                        nic_type: shared::types::NicType::Ethernet,
+                    })
+                    .collect(),
+            ),
+            Err(err) => {
+                log_error_chain!(err, "getting management nics failed");
+                ("".to_string(), vec![])
+            }
+        };
+
         Heartbeat {
             instance_version: 0,
             nic_list_version: 0,
             node_type: shared::types::NodeType::Management,
-            node_alias: "Management".into(),
+            node_alias: alias.into_bytes(),
             ack_id: "".into(),
             node_num_id: MGMTD_ID,
             root_num_id: 0,
             is_root_mirrored: 0,
-            port: ctx.info.user_config.beegfs_port,
-            port_tcp_unused: ctx.info.user_config.beegfs_port,
-            nic_list: ctx
-                .info
-                .network_addrs
-                .iter()
-                .map(|e| Nic {
-                    addr: e.addr,
-                    name: e.name.clone().into_bytes(),
-                    nic_type: shared::types::NicType::Ethernet,
-                })
-                .collect(),
+            port: ctx.info.user_config.beemsg_port,
+            port_tcp_unused: ctx.info.user_config.beemsg_port,
+            nic_list: nics,
         }
     }
 }

@@ -27,6 +27,22 @@ pub(crate) fn get_uid(tx: &mut Transaction, alias: &str) -> Result<Option<Entity
     Ok(uid)
 }
 
+/// Get the alias of an entity by the given UID.
+///
+/// # Return value
+/// Returns the entities alias or `None` if the given alias doesn't exist.
+pub(crate) fn get_alias(tx: &mut Transaction, uid: EntityUID) -> Result<Option<String>> {
+    let uid = tx
+        .query_row_cached(
+            sql!("SELECT alias FROM entities WHERE uid = ?1"),
+            [uid],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    Ok(uid)
+}
+
 static REGEX: OnceLock<Regex> = OnceLock::new();
 
 /// Checks an alias for validity and returns a user friendly error if not
@@ -75,6 +91,16 @@ pub(crate) fn update_alias(tx: &mut Transaction, uid: EntityUID, new_alias: &str
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn get() {
+        with_test_data(|tx| {
+            let uid = get_uid(tx, "management").unwrap().unwrap();
+            let alias = get_alias(tx, uid).unwrap().unwrap();
+
+            assert_eq!("management", alias);
+        })
+    }
 
     #[test]
     fn check_alias() {

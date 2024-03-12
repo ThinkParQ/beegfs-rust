@@ -46,6 +46,7 @@ impl management_server::Management for ManagementService {
                     NodeType::Meta => Type::Meta,
                     NodeType::Storage => Type::Storage,
                     NodeType::Client => Type::Client,
+                    NodeType::Management => Type::Management,
                 } as i32;
 
                 let nics = if let Some(nics) = nics.clone() {

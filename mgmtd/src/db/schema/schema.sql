@@ -14,7 +14,7 @@ CREATE TABLE entities (
 CREATE TABLE nodes (
     node_uid INTEGER PRIMARY KEY,
     node_type TEXT NOT NULL
-        CHECK (node_type IN ("meta", "storage", "client")),
+        CHECK (node_type IN ("meta", "storage", "client", "management")),
 
     port INTEGER NOT NULL
         CHECK(port BETWEEN 0 AND 0xFFFF),
@@ -79,6 +79,35 @@ FOR EACH ROW
 BEGIN
     DELETE FROM nodes WHERE node_uid = OLD.node_uid;
 END;
+
+CREATE TABLE management_nodes (
+    node_id INTEGER PRIMARY KEY
+        CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
+    node_uid INTEGER UNIQUE NOT NULL,
+
+    node_type TEXT GENERATED ALWAYS AS ("management"),
+
+    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
+) STRICT;
+
+CREATE TRIGGER "Auto delete node after management delete" AFTER DELETE ON management_nodes
+FOR EACH ROW
+BEGIN
+    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
+END;
+
+-- Default / local management node
+INSERT INTO entities VALUES (1, "node", "management");
+INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES (1, "management", 0, "");
+INSERT INTO management_nodes (node_id, node_uid) VALUES (1, 1);
+
+CREATE TRIGGER "Prevent default management node deletion" BEFORE DELETE ON management_nodes
+FOR EACH ROW WHEN OLD.node_id == 1
+BEGIN
+    SELECT RAISE (ABORT, "Deleting the management node is not allowed");
+END;
+
+
 
 CREATE TABLE node_nics (
     nic_uid INTEGER PRIMARY KEY,
@@ -186,8 +215,8 @@ END;
 
 
 -- Default storage pool
-INSERT INTO entities VALUES (1, "storage_pool", "storage_pool_default");
-INSERT INTO storage_pools (pool_id, pool_uid) VALUES (1, 1);
+INSERT INTO entities VALUES (2, "storage_pool", "storage_pool_default");
+INSERT INTO storage_pools (pool_id, pool_uid) VALUES (1, 2);
 
 CREATE TRIGGER "Prevent default pool deletion" BEFORE DELETE ON storage_pools
 FOR EACH ROW WHEN OLD.pool_id == 1
@@ -334,6 +363,10 @@ CREATE VIEW all_nodes_v AS
         SELECT n.*, cn.node_id
         FROM all_nodes AS n
         INNER JOIN client_nodes AS cn USING(node_uid)
+    UNION ALL
+        SELECT n.*, man.node_id
+        FROM all_nodes AS n
+        INNER JOIN management_nodes AS man USING(node_uid)
 ;
 
 CREATE VIEW meta_targets_v AS
