@@ -1,34 +1,44 @@
-name: Build Package Workflow
+name: Build packages
 
-on:
-  workflow_dispatch:
+# Currently broken
+
+on: [workflow_dispatch]
+
+env:
+  # Cargo must use git cli for checkouts instead of builtin functionality to respect the repla
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
   package:
-    runs-on: self-hosted
-    container: 
-      image: rustlang/rust:nightly
+    needs: [checks]
+    runs-on: ubuntu-latest
+    container:
+      image: rust
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-      - name: Check Rust version
-        run: rustc --version
-      - name: Check Cargo version
-        run: cargo --version
-      - name: Set up cargo cache
-        uses: actions/cache@v3
-        continue-on-error: false
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/            
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-      - name: Build Package
-        run: .ci/generate_packages.sh
+      - name: Install tools
+        run: |
+          # We use the musl libc implementation (https://musl.libc.org/) which is statically linked into
+          # the binary
+          apt-get update && apt-get -y install musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+          # cargo tools tp generate packages
+          cargo install cargo-generate-rpm
+          cargo install cargo-deb
+      - name: Build
+        run: |
+          cargo build --release --target=x86_64-unknown-linux-musl
+          strip -s target/x86_64-unknown-linux-musl/release/mgmtd
+      - name: Generate packages
+        run: |
+          mkdir -p packages
+          rm -rf packages/*
+          cargo deb -p mgmtd --target=x86_64-unknown-linux-musl -o packages
+          cargo generate-rpm -p mgmtd --target=x86_64-unknown-linux-musl --auto-req=disabled -o packages          
       - name: Upload packages artifact
         uses: actions/upload-artifact@v3
         with:

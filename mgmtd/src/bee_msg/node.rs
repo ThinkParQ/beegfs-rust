@@ -4,7 +4,7 @@ use crate::types::EntityType;
 use db::misc::MetaRoot;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
-use shared::types::{NodeID, MGMTD_ALIAS, MGMTD_ID};
+use shared::types::{NodeID, TargetID, MGMTD_ID, MGMTD_UID};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -12,39 +12,10 @@ impl Handler for GetNodes {
     type Response = GetNodesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        if self.node_type == shared::types::NodeType::Management {
-            let nic_list = ctx
-                .info
-                .network_addrs
-                .iter()
-                .map(|e| Nic {
-                    addr: e.addr,
-                    name: e.name.clone().into_bytes(),
-                    nic_type: shared::types::NicType::Ethernet,
-                })
-                .collect();
-
-            let nodes = [Node {
-                alias: MGMTD_ALIAS.into(),
-                nic_list,
-                num_id: MGMTD_ID,
-                port: ctx.info.user_config.beegfs_port,
-                _unused_tcp_port: ctx.info.user_config.beegfs_port,
-                node_type: shared::types::NodeType::Management,
-            }]
-            .into();
-
-            return GetNodesResp {
-                nodes,
-                root_num_id: 0,
-                is_root_mirrored: 0,
-            };
-        }
-
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
-                let node_type = self.node_type.try_into()?;
+                let node_type = self.node_type.into();
                 let res = (
                     db::node::get_with_type(tx, node_type)?,
                     db::node_nic::get_with_type(tx, node_type)?,
@@ -56,8 +27,9 @@ impl Handler for GetNodes {
 
                 Ok(res)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(res) => GetNodesResp {
                 nodes: res
                     .0
@@ -82,7 +54,7 @@ impl Handler for GetNodes {
                     .collect(),
                 root_num_id: match res.2 {
                     MetaRoot::Unknown => 0,
-                    MetaRoot::Normal(node_id, _) => node_id.into(),
+                    MetaRoot::Normal(node_id, _) => node_id,
                     MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
                 },
                 is_root_mirrored: match res.2 {
@@ -135,27 +107,46 @@ impl Handler for HeartbeatRequest {
     type Response = Heartbeat;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        let res = ctx
+            .db
+            .op(|tx| {
+                Ok((
+                    db::entity::get_alias(tx, MGMTD_UID)?
+                        .ok_or_else(|| TypedError::value_not_found("UID", MGMTD_UID))?,
+                    db::node_nic::get_with_node(tx, MGMTD_UID)?,
+                ))
+            })
+            .await;
+
+        let (alias, nics) = match res {
+            Ok((alias, nics)) => (
+                alias,
+                nics.iter()
+                    .map(|e| Nic {
+                        addr: e.addr,
+                        name: e.name.clone().into_bytes(),
+                        nic_type: shared::types::NicType::Ethernet,
+                    })
+                    .collect(),
+            ),
+            Err(err) => {
+                log_error_chain!(err, "getting management nics failed");
+                ("".to_string(), vec![])
+            }
+        };
+
         Heartbeat {
             instance_version: 0,
             nic_list_version: 0,
             node_type: shared::types::NodeType::Management,
-            node_alias: "Management".into(),
+            node_alias: alias.into_bytes(),
             ack_id: "".into(),
             node_num_id: MGMTD_ID,
             root_num_id: 0,
             is_root_mirrored: 0,
-            port: ctx.info.user_config.beegfs_port,
-            port_tcp_unused: ctx.info.user_config.beegfs_port,
-            nic_list: ctx
-                .info
-                .network_addrs
-                .iter()
-                .map(|e| Nic {
-                    addr: e.addr,
-                    name: e.name.clone().into_bytes(),
-                    nic_type: shared::types::NicType::Ethernet,
-                })
-                .collect(),
+            port: ctx.info.user_config.beemsg_port,
+            port_tcp_unused: ctx.info.user_config.beemsg_port,
+            nic_list: nics,
         }
     }
 }
@@ -181,8 +172,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
         let db_res = ctx
             .db
             .op(move |tx| {
-                let alias = &std::str::from_utf8(&msg.node_alias)?;
-                let node_type = msg.node_type.try_into()?;
+                let node_type = msg.node_type.into();
 
                 let node_uid = if msg.node_id == 0 {
                     // No node ID given => new node
@@ -194,7 +184,6 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
 
                 let (node_id, node_uid) = if let Some(node_uid) = node_uid {
                     // Existing node, update data
-                    db::entity::update_alias(tx, node_uid, alias)?;
                     db::node::update(tx, node_uid, msg.port)?;
 
                     (msg.node_id, node_uid)
@@ -205,11 +194,6 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     if !info.user_config.registration_enable {
                         bail!("Registration of new nodes is not allowed");
                     }
-
-                    // Check alias doesnt exist yet
-                    if db::entity::get_uid(tx, alias)?.is_some() {
-                        bail!(TypedError::value_exists("Alias", alias));
-                    };
 
                     // Services send a 0 value when they want the new node to be assigned an ID
                     // automatically
@@ -224,16 +208,39 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                         msg.node_id
                     };
 
+                    let mut alias = std::str::from_utf8(&msg.node_alias)?.to_owned();
+
+                    // Check alias doesnt exist yet
+                    if db::entity::get_uid(tx, &alias)?.is_some() {
+                        // If it does already exist (e.g. when multiple servers are started on the
+                        // same host, we make a unique alias by appending some extra info)
+                        alias = format!(
+                            "{}_{}_{}",
+                            std::str::from_utf8(&msg.node_alias)?,
+                            node_type.as_sql_str(),
+                            node_id
+                        );
+                    };
+
                     // Insert new entity and node entry
-                    let node_uid = db::entity::insert(tx, EntityType::Node, alias)?;
+                    let node_uid = db::entity::insert(tx, EntityType::Node, &alias)?;
                     db::node::insert(tx, node_id, node_uid, node_type, msg.port)?;
 
                     // if this is a meta node, auto-add a corresponding meta target after the node.
                     // This is required because currently the rest of BeeGFS
                     // doesn't know about meta targets and expects exactly one
-                    // meta target per meta node (with the same ID)
+                    // meta target per meta node (with the same ID).
                     if node_type == NodeType::Meta {
-                        db::target::insert_meta(tx, node_id, &format!("{alias}_target"))?;
+                        // Convert the NodeID to a TargetID. Due to the difference in bitsize, meta
+                        // node IDs are not allowed to be bigger than u16
+                        let Ok(target_id) = TargetID::try_from(node_id) else {
+                            bail!(
+                                "{node_id} is not a valid meta node ID \
+                                (must be between 1 and 65535)"
+                            );
+                        };
+
+                        db::target::insert_meta(tx, target_id, &format!("{alias}_target"))?;
                     }
 
                     (node_id, node_uid)
@@ -305,7 +312,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     node_num_id: node_id,
                     root_num_id: match meta_root {
                         MetaRoot::Unknown => 0,
-                        MetaRoot::Normal(node_id, _) => node_id.into(),
+                        MetaRoot::Normal(node_id, _) => node_id,
                         MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
                     },
                     is_root_mirrored: match meta_root {
@@ -339,18 +346,19 @@ impl Handler for RemoveNode {
     type Response = RemoveNodeResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
-                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type.try_into()?)?
+                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type.into())?
                     .ok_or_else(|| TypedError::value_not_found("node ID", self.node_id))?;
 
                 db::node::delete(tx, node_uid)?;
 
                 Ok(())
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Removed {:?} node with ID {}", self.node_type, self.node_id,);
 

@@ -80,7 +80,7 @@ impl Handler for RegisterTarget {
     type Response = RegisterTargetResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match async move {
+        let res = async move {
             if !ctx.info.user_config.registration_enable {
                 bail!("Registration of new targets is not allowed");
             }
@@ -98,8 +98,9 @@ impl Handler for RegisterTarget {
                 })
                 .await
         }
-        .await
-        {
+        .await;
+
+        match res {
             Ok(id) => {
                 log::info!("Registered storage target {id}");
                 RegisterTargetResp { id }
@@ -118,7 +119,7 @@ impl Handler for MapTargets {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check node ID exists
@@ -134,8 +135,9 @@ impl Handler for MapTargets {
 
                 Ok(updated)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(updated) => {
                 log::info!(
                     "Mapped {} storage targets to node {}",
@@ -193,7 +195,7 @@ impl Handler for UnmapTarget {
     type Response = UnmapTargetResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 // Check given target ID exists
@@ -202,8 +204,9 @@ impl Handler for UnmapTarget {
 
                 db::target::delete_storage(tx, self.target_id)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Removed storage target {}", self.target_id,);
 
@@ -285,7 +288,7 @@ impl Handler for ChangeTargetConsistencyStates {
         // see no apparent reason to that the old state matches before setting. We have the
         // authority, whatever nodes think their old state was doesn't matter.
 
-        match ctx
+        let res = ctx
             .db
             .op(move |tx| {
                 let node_type = self.node_type.try_into()?;
@@ -310,8 +313,9 @@ impl Handler for ChangeTargetConsistencyStates {
 
                 Ok(affected > 0)
             })
-            .await
-        {
+            .await;
+
+        match res {
             Ok(changed) => {
                 log::info!(
                     "Updated target consistency states for {:?} nodes",
@@ -350,7 +354,7 @@ impl Handler for SetTargetConsistencyStates {
     type Response = SetTargetConsistencyStatesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match async {
+        let res = async {
             let node_type = self.node_type.try_into()?;
             let msg = self.clone();
 
@@ -382,8 +386,9 @@ impl Handler for SetTargetConsistencyStates {
 
             Ok(()) as Result<()>
         }
-        .await
-        {
+        .await;
+
+        match res {
             Ok(_) => {
                 log::info!("Set consistency state for targets {:?}", self.target_ids,);
                 SetTargetConsistencyStatesResp {

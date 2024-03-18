@@ -25,7 +25,7 @@ impl Serializable for GetTargetMappingsResp {
             self.mapping.iter(),
             false,
             |ser, k| k.serialize(ser),
-            |ser, v| ser.u32((*v).into()),
+            |ser, v| ser.u32(*v),
         )
     }
 }

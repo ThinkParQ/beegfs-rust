@@ -73,28 +73,27 @@ macro_rules! impl_enum_to_sql_str {
     };
 }
 
-/// A node type. There is no Management variant here since we don't store info about ourselves in
-/// the database and don't allow it at all (that wouldn't make sense).
+/// A node type
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum NodeType {
     Meta,
     Storage,
     Client,
+    Management,
 }
 impl_enum_to_sql_str!(NodeType,
     Meta => "meta",
     Storage => "storage",
     Client => "client",
+    Management => "management",
 );
-impl TryFrom<shared::types::NodeType> for NodeType {
-    type Error = anyhow::Error;
-
-    fn try_from(value: shared::types::NodeType) -> Result<Self, Self::Error> {
+impl From<shared::types::NodeType> for NodeType {
+    fn from(value: shared::types::NodeType) -> Self {
         match value {
-            shared::types::NodeType::Meta => Ok(Self::Meta),
-            shared::types::NodeType::Storage => Ok(Self::Storage),
-            shared::types::NodeType::Client => Ok(Self::Client),
-            t => Err(anyhow!("{t:?} cannot be converted")),
+            shared::types::NodeType::Meta => Self::Meta,
+            shared::types::NodeType::Storage => Self::Storage,
+            shared::types::NodeType::Client => Self::Client,
+            shared::types::NodeType::Management => Self::Management,
         }
     }
 }
@@ -104,6 +103,7 @@ impl From<NodeType> for shared::types::NodeType {
             NodeType::Meta => Self::Meta,
             NodeType::Storage => Self::Storage,
             NodeType::Client => Self::Client,
+            NodeType::Management => Self::Management,
         }
     }
 }

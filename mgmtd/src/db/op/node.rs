@@ -113,6 +113,7 @@ pub(crate) fn insert(
             NodeType::Client => {
                 sql!("INSERT INTO client_nodes (node_id, node_uid) VALUES (?1, ?2)")
             }
+            NodeType::Management => "",
         },
         params![node_id, node_uid],
     )?;
@@ -169,7 +170,7 @@ mod test {
     #[test]
     fn insert_get_delete() {
         with_test_data(|tx| {
-            assert_eq!(13, get_all(tx).unwrap().len());
+            assert_eq!(14, get_all(tx).unwrap().len());
 
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
             let node_uid = entity::insert(tx, EntityType::Node, "new_node").unwrap();

@@ -22,7 +22,7 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct Config {
     pub init: bool,
-    pub beegfs_port: Port,
+    pub beemsg_port: Port,
     pub grpc_port: Port,
     pub grpc_tls_enable: bool,
     pub tls_cert_file: PathBuf,
@@ -65,7 +65,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             init: false,
-            beegfs_port: 8008,
+            beemsg_port: 8008,
             grpc_port: 8010,
             grpc_tls_enable: true,
             tls_cert_file: "/etc/beegfs/mgmtd.pem".into(),
@@ -235,7 +235,7 @@ impl Config {
     fn update_from_command_line_args(&mut self, args: CommandLineArgs) {
         self.init = args.init;
         if let Some(v) = args.beegfs_port {
-            self.beegfs_port = v;
+            self.beemsg_port = v;
         }
         if let Some(v) = args.grpc_tls_enable {
             self.grpc_tls_enable = v;
@@ -278,7 +278,7 @@ impl Config {
     /// [[ConfigFileArgs]], otherwise they were not given and shall stay as they are.
     fn update_from_config_file_args(&mut self, args: ConfigFileArgs) {
         if let Some(v) = args.beegfs_port {
-            self.beegfs_port = v;
+            self.beemsg_port = v;
         }
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;

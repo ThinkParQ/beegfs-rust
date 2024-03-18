@@ -72,6 +72,21 @@ pub(crate) fn get_all(tx: &mut Transaction) -> Result<Arc<[NodeNic]>> {
     )?)
 }
 
+/// Retrieves all node nics for a specific node
+pub(crate) fn get_with_node(tx: &mut Transaction, node_uid: EntityUID) -> Result<Arc<[NodeNic]>> {
+    Ok(tx.query_map_collect(
+        sql!(
+            "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+            FROM node_nics AS nn
+            INNER JOIN nodes AS n USING(node_uid)
+            WHERE nn.node_uid = ?1
+            ORDER BY nn.node_uid ASC"
+        ),
+        [node_uid],
+        NodeNic::from_row,
+    )?)
+}
+
 /// Retrieves all node nics for the given node type.
 pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
@@ -120,6 +135,7 @@ pub(crate) fn replace<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use shared::types::MGMTD_UID;
 
     #[test]
     fn get_all_addrs() {
@@ -127,6 +143,17 @@ mod test {
             let addrs = super::get_all_addrs(tx).unwrap();
             assert_eq!(12, addrs.len());
             assert_eq!(4, addrs[0].1.len());
+        })
+    }
+
+    #[test]
+    fn get_with_node() {
+        with_test_data(|tx| {
+            let addrs = super::get_with_node(tx, MGMTD_UID).unwrap();
+            assert_eq!(0, addrs.len());
+
+            let addrs = super::get_with_node(tx, 102001).unwrap();
+            assert_eq!(4, addrs.len());
         })
     }
 

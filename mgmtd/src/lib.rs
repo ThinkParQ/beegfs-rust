@@ -1,4 +1,4 @@
-//! The BeeGFS managment service
+//! The BeeGFS management service
 
 mod bee_msg;
 pub mod config;
@@ -13,13 +13,15 @@ mod types;
 use crate::config::Config;
 use crate::context::Context;
 use anyhow::Result;
+use db::node_nic::ReplaceNic;
 use shared::conn::{incoming, Pool};
 use shared::shutdown::Shutdown;
-use shared::types::AuthenticationSecret;
+use shared::types::{AuthenticationSecret, MGMTD_UID};
 use shared::NetworkAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
+use types::NicType;
 
 /// Contains information that is obtained at the start of the app and then never changes again.
 #[derive(Debug)]
@@ -45,13 +47,11 @@ pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
     // Static configuration which doesn't change at runtime
     let info = Box::leak(Box::new(info));
 
-    let db = db::Connection::open(info.user_config.db_file.as_path()).await?;
-
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(
         UdpSocket::bind(SocketAddr::new(
             "0.0.0.0".parse()?,
-            info.user_config.beegfs_port,
+            info.user_config.beemsg_port,
         ))
         .await?,
     );
@@ -62,6 +62,25 @@ pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
         info.user_config.connection_limit,
         info.auth_secret,
     );
+
+    let db = db::Connection::open(info.user_config.db_file.as_path()).await?;
+
+    db.op(|tx| {
+        // Update management node entry in db
+        db::node::update(tx, MGMTD_UID, info.user_config.beemsg_port)?;
+
+        // Update management nics entry in db
+        db::node_nic::replace(
+            tx,
+            MGMTD_UID,
+            info.network_addrs.iter().map(|e| ReplaceNic {
+                nic_type: NicType::Ethernet,
+                addr: &e.addr,
+                name: &e.name,
+            }),
+        )
+    })
+    .await?;
 
     // Fill node addrs store from db
     db.op(db::node_nic::get_all_addrs)
@@ -74,7 +93,7 @@ pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
 
     // Listen for incoming TCP connections
     incoming::listen_tcp(
-        SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.beegfs_port),
+        SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.beemsg_port),
         ctx.clone(),
         info.auth_secret.is_some(),
         shutdown.clone(),

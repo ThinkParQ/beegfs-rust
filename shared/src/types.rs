@@ -16,12 +16,13 @@ pub type EntityUID = i64;
 pub type TargetID = u16;
 pub type BuddyGroupID = u16;
 pub type Port = u16;
-pub type NodeID = u16;
+pub type NodeID = u32;
 pub type StoragePoolID = u16;
 pub type QuotaID = u32;
 
 pub const MGMTD_ID: NodeID = 1;
-pub const MGMTD_ALIAS: &str = "Management";
+pub const MGMTD_UID: EntityUID = 1;
+
 pub const DEFAULT_STORAGE_POOL: StoragePoolID = 1;
 
 /// The node type as used by most BeeGFS messages
