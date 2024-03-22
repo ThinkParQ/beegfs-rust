@@ -47,7 +47,8 @@ static REGEX: OnceLock<Regex> = OnceLock::new();
 
 /// Checks an alias for validity and returns a user friendly error if not
 pub(crate) fn check_alias(alias: &str) -> Result<()> {
-    let re = REGEX.get_or_init(|| Regex::new(r"^[a-zA-Z0-9-_.]+$").expect("Regex must be valid"));
+    let re = REGEX
+        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_.]+$").expect("Regex must be valid"));
     if !re.is_match(alias) {
         bail!("invalid alias '{alias}': must start with a letter and may only contain letters, digits, '-', '_' and '.'");
     }
@@ -108,6 +109,8 @@ mod test {
         super::check_alias("BBB").unwrap();
         super::check_alias("a-zA-Z0-9._-").unwrap();
 
+        super::check_alias("1a").unwrap_err();
+        super::check_alias("-a").unwrap_err();
         super::check_alias("&").unwrap_err();
         super::check_alias("*").unwrap_err();
         super::check_alias(" ").unwrap_err();
