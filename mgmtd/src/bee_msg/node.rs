@@ -208,19 +208,14 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                         msg.node_id
                     };
 
-                    let mut alias = std::str::from_utf8(&msg.node_alias)?.to_owned();
-
-                    // Check alias doesnt exist yet
-                    if db::entity::get_uid(tx, &alias)?.is_some() {
-                        // If it does already exist (e.g. when multiple servers are started on the
-                        // same host, we make a unique alias by appending some extra info)
-                        alias = format!(
-                            "{}_{}_{}",
-                            std::str::from_utf8(&msg.node_alias)?,
-                            node_type.as_sql_str(),
-                            node_id
-                        );
-                    };
+                    // To ensure aliases are unique and they start with a letter, we prepend the
+                    // reported nodeStrId with nodetype and nodeID.
+                    let alias = format!(
+                        "{}_{}_{}",
+                        node_type.as_sql_str(),
+                        node_id,
+                        std::str::from_utf8(&msg.node_alias)?
+                    );
 
                     // Insert new entity and node entry
                     let node_uid = db::entity::insert(tx, EntityType::Node, &alias)?;
@@ -240,7 +235,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                             );
                         };
 
-                        db::target::insert_meta(tx, target_id, &format!("{alias}_target"))?;
+                        db::target::insert_meta(tx, target_id, &format!("target_{alias}"))?;
                     }
 
                     (node_id, node_uid)

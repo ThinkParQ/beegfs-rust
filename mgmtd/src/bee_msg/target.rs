@@ -93,7 +93,7 @@ impl Handler for RegisterTarget {
                             0 => None,
                             n => Some(n),
                         },
-                        std::str::from_utf8(&self.alias)?,
+                        format!("target_{}", std::str::from_utf8(&self.alias)?).as_str(),
                     )
                 })
                 .await
