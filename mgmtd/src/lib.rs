@@ -1,6 +1,7 @@
 //! The BeeGFS management service
 
 mod bee_msg;
+mod cap_pool;
 pub mod config;
 mod context;
 pub mod db;

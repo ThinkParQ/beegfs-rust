@@ -1,7 +1,7 @@
 //! Program wide config definition and tools for reading and parsing
 
 use crate::types::{CapPoolDynamicLimits, CapPoolLimits};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::Deserialize;
@@ -114,6 +114,46 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    pub fn check_validity(&self) -> Result<()> {
+        self.cap_pool_meta_limits
+            .check()
+            .context("Capacity pool meta limits")?;
+
+        self.cap_pool_storage_limits
+            .check()
+            .context("Capacity pool storage limits")?;
+
+        if let Some(ref l) = self.cap_pool_dynamic_meta_limits {
+            l.check().context("Capacity pool dynamic meta limits")?;
+
+            if l.space_low < self.cap_pool_meta_limits.space_low
+                || l.inodes_low < self.cap_pool_meta_limits.inodes_low
+                || l.space_emergency < self.cap_pool_meta_limits.space_emergency
+                || l.inodes_emergency < self.cap_pool_meta_limits.inodes_emergency
+            {
+                bail!(
+                    "At least one capacity pool dynamic meta limit is lower than the default limit"
+                );
+            }
+        }
+
+        if let Some(ref l) = self.cap_pool_dynamic_storage_limits {
+            l.check().context("Capacity pool dynamic storage limits")?;
+
+            if l.space_low < self.cap_pool_storage_limits.space_low
+                || l.inodes_low < self.cap_pool_storage_limits.inodes_low
+                || l.space_emergency < self.cap_pool_storage_limits.space_emergency
+                || l.inodes_emergency < self.cap_pool_storage_limits.inodes_emergency
+            {
+                bail!("At least one capacity pool dynamic storage limit is lower than the default limit");
+            }
+        }
+
+        Ok(())
+    }
+}
+
 // Defines the Clap command line interface. Doc comment for the struct defines title and main help
 // text.
 //
@@ -181,7 +221,7 @@ struct CommandLineArgs {
     log_level: Option<LogLevel>,
 
     // CLI only args - we do not parse them from file and also do not update them
-    /// Initialialize a new installation, then quit
+    /// Initialize a new installation, then quit
     #[arg(long)]
     init: bool,
     /// Config file location
@@ -409,6 +449,8 @@ pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
     }
 
     config.update_from_command_line_args(command_line_args);
+
+    config.check_validity().context("Invalid config")?;
 
     Ok((config, info_log))
 }

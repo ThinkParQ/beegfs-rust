@@ -26,18 +26,6 @@ impl Node {
     }
 }
 
-/// Retrieve a list of all nodes
-pub(crate) fn get_all(tx: &mut Transaction) -> Result<Vec<Node>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT node_uid, node_id, node_type, alias, port
-            FROM all_nodes_v"
-        ),
-        [],
-        Node::from_row,
-    )?)
-}
-
 /// Retrieve a list of nodes filtered by node type.
 pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
     Ok(tx.query_map_collect(
@@ -170,8 +158,6 @@ mod test {
     #[test]
     fn insert_get_delete() {
         with_test_data(|tx| {
-            assert_eq!(14, get_all(tx).unwrap().len());
-
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
             let node_uid = entity::insert(tx, EntityType::Node, "new_node").unwrap();
             let node_uid2 = entity::insert(tx, EntityType::Node, "new_node2").unwrap();

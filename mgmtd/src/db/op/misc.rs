@@ -1,6 +1,8 @@
 //! Miscellaneous functions for database interaction and other business logic.
 
 use super::*;
+use pb::beegfs::beegfs;
+use pb::beegfs::beegfs::{entity_id_variant, EntityIdVariant, EntityType};
 use rusqlite::types::FromSql;
 use std::ops::RangeInclusive;
 
@@ -15,7 +17,7 @@ use std::ops::RangeInclusive;
 /// 3. The minimum value if unused (this happens when the table is empty)
 ///
 /// # Return value
-/// Returns an unused and available ID using the given contraints. If there is none available, an
+/// Returns an unused and available ID using the given constraints. If there is none available, an
 /// error is returned.
 ///
 /// # Warning
@@ -125,6 +127,53 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     check_affected_rows(affected, [1])
 }
 
+pub(crate) fn uid_from_proto_entity_id(
+    tx: &mut Transaction,
+    entity_id: EntityIdVariant,
+) -> Result<EntityUID> {
+    let uid = match entity_id.variant.as_ref().unwrap() {
+        entity_id_variant::Variant::Uid(ref uid) => *uid,
+        entity_id_variant::Variant::LegacyId(legacy_id) => match legacy_id.entity_type() {
+            EntityType::Unspecified => bail!("unable to determine entity type"),
+            EntityType::Node => {
+                let nt = match legacy_id.node_type() {
+                    beegfs::NodeType::Client => NodeType::Client,
+                    beegfs::NodeType::Meta => NodeType::Meta,
+                    beegfs::NodeType::Storage => NodeType::Storage,
+                    beegfs::NodeType::Management => NodeType::Management,
+                    t => bail!("invalid node type: {t:?}"),
+                };
+
+                node::get_uid(tx, legacy_id.num_id, nt)?.unwrap()
+            }
+            EntityType::Target => {
+                let nt = match legacy_id.node_type() {
+                    beegfs::NodeType::Meta => NodeTypeServer::Meta,
+                    beegfs::NodeType::Storage => crate::types::NodeTypeServer::Storage,
+                    t => bail!("invalid node type: {t:?}"),
+                };
+
+                target::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.unwrap()
+            }
+            EntityType::BuddyGroup => {
+                let nt = match legacy_id.node_type() {
+                    beegfs::NodeType::Meta => NodeTypeServer::Meta,
+                    beegfs::NodeType::Storage => crate::types::NodeTypeServer::Storage,
+                    t => bail!("invalid node type: {t:?}"),
+                };
+
+                buddy_group::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.unwrap()
+            }
+            EntityType::StoragePool => {
+                storage_pool::get_uid(tx, legacy_id.num_id.try_into()?)?.unwrap()
+            }
+        },
+        entity_id_variant::Variant::Alias(ref alias) => entity::get_uid(tx, alias)?.unwrap(),
+    };
+
+    Ok(uid)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -151,7 +200,7 @@ mod test {
     fn meta_root() {
         with_test_data(|tx| {
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(MetaRoot::Normal(1, 101001.into()), meta_root);
+            assert_eq!(MetaRoot::Normal(1, 101001u64), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap();
 

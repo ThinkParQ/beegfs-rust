@@ -5,7 +5,7 @@ CREATE TABLE entities (
         CHECK(uid >= 0),
     entity_type TEXT NOT NULL
         CHECK(entity_type IN ("node", "target", "buddy_group", "storage_pool")),
-    alias TEXT UNIQUE NOT NULL COLLATE NOCASE
+    alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0 AND alias NOT GLOB "*[^0-9a-zA-Z_.-]*"),
 
     UNIQUE(uid, entity_type)
@@ -405,13 +405,15 @@ CREATE VIEW all_targets_v AS
 
 CREATE VIEW all_buddy_groups_v AS
     WITH merged_groups AS (
-        SELECT b.*, mb.buddy_group_id, mb.primary_target_id, mb.secondary_target_id, NULL AS pool_id
+        SELECT b.*, e.alias, mb.buddy_group_id, mb.primary_target_id, mb.secondary_target_id, NULL AS pool_id
         FROM buddy_groups AS b
         INNER JOIN meta_buddy_groups AS mb USING(buddy_group_uid)
+        INNER JOIN entities AS e ON e.uid = buddy_group_uid
         UNION ALL
-        SELECT b.*, sb.buddy_group_id, sb.primary_target_id, sb.secondary_target_id, sb.pool_id
+        SELECT b.*, e.alias, sb.buddy_group_id, sb.primary_target_id, sb.secondary_target_id, sb.pool_id
         FROM buddy_groups AS b
         INNER JOIN storage_buddy_groups AS sb USING(buddy_group_uid)
+        INNER JOIN entities AS e ON e.uid = buddy_group_uid
     )
     SELECT g.*,
         pt.target_uid AS primary_target_uid, pt.node_id AS primary_node_id,

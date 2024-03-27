@@ -1,0 +1,91 @@
+use super::*;
+use crate::types::{NodeTypeServer, TargetConsistencyState};
+use pb::beegfs::beegfs as pb;
+
+pub(crate) async fn get(
+    ctx: &Context,
+    _req: GetBuddyGroupsRequest,
+) -> Result<GetBuddyGroupsResponse> {
+    let buddy_groups = ctx
+        .db
+        .op(|tx| {
+            Ok(tx.query_map_collect(
+                sql!(
+                    "SELECT buddy_group_uid, buddy_group_id, bg.alias, bg.node_type,
+                        primary_target_uid, pt.target_id, pt.alias,
+                        secondary_target_uid, st.target_id, st.alias,
+                        sp.pool_uid, bg.pool_id, e_sp.alias,
+                        primary_consistency, secondary_consistency
+                    FROM all_buddy_groups_v AS bg
+                    INNER JOIN all_targets_v AS pt ON pt.target_uid = primary_target_uid
+                    INNER JOIN all_targets_v AS st ON st.target_uid = secondary_target_uid
+                    LEFT JOIN storage_pools AS sp ON sp.pool_id = bg.pool_id
+                    LEFT JOIN entities AS e_sp ON e_sp.uid = sp.pool_uid"
+                ),
+                [],
+                |row| {
+                    let node_type = match row.get(3)? {
+                        NodeTypeServer::Meta => pb::NodeType::Meta,
+                        NodeTypeServer::Storage => pb::NodeType::Storage,
+                    } as i32;
+
+                    Ok(pb::get_buddy_groups_response::BuddyGroup {
+                        id: Some(pb::EntityIdSet {
+                            uid: row.get(0)?,
+                            legacy_id: Some(pb::LegacyId {
+                                num_id: row.get(1)?,
+                                node_type,
+                                entity_type: pb::EntityType::BuddyGroup as i32,
+                            }),
+                            alias: row.get(2)?,
+                        }),
+                        node_type,
+                        primary_target: Some(pb::EntityIdSet {
+                            uid: row.get(4)?,
+                            legacy_id: Some(pb::LegacyId {
+                                num_id: row.get(5)?,
+                                node_type,
+                                entity_type: pb::EntityType::Target as i32,
+                            }),
+                            alias: row.get(6)?,
+                        }),
+                        secondary_target: Some(pb::EntityIdSet {
+                            uid: row.get(7)?,
+                            legacy_id: Some(pb::LegacyId {
+                                num_id: row.get(8)?,
+                                node_type,
+                                entity_type: pb::EntityType::Target as i32,
+                            }),
+                            alias: row.get(9)?,
+                        }),
+                        storage_pool: Some(pb::EntityIdSet {
+                            uid: row.get(10)?,
+                            legacy_id: Some(pb::LegacyId {
+                                num_id: row.get(11)?,
+                                node_type,
+                                entity_type: pb::EntityType::StoragePool as i32,
+                            }),
+                            alias: row.get(12)?,
+                        }),
+                        primary_consistency_state: match row.get(13)? {
+                            TargetConsistencyState::Good => pb::ConsistencyState::Good,
+                            TargetConsistencyState::NeedsResync => {
+                                pb::ConsistencyState::NeedsResync
+                            }
+                            TargetConsistencyState::Bad => pb::ConsistencyState::Bad,
+                        } as i32,
+                        secondary_consistency_state: match row.get(14)? {
+                            TargetConsistencyState::Good => pb::ConsistencyState::Good,
+                            TargetConsistencyState::NeedsResync => {
+                                pb::ConsistencyState::NeedsResync
+                            }
+                            TargetConsistencyState::Bad => pb::ConsistencyState::Bad,
+                        } as i32,
+                    })
+                },
+            )?)
+        })
+        .await?;
+
+    Ok(GetBuddyGroupsResponse { buddy_groups })
+}

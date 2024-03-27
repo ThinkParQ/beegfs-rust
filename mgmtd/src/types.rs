@@ -7,7 +7,7 @@
 //! the shared crate. Thus we define extra types here and provide conversion tools (e.g.
 //! implementing From / TryFrom).
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use shared::impl_from_and_into;
 use shared::parser::integer_with_generic_unit;
@@ -214,11 +214,10 @@ impl_from_and_into!(QuotaType, shared::types::QuotaType, Space <=> Space, Inodes
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum NicType {
     Ethernet,
-    Sdp,
     Rdma,
 }
-impl_enum_to_sql_str!(NicType, Ethernet => "ethernet", Sdp => "sdp", Rdma => "rdma");
-impl_from_and_into!(NicType, shared::types::NicType, Ethernet <=> Ethernet, Sdp <=> Sdp, Rdma <=> Rdma);
+impl_enum_to_sql_str!(NicType, Ethernet => "ethernet", Rdma => "rdma");
+impl_from_and_into!(NicType, shared::types::NicType, Ethernet <=> Ethernet, Rdma <=> Rdma);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapPoolLimits {
@@ -230,6 +229,16 @@ pub struct CapPoolLimits {
     pub space_low: u64,
     #[serde(with = "integer_with_generic_unit")]
     pub space_emergency: u64,
+}
+
+impl CapPoolLimits {
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.space_low < self.space_emergency || self.inodes_low < self.inodes_emergency {
+            bail!("The low limit is lower than the emergency limit");
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -250,4 +259,14 @@ pub struct CapPoolDynamicLimits {
     pub space_low: u64,
     #[serde(with = "integer_with_generic_unit")]
     pub space_emergency: u64,
+}
+
+impl CapPoolDynamicLimits {
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.space_low < self.space_emergency || self.inodes_low < self.inodes_emergency {
+            bail!("the low limit is lower than the emergency limit");
+        }
+
+        Ok(())
+    }
 }

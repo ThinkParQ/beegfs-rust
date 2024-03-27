@@ -74,7 +74,7 @@ pub(crate) fn insert(
 
     check_affected_rows(affected, [1])?;
 
-    Ok(tx.last_insert_rowid())
+    Ok(tx.last_insert_rowid() as u64)
 }
 
 /// Updates the alias of an entity.
@@ -121,14 +121,14 @@ mod test {
     #[test]
     fn alias_db_charset() {
         with_test_data(|tx| {
-            // Case insensitivity
+            // Case sensitivity
             insert(tx, EntityType::Node, "aaa").unwrap();
-            insert(tx, EntityType::Node, "Aaa").unwrap_err();
+            insert(tx, EntityType::Node, "Aaa").unwrap();
             insert(tx, EntityType::Node, "BBB").unwrap();
-            insert(tx, EntityType::Node, "bbb").unwrap_err();
+            insert(tx, EntityType::Node, "bbb").unwrap();
 
-            get_uid(tx, "AAA").unwrap();
-            get_uid(tx, "bBb").unwrap();
+            assert!(get_uid(tx, "AAA").unwrap().is_none());
+            assert!(get_uid(tx, "bBb").unwrap().is_none());
 
             // Character set
             insert(tx, EntityType::Node, "a-zA-Z0-9._-").unwrap();

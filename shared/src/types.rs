@@ -12,7 +12,7 @@ use std::fmt::Debug;
 // do not. It still has to be checked for each BeeGFS message individually which exact type is
 // needed for serialization.
 
-pub type EntityUID = i64;
+pub type EntityUID = u64;
 pub type TargetID = u16;
 pub type BuddyGroupID = u16;
 pub type Port = u16;
@@ -47,11 +47,10 @@ impl_enum_to_int!(NodeType,
 pub enum NicType {
     #[default]
     Ethernet,
-    Sdp,
     Rdma,
 }
 
-impl_enum_to_int!(NicType, Ethernet => 0, Sdp => 1, Rdma => 2);
+impl_enum_to_int!(NicType, Ethernet => 0, Rdma => 1);
 
 /// Type of a quota ID as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
