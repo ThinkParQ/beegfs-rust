@@ -69,7 +69,8 @@ impl Connection {
         &self,
         op: T,
     ) -> Result<R> {
-        self.conn
+        let res = self
+            .conn
             .call(move |conn| {
                 let mut tx = conn.transaction()?;
                 let res = op(&mut tx).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
@@ -77,8 +78,18 @@ impl Connection {
 
                 Ok(res)
             })
-            .await
-            .map_err(|err| err.into())
+            .await;
+
+        match res {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                if let tokio_rusqlite::Error::Other(other) = err {
+                    return Err(anyhow!(other));
+                }
+
+                Err(err.into())
+            }
+        }
     }
 }
 

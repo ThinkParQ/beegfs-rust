@@ -58,20 +58,6 @@ impl NodeNic {
     }
 }
 
-/// Retrieves all node nics
-pub(crate) fn get_all(tx: &mut Transaction) -> Result<Arc<[NodeNic]>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
-            FROM node_nics AS nn
-            INNER JOIN nodes AS n USING(node_uid)
-            ORDER BY nn.node_uid ASC"
-        ),
-        [],
-        NodeNic::from_row,
-    )?)
-}
-
 /// Retrieves all node nics for a specific node
 pub(crate) fn get_with_node(tx: &mut Transaction, node_uid: EntityUID) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
@@ -160,20 +146,17 @@ mod test {
     #[test]
     fn get_update() {
         with_test_data(|tx| {
-            let nics = super::get_all(tx).unwrap();
-            assert_eq!(22, nics.len());
-
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
             assert_eq!(4, nics.iter().filter(|e| e.node_uid == 102001).count());
 
-            super::replace(tx, 102001.into(), []).unwrap();
+            super::replace(tx, 102001u64, []).unwrap();
 
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
             assert_eq!(0, nics.iter().filter(|e| e.node_uid == 102001).count());
 
             super::replace(
                 tx,
-                102001.into(),
+                102001u64,
                 [ReplaceNic {
                     addr: &Ipv4Addr::new(1, 2, 3, 4),
                     name: "test",

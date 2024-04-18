@@ -1,4 +1,4 @@
-//! Contains convenience macros for type and message defininitions
+//! Contains convenience macros for type and message definitions
 
 /// Implements safe (e.g. no panic) conversion of an enum to all integer types and back
 macro_rules! impl_enum_to_int {

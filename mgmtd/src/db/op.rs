@@ -10,7 +10,6 @@ use sql_check::sql;
 use std::rc::Rc;
 
 pub(crate) mod buddy_group;
-pub(crate) mod cap_pool;
 pub(crate) mod entity;
 pub(crate) mod misc;
 pub(crate) mod node;
@@ -21,10 +20,10 @@ pub(crate) mod quota_usage;
 pub(crate) mod storage_pool;
 pub(crate) mod target;
 
-/// Convienence methods meant for extending [rusqlite::Transaction].
+/// Convenience methods meant for extending [rusqlite::Transaction].
 ///
 /// See the implementation for description.
-trait TransactionExt {
+pub trait TransactionExt {
     fn execute_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<usize>;
     fn query_row_cached<T, P, F>(&mut self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
     where

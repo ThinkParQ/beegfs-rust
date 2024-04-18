@@ -12,7 +12,7 @@ publish = false
 
 [dependencies]
 shared = { path = "../shared"}
-pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.3" }
+pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.6" }
 sql_check = { path = "sql_check"}
 
 anyhow = { workspace = true }

@@ -1,8 +1,11 @@
 use super::*;
+use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
+use crate::db::TransactionExt;
 use crate::types::{EntityType, NodeType, NodeTypeServer};
 use shared::bee_msg::misc::CapacityPool;
 use shared::bee_msg::storage_pool::*;
-use shared::types::{BuddyGroupID, NodeID, TargetID, DEFAULT_STORAGE_POOL};
+use shared::types::{BuddyGroupID, NodeID, StoragePoolID, TargetID, DEFAULT_STORAGE_POOL};
+use sql_check::sql;
 
 impl Handler for AddStoragePool {
     type Response = AddStoragePoolResp;
@@ -85,29 +88,84 @@ impl Handler for AddStoragePool {
     }
 }
 
+struct TargetOrBuddyGroup {
+    id: u16,
+    node_id: Option<NodeID>,
+    pool_id: StoragePoolID,
+    free_space: u64,
+    free_inodes: u64,
+}
+
+impl CapacityInfo for &TargetOrBuddyGroup {
+    fn free_space(&self) -> u64 {
+        self.free_space
+    }
+
+    fn free_inodes(&self) -> u64 {
+        self.free_inodes
+    }
+}
+
 impl Handler for GetStoragePools {
     type Response = GetStoragePoolsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
         let res = async move {
-            let config = &ctx.info.user_config;
-
-            let (targets, pools, buddy_groups) = ctx
+            let (pools, targets, buddy_groups) = ctx
                 .db
                 .op(move |tx| {
-                    let pools = db::storage_pool::get_all(tx)?;
-                    let targets = db::cap_pool::for_storage_targets(
-                        tx,
-                        &config.cap_pool_storage_limits,
-                        config.cap_pool_dynamic_storage_limits.as_ref(),
-                    )?;
-                    let buddy_groups = db::cap_pool::for_storage_buddy_groups(
-                        tx,
-                        &config.cap_pool_storage_limits,
-                        config.cap_pool_dynamic_storage_limits.as_ref(),
+                    let pools: Vec<(StoragePoolID, String)> = tx.query_map_collect(
+                        sql!(
+                            "SELECT p.pool_id, e.alias
+                            FROM storage_pools AS p
+                            INNER JOIN entities AS e ON e.uid = p.pool_uid"
+                        ),
+                        [],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
                     )?;
 
-                    Ok((targets, pools, buddy_groups))
+                    let targets: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
+                        sql!(
+                            "SELECT target_id, node_id, pool_id, free_space, free_inodes
+                            FROM storage_targets_v
+                            WHERE free_space IS NOT NULL AND free_inodes IS NOT NULL"
+                        ),
+                        [],
+                        |row| {
+                            Ok(TargetOrBuddyGroup {
+                                id: row.get(0)?,
+                                node_id: Some(row.get(1)?),
+                                pool_id: row.get(2)?,
+                                free_space: row.get(3)?,
+                                free_inodes: row.get(4)?,
+                            })
+                        },
+                    )?;
+
+                    let buddy_groups: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
+                        sql!(
+                            "SELECT buddy_group_id, pool_id,
+                                MIN(primary_free_space, secondary_free_space),
+                                MIN(primary_free_inodes, secondary_free_inodes)
+                            FROM all_buddy_groups_v WHERE node_type = 'storage'
+                                AND primary_free_space IS NOT NULL
+                                AND secondary_free_space IS NOT NULL
+                                AND primary_free_inodes IS NOT NULL
+                                AND secondary_free_inodes IS NOT NULL"
+                        ),
+                        [],
+                        |row| {
+                            Ok(TargetOrBuddyGroup {
+                                id: row.get(0)?,
+                                node_id: None,
+                                pool_id: row.get(1)?,
+                                free_space: row.get(2)?,
+                                free_inodes: row.get(3)?,
+                            })
+                        },
+                    )?;
+
+                    Ok((pools, targets, buddy_groups))
                 })
                 .await?;
 
@@ -130,34 +188,60 @@ impl Handler for GetStoragePools {
                     let mut target_map: HashMap<TargetID, NodeID> = HashMap::new();
                     let mut buddy_group_vec: Vec<BuddyGroupID> = vec![];
 
-                    // Only collect targets belonging to the current pool
-                    for target in targets.iter().filter(|t| t.pool_id == pool.pool_id) {
-                        let cap_pool_i = usize::from(CapacityPool::from(target.cap_pool));
-                        let target_id: TargetID = target.entity_id;
+                    let f_targets = targets.iter().filter(|t| t.pool_id == pool.0);
+                    let f_buddy_groups = buddy_groups.iter().filter(|t| t.pool_id == pool.0);
 
-                        target_map.insert(target_id, target.node_id);
-                        target_cap_pools[cap_pool_i].push(target_id);
+                    let cp_targets_calc = CapPoolCalculator::new(
+                        ctx.info.user_config.cap_pool_storage_limits.clone(),
+                        ctx.info
+                            .user_config
+                            .cap_pool_dynamic_storage_limits
+                            .as_ref(),
+                        f_targets.clone(),
+                    )?;
+
+                    let cp_buddy_groups_calc = CapPoolCalculator::new(
+                        ctx.info.user_config.cap_pool_storage_limits.clone(),
+                        ctx.info
+                            .user_config
+                            .cap_pool_dynamic_storage_limits
+                            .as_ref(),
+                        f_buddy_groups.clone(),
+                    )?;
+
+                    // Only collect targets belonging to the current pool
+                    for target in f_targets {
+                        let cap_pool_i = usize::from(CapacityPool::from(
+                            cp_targets_calc.cap_pool(target.free_space, target.free_inodes),
+                        ));
+
+                        let target_id: TargetID = target.id;
+                        let node_id = target.node_id.expect("targets have a node id");
+
+                        target_map.insert(target_id, node_id);
+                        target_cap_pools[cap_pool_i].push(target.id);
 
                         if let Some(node_group) =
-                            grouped_target_cap_pools[cap_pool_i].get_mut(&target.node_id)
+                            grouped_target_cap_pools[cap_pool_i].get_mut(&node_id)
                         {
                             node_group.push(target_id);
                         } else {
-                            grouped_target_cap_pools[cap_pool_i]
-                                .insert(target.node_id, vec![target_id]);
+                            grouped_target_cap_pools[cap_pool_i].insert(node_id, vec![target_id]);
                         }
                     }
 
                     // Only collect buddy groups belonging to the current pool
-                    for group in buddy_groups.iter().filter(|g| g.pool_id == pool.pool_id) {
-                        buddy_group_vec.push(group.entity_id);
-                        buddy_group_cap_pools[usize::from(CapacityPool::from(group.cap_pool))]
-                            .push(group.entity_id);
+                    for group in f_buddy_groups {
+                        buddy_group_vec.push(group.id);
+                        buddy_group_cap_pools[usize::from(CapacityPool::from(
+                            cp_buddy_groups_calc.cap_pool(group.free_space, group.free_inodes),
+                        ))]
+                        .push(group.id);
                     }
 
                     Ok(StoragePool {
-                        id: pool.pool_id,
-                        alias: pool.alias.into_bytes(),
+                        id: pool.0,
+                        alias: pool.1.into_bytes(),
                         targets: target_map.keys().cloned().collect(),
                         buddy_groups: buddy_group_vec,
                         target_cap_pools: TargetCapacityPools {

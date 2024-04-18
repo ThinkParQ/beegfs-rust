@@ -143,7 +143,7 @@ pub(crate) fn insert(
     let new_uid = entity::insert(
         tx,
         EntityType::BuddyGroup,
-        &format!("{}_buddy_group_{new_id}", node_type.as_sql_str()),
+        &format!("buddy_group_{}_{new_id}", node_type.as_sql_str()),
     )?;
 
     // Insert generic buddy group
@@ -504,7 +504,10 @@ mod test {
 
             let res = super::prepare_storage_deletion(tx, 1).unwrap();
 
-            assert_eq!((EntityUID::from(102001), EntityUID::from(102002)), res);
+            assert_eq!(
+                (EntityUID::from(102001u64), EntityUID::from(102002u64)),
+                res
+            );
         })
     }
 
