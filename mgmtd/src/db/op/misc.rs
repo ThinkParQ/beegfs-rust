@@ -132,7 +132,16 @@ pub(crate) fn uid_from_proto_entity_id(
     entity_id: EntityIdVariant,
 ) -> Result<EntityUID> {
     let uid = match entity_id.variant.as_ref().unwrap() {
-        entity_id_variant::Variant::Uid(ref uid) => *uid,
+        entity_id_variant::Variant::Uid(ref uid) => {
+            let res: Option<EntityUID> = tx
+                .query_row_cached(
+                    sql!("SELECT uid FROM entities WHERE uid = ?1"),
+                    [uid],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            res.ok_or_else(|| anyhow!("uid {uid} doesn't exist"))?
+        }
         entity_id_variant::Variant::LegacyId(legacy_id) => match legacy_id.entity_type() {
             EntityType::Unspecified => bail!("unable to determine entity type"),
             EntityType::Node => {
@@ -144,7 +153,13 @@ pub(crate) fn uid_from_proto_entity_id(
                     t => bail!("invalid node type: {t:?}"),
                 };
 
-                node::get_uid(tx, legacy_id.num_id, nt)?.unwrap()
+                node::get_uid(tx, legacy_id.num_id, nt)?.ok_or_else(|| {
+                    anyhow!(
+                        "node {}:{} doesn't exist",
+                        nt.as_sql_str(),
+                        legacy_id.num_id
+                    )
+                })?
             }
             EntityType::Target => {
                 let nt = match legacy_id.node_type() {
@@ -153,7 +168,13 @@ pub(crate) fn uid_from_proto_entity_id(
                     t => bail!("invalid node type: {t:?}"),
                 };
 
-                target::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.unwrap()
+                target::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.ok_or_else(|| {
+                    anyhow!(
+                        "target {}:{} doesn't exist",
+                        nt.as_sql_str(),
+                        legacy_id.num_id
+                    )
+                })?
             }
             EntityType::BuddyGroup => {
                 let nt = match legacy_id.node_type() {
@@ -162,13 +183,22 @@ pub(crate) fn uid_from_proto_entity_id(
                     t => bail!("invalid node type: {t:?}"),
                 };
 
-                buddy_group::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.unwrap()
+                buddy_group::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.ok_or_else(|| {
+                    anyhow!(
+                        "buddy group {}:{} doesn't exist",
+                        nt.as_sql_str(),
+                        legacy_id.num_id
+                    )
+                })?
             }
-            EntityType::StoragePool => {
-                storage_pool::get_uid(tx, legacy_id.num_id.try_into()?)?.unwrap()
-            }
+            EntityType::StoragePool => storage_pool::get_uid(tx, legacy_id.num_id.try_into()?)?
+                .ok_or_else(|| {
+                    anyhow!("storage pool storage:{} doesn't exist", legacy_id.num_id)
+                })?,
         },
-        entity_id_variant::Variant::Alias(ref alias) => entity::get_uid(tx, alias)?.unwrap(),
+        entity_id_variant::Variant::Alias(ref alias) => {
+            entity::get_uid(tx, alias)?.ok_or_else(|| anyhow!("alias {alias} doesn't exist"))?
+        }
     };
 
     Ok(uid)

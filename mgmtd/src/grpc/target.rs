@@ -56,9 +56,9 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 }),
                 alias: row.get(5)?,
             }),
-            storage_pool: if row.get::<_, Option<EntityUID>>(7)?.is_some() {
+            storage_pool: if let Some(uid) = row.get::<_, Option<EntityUID>>(7)? {
                 Some(pb::EntityIdSet {
-                    uid: row.get(7)?,
+                    uid,
                     legacy_id: Some(LegacyId {
                         num_id: row.get(9)?,
                         node_type,
