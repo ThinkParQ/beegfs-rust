@@ -58,15 +58,19 @@ pub(crate) async fn get(
                             }),
                             alias: row.get(9)?,
                         }),
-                        storage_pool: Some(pb::EntityIdSet {
-                            uid: row.get(10)?,
-                            legacy_id: Some(pb::LegacyId {
-                                num_id: row.get(11)?,
-                                node_type,
-                                entity_type: pb::EntityType::StoragePool as i32,
-                            }),
-                            alias: row.get(12)?,
-                        }),
+                        storage_pool: if let Some(uid) = row.get::<_, Option<u64>>(10)? {
+                            Some(pb::EntityIdSet {
+                                uid,
+                                legacy_id: Some(pb::LegacyId {
+                                    num_id: row.get(11)?,
+                                    node_type,
+                                    entity_type: pb::EntityType::StoragePool as i32,
+                                }),
+                                alias: row.get(12)?,
+                            })
+                        } else {
+                            None
+                        },
                         primary_consistency_state: match row.get(13)? {
                             TargetConsistencyState::Good => pb::ConsistencyState::Good,
                             TargetConsistencyState::NeedsResync => {
