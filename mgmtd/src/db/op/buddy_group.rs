@@ -22,10 +22,7 @@ pub(crate) fn get_with_type(
 ) -> Result<Vec<BuddyGroup>> {
     Ok(tx.query_map_collect(
         sql!(
-            "SELECT
-            buddy_group_id,
-            primary_target_id, secondary_target_id,
-            pool_id
+            "SELECT buddy_group_id, p_target_id, s_target_id, pool_id
             FROM all_buddy_groups_v
             WHERE node_type = ?1;"
         ),
@@ -127,7 +124,7 @@ pub(crate) fn insert(
         sql!(
             "SELECT COUNT(*) FROM all_buddy_groups_v
              WHERE node_type = ?1
-             AND (primary_target_id IN (?2, ?3) OR secondary_target_id IN (?2, ?3))"
+             AND (p_target_id IN (?2, ?3) OR s_target_id IN (?2, ?3))"
         ),
         params![node_type, primary_target_id, secondary_target_id],
         |row| row.get::<_, i64>(0),
@@ -158,17 +155,17 @@ pub(crate) fn insert(
             NodeTypeServer::Meta => {
                 sql!(
                     "INSERT INTO meta_buddy_groups
-                    (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id)
+                    (buddy_group_id, buddy_group_uid, p_target_id, s_target_id)
                     VALUES (?1, ?2, ?3, ?4)"
                 )
             }
             NodeTypeServer::Storage => {
                 sql!(
                     "INSERT INTO storage_buddy_groups
-                    (buddy_group_id, buddy_group_uid, primary_target_id,
-                        secondary_target_id, pool_id)
+                    (buddy_group_id, buddy_group_uid, p_target_id, s_target_id, pool_id)
                     VALUES (?1, ?2, ?3, ?4,
-                        (SELECT pool_id FROM storage_targets WHERE target_id = ?3))"
+                        (SELECT pool_id FROM storage_targets WHERE target_id = ?3)
+                    )"
                 )
             }
         },
@@ -231,14 +228,18 @@ pub(crate) fn check_and_swap_buddies(
 ) -> Result<Vec<(BuddyGroupID, NodeTypeServer)>> {
     let affected_groups = tx.query_map_collect(
         sql!(
-            "SELECT buddy_group_id, node_type FROM all_buddy_groups_v
+            "SELECT g.buddy_group_id, g.node_type FROM all_buddy_groups_v AS g
+            INNER JOIN all_targets_v AS p_t ON p_t.target_uid = p_target_uid
+            INNER JOIN nodes AS p_n ON p_n.node_uid = p_t.node_uid
+            INNER JOIN all_targets_v AS s_t ON s_t.target_uid = s_target_uid
+            INNER JOIN nodes AS s_n ON s_n.node_uid = s_t.node_uid
             WHERE (
-                primary_last_contact_s >= ?1
+                (STRFTIME('%s', 'now') - STRFTIME('%s', p_n.last_contact)) >= ?1
                 OR
-                primary_consistency == 'needs_resync'
+                p_t.consistency == 'needs_resync'
             )
-                AND secondary_consistency == 'good'
-                AND secondary_last_contact_s < (?1 / 2)"
+                AND s_t.consistency == 'good'
+                AND (STRFTIME('%s', 'now') - STRFTIME('%s', s_n.last_contact)) < (?1 / 2)"
         ),
         [timeout.as_secs()],
         |row| Ok((row.get(0)?, row.get(1)?)),
@@ -249,14 +250,12 @@ pub(crate) fn check_and_swap_buddies(
             match node_type {
                 NodeTypeServer::Meta => sql!(
                     "UPDATE meta_buddy_groups
-                    SET primary_target_id = secondary_target_id,
-                        secondary_target_id = primary_target_id
+                    SET p_target_id = s_target_id, s_target_id = p_target_id
                     WHERE buddy_group_id = ?1"
                 ),
                 NodeTypeServer::Storage => sql!(
                     "UPDATE storage_buddy_groups
-                    SET primary_target_id = secondary_target_id,
-                        secondary_target_id = primary_target_id
+                    SET p_target_id = s_target_id, s_target_id = p_target_id
                     WHERE buddy_group_id = ?1"
                 ),
             },
@@ -287,12 +286,12 @@ pub(crate) fn prepare_storage_deletion(
 
     let node_uids = tx.query_row(
         sql!(
-            "SELECT psn.node_uid, ssn.node_uid
+            "SELECT p_sn.node_uid, s_sn.node_uid
             FROM storage_buddy_groups AS g
-            INNER JOIN storage_targets AS pst ON pst.target_id = g.primary_target_id
-            INNER JOIN storage_nodes AS psn ON psn.node_id = pst.node_id
-            INNER JOIN storage_targets AS sst ON sst.target_id = g.secondary_target_id
-            INNER JOIN storage_nodes AS ssn ON ssn.node_id = sst.node_id
+            INNER JOIN storage_targets AS p_st ON p_st.target_id = g.p_target_id
+            INNER JOIN storage_nodes AS p_sn ON p_sn.node_id = p_st.node_id
+            INNER JOIN storage_targets AS s_st ON s_st.target_id = g.s_target_id
+            INNER JOIN storage_nodes AS s_sn ON s_sn.node_id = s_st.node_id
             WHERE buddy_group_id = ?1;"
         ),
         [id],

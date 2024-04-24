@@ -82,7 +82,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                     LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
                     LEFT JOIN entities AS e ON e.uid = mn.node_uid
                     LEFT JOIN meta_buddy_groups AS mg ON mg.buddy_group_id = ri.buddy_group_id
-                    LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.primary_target_id
+                    LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
                     LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
                     LEFT JOIN entities AS e2 ON e.uid = mn2.node_uid"
                 ),

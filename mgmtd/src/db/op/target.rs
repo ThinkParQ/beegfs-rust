@@ -26,9 +26,10 @@ pub(crate) fn get_with_type(
     Ok(tx.query_map_collect(
         sql!(
             "SELECT target_id, node_uid, node_id, pool_id,
-            consistency, last_contact_s
-            FROM all_targets_v
-            WHERE node_type = ?1 AND node_id IS NOT NULL;"
+            consistency, (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact))
+            FROM all_targets_v AS t
+            INNER JOIN nodes AS n USING(node_uid)
+            WHERE t.node_type = ?1 AND t.node_id IS NOT NULL;"
         ),
         [node_type],
         |row| {
@@ -132,7 +133,7 @@ pub(crate) fn insert_or_ignore_storage(
 ) -> Result<TargetID> {
     let target_id = if let Some(target_id) = target_id {
         let count = tx.query_row_cached(
-            sql!("SELECT COUNT(*) FROM storage_targets_v WHERE target_id = ?1"),
+            sql!("SELECT COUNT(*) FROM storage_targets WHERE target_id = ?1"),
             params![target_id],
             |row| row.get::<_, i32>(0),
         )?;

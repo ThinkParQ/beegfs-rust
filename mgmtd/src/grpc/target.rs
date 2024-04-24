@@ -21,8 +21,8 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
         "SELECT t.target_uid, t.alias, t.target_id, t.node_type,
             n.node_uid, n.alias, n.node_id,
             sp.pool_uid, e_sp.alias, sp.pool_id,
-            t.consistency, n.last_contact_s, t.free_space, t.free_inodes,
-            t.total_space, t.total_inodes
+            t.consistency, (STRFTIME('%s', 'now') - STRFTIME('%s', last_contact)),
+            t.free_space, t.free_inodes, t.total_space, t.total_inodes
         FROM all_targets_v AS t
         INNER JOIN all_nodes_v AS n USING(node_uid)
         LEFT JOIN storage_pools AS sp USING(pool_id)

@@ -12,13 +12,13 @@ pub(crate) async fn get(
             Ok(tx.query_map_collect(
                 sql!(
                     "SELECT buddy_group_uid, buddy_group_id, bg.alias, bg.node_type,
-                        primary_target_uid, pt.target_id, pt.alias,
-                        secondary_target_uid, st.target_id, st.alias,
+                        p_target_uid, p_t.target_id, p_t.alias,
+                        s_target_uid, s_t.target_id, s_t.alias,
                         sp.pool_uid, bg.pool_id, e_sp.alias,
-                        primary_consistency, secondary_consistency
+                        p_t.consistency, s_t.consistency
                     FROM all_buddy_groups_v AS bg
-                    INNER JOIN all_targets_v AS pt ON pt.target_uid = primary_target_uid
-                    INNER JOIN all_targets_v AS st ON st.target_uid = secondary_target_uid
+                    INNER JOIN all_targets_v AS p_t ON p_t.target_uid = p_target_uid
+                    INNER JOIN all_targets_v AS s_t ON s_t.target_uid = s_target_uid
                     LEFT JOIN storage_pools AS sp ON sp.pool_id = bg.pool_id
                     LEFT JOIN entities AS e_sp ON e_sp.uid = sp.pool_uid"
                 ),

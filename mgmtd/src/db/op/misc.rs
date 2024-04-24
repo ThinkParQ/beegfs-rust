@@ -101,9 +101,8 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
         sql!(
             "UPDATE root_inode
             SET target_id = NULL, buddy_group_id = (
-                SELECT mg.buddy_group_id
-                FROM root_inode AS ri
-                INNER JOIN meta_buddy_groups AS mg ON mg.primary_target_id = ri.target_id
+                SELECT mg.buddy_group_id FROM root_inode AS ri
+                INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id
             )"
         ),
         [],
@@ -115,10 +114,9 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
         sql!(
             "UPDATE targets SET consistency = 'needs_resync'
             WHERE target_uid = (
-                SELECT mt.target_uid
-                FROM root_inode AS ri
+                SELECT mt.target_uid FROM root_inode AS ri
                 INNER JOIN meta_buddy_groups AS mg USING(buddy_group_id)
-                INNER JOIN meta_targets AS mt ON mt.target_id = mg.secondary_target_id
+                INNER JOIN meta_targets AS mt ON mt.target_id = mg.s_target_id
             )"
         ),
         [],

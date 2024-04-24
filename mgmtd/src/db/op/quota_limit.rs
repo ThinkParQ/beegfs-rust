@@ -19,6 +19,22 @@ impl SpaceAndInodeLimits {
     }
 }
 
+macro_rules! select_limits {
+    ($wh:literal) => {
+        concat!(
+            sql!(
+                "SELECT DISTINCT l.quota_id, s.value AS 'space_value', i.value AS 'inodes_value'
+                FROM quota_limits AS l
+                LEFT JOIN quota_limits AS s ON s.quota_id = l.quota_id AND s.id_type = l.id_type
+                    AND s.pool_id = l.pool_id AND s.quota_type = 'space'
+                LEFT JOIN quota_limits AS i ON i.quota_id = l.quota_id AND i.id_type = l.id_type
+                    AND i.pool_id = l.pool_id AND i.quota_type = 'inodes'"
+            ),
+            $wh
+        )
+    };
+}
+
 pub(crate) fn with_quota_id_range(
     tx: &mut Transaction,
     quota_id_range: RangeInclusive<QuotaID>,
@@ -26,9 +42,8 @@ pub(crate) fn with_quota_id_range(
     id_type: QuotaIDType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
-        sql!(
-            "SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-            WHERE quota_id >= ?1 AND quota_id <= ?2 AND pool_id == ?3 AND id_type = ?4"
+        select_limits!(
+            "WHERE l.quota_id >= ?1 AND l.quota_id <= ?2 AND l.pool_id == ?3 AND l.id_type = ?4"
         ),
         params![
             quota_id_range.start(),
@@ -47,11 +62,7 @@ pub(crate) fn with_quota_id_list(
     id_type: QuotaIDType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
-        sql!(
-            "SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-            WHERE pool_id == ?1 AND id_type = ?2
-            AND quota_id IN rarray(?3)"
-        ),
+        select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2 AND l.quota_id IN rarray(?3)"),
         params![pool_id, id_type, &rarray_param(quota_ids)],
         SpaceAndInodeLimits::from_row,
     )?)
@@ -63,8 +74,7 @@ pub(crate) fn all(
     id_type: QuotaIDType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
-        "SELECT quota_id, space_value, inodes_value FROM quota_limits_combined_v
-        WHERE pool_id == ?1 AND id_type = ?2",
+        select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2"),
         params![pool_id, id_type],
         SpaceAndInodeLimits::from_row,
     )?)

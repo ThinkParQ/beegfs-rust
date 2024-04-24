@@ -194,12 +194,12 @@ INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES
     (302002, "storage")
 ;
 
-INSERT INTO meta_buddy_groups (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id)
+INSERT INTO meta_buddy_groups (buddy_group_id, buddy_group_uid, p_target_id, s_target_id)
 VALUES
     (1, 301001, 1, 2)
 ;
 
-INSERT INTO storage_buddy_groups (buddy_group_id, buddy_group_uid, primary_target_id, secondary_target_id, pool_id)
+INSERT INTO storage_buddy_groups (buddy_group_id, buddy_group_uid, p_target_id, s_target_id, pool_id)
 VALUES
     (1, 302001, 1, 5, 1),
     (2, 302002, 9, 13, 1)

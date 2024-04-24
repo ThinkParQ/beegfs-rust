@@ -29,9 +29,13 @@ pub(crate) fn exceeded_quota_ids(
 
     Ok(tx.query_map_collect(
         sql!(
-            "SELECT DISTINCT quota_id
-            FROM exceeded_quota_v
-            WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
+            "SELECT DISTINCT e.quota_id FROM quota_usage AS e
+            INNER JOIN storage_targets AS st USING(target_id)
+            LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+            LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+            WHERE e.id_type = ?1 AND e.quota_type = ?2 AND st.pool_id = ?3
+            GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+            HAVING SUM(e.value) > COALESCE(l.value, d.value)"
         ),
         params![id_type, quota_type, pool_id],
         |row| row.get(0),
@@ -55,7 +59,15 @@ pub(crate) struct ExceededQuotaEntry {
 /// can be returned more than once (with the respective information stored in [ExceededQuotaEntry]).
 pub(crate) fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
     Ok(tx.query_map_collect(
-        sql!("SELECT quota_id, id_type, quota_type, pool_id FROM exceeded_quota_v"),
+        sql!(
+            "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
+            FROM quota_usage AS e
+            INNER JOIN storage_targets AS st USING(target_id)
+            LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+            LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+            GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+            HAVING SUM(e.value) > COALESCE(l.value, d.value)"
+        ),
         [],
         |row| {
             Ok(ExceededQuotaEntry {

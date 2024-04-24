@@ -117,12 +117,14 @@ fn load_buddy_groups_by_type(
     let groups = tx.query_map_collect(
         sql!(
             "SELECT buddy_group_id, pool_id,
-                MIN(primary_free_space, secondary_free_space),
-                MIN(primary_free_inodes, secondary_free_inodes)
-            FROM all_buddy_groups_v
-            WHERE node_type = ?1
-                AND primary_free_space IS NOT NULL AND secondary_free_space IS NOT NULL
-                AND primary_free_inodes IS NOT NULL AND secondary_free_inodes IS NOT NULL"
+                MIN(p_t.free_space, s_t.free_space),
+                MIN(p_t.free_inodes, s_t.free_inodes)
+            FROM all_buddy_groups_v AS g
+            INNER JOIN targets AS p_t ON p_t.target_uid = p_target_uid
+            INNER JOIN targets AS s_t ON s_t.target_uid = s_target_uid
+            WHERE g.node_type = ?1
+                AND p_t.free_space IS NOT NULL AND s_t.free_space IS NOT NULL
+                AND p_t.free_inodes IS NOT NULL AND s_t.free_inodes IS NOT NULL"
         ),
         [node_type],
         |row| {
