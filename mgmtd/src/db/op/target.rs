@@ -56,7 +56,7 @@ pub(crate) fn get_uid(
 ) -> Result<Option<EntityUID>> {
     Ok(tx
         .query_row_cached(
-            sql!("SELECT target_uid FROM all_targets_v WHERE node_id = ?1 AND node_type = ?2"),
+            sql!("SELECT target_uid FROM all_targets_v WHERE target_id = ?1 AND node_type = ?2"),
             params![target_id, node_type],
             |row| row.get(0),
         )

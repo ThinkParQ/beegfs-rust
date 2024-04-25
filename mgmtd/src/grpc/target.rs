@@ -122,7 +122,6 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 CapacityPool::Emergency => pb::CapacityPool::Emergency,
             } as i32;
         }
-        println!("{:?}", t.cap_pool());
     }
 
     for sp_uid in pools {
