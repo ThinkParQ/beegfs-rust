@@ -127,8 +127,9 @@ impl Handler for GetStoragePools {
                     let targets: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
                         sql!(
                             "SELECT target_id, node_id, pool_id, free_space, free_inodes
-                            FROM storage_targets_v
-                            WHERE free_space IS NOT NULL AND free_inodes IS NOT NULL"
+                            FROM all_targets_v
+                            WHERE node_type == 'storage'
+                                AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
                         ),
                         [],
                         |row| {
@@ -145,13 +146,16 @@ impl Handler for GetStoragePools {
                     let buddy_groups: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
                         sql!(
                             "SELECT buddy_group_id, pool_id,
-                                MIN(primary_free_space, secondary_free_space),
-                                MIN(primary_free_inodes, secondary_free_inodes)
-                            FROM all_buddy_groups_v WHERE node_type = 'storage'
-                                AND primary_free_space IS NOT NULL
-                                AND secondary_free_space IS NOT NULL
-                                AND primary_free_inodes IS NOT NULL
-                                AND secondary_free_inodes IS NOT NULL"
+                                MIN(p_t.free_space, s_t.free_space),
+                                MIN(p_t.free_inodes, s_t.free_inodes)
+                            FROM all_buddy_groups_v AS g
+                            INNER JOIN targets AS p_t ON p_t.target_uid = g.p_target_uid
+                            INNER JOIN targets AS s_t ON s_t.target_uid = g.s_target_uid
+                            WHERE g.node_type = 'storage'
+                                AND p_t.free_space IS NOT NULL
+                                AND s_t.free_space IS NOT NULL
+                                AND p_t.free_inodes IS NOT NULL
+                                AND s_t.free_inodes IS NOT NULL"
                         ),
                         [],
                         |row| {

@@ -25,9 +25,17 @@ pub(crate) fn get_with_pool_id(
     let limits = tx
         .query_row_cached(
             sql!(
-                "SELECT user_space_value, user_inodes_value, group_space_value, group_inodes_value
-                FROM quota_default_limits_combined_v
-                WHERE pool_id = ?1"
+                "SELECT DISTINCT us.value, ui.value, gs.value, gi.value
+                FROM quota_default_limits AS l
+                LEFT JOIN quota_default_limits AS us
+                    ON us.pool_id = l.pool_id AND us.quota_type = 'space' AND us.id_type = 'user'
+                LEFT JOIN quota_default_limits AS ui
+                    ON ui.pool_id = l.pool_id AND ui.quota_type = 'inodes' AND ui.id_type = 'user'
+                LEFT JOIN quota_default_limits AS gs
+                    ON gs.pool_id = l.pool_id AND gs.quota_type = 'space' AND gs.id_type = 'group'
+                LEFT JOIN quota_default_limits AS gi
+                    ON gi.pool_id = l.pool_id AND gi.quota_type = 'inodes' AND gi.id_type = 'group'
+                WHERE l.pool_id = ?1"
             ),
             params![pool_id],
             |row| {

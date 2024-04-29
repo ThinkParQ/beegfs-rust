@@ -1,5 +1,3 @@
--- TODO: Indexes
-
 CREATE TABLE entities (
     uid INTEGER PRIMARY KEY AUTOINCREMENT
         CHECK(uid >= 0),
@@ -8,8 +6,10 @@ CREATE TABLE entities (
     alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0 AND alias NOT GLOB "*[^0-9a-zA-Z_.-]*"),
 
-    UNIQUE(uid, entity_type)
+    UNIQUE(entity_type, uid)
 ) STRICT;
+
+
 
 CREATE TABLE nodes (
     node_uid INTEGER PRIMARY KEY,
@@ -22,15 +22,20 @@ CREATE TABLE nodes (
 
     entity_type TEXT GENERATED ALWAYS AS ("node"),
 
-    UNIQUE(node_uid, node_type),
+    -- Required to allow being referenced on a foreign key. Also creates an index on both fields.
+    -- node_type being first is intended as the index can then be used for selects filtered
+    -- by node_type.
+    UNIQUE(node_type, node_uid),
     FOREIGN KEY (node_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete entity after node delete" AFTER DELETE ON nodes
+CREATE TRIGGER auto_delete_entity_after_node AFTER DELETE ON nodes
 FOR EACH ROW
 BEGIN
     DELETE FROM entities WHERE uid = OLD.node_uid;
 END;
+
+
 
 CREATE TABLE meta_nodes (
     node_id INTEGER PRIMARY KEY
@@ -42,11 +47,13 @@ CREATE TABLE meta_nodes (
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete node after meta delete" AFTER DELETE ON meta_nodes
+CREATE TRIGGER auto_delete_node_after_meta AFTER DELETE ON meta_nodes
 FOR EACH ROW
 BEGIN
     DELETE FROM nodes WHERE node_uid = OLD.node_uid;
 END;
+
+
 
 CREATE TABLE storage_nodes (
     node_id INTEGER PRIMARY KEY
@@ -58,11 +65,13 @@ CREATE TABLE storage_nodes (
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete node after storage delete" AFTER DELETE ON storage_nodes
+CREATE TRIGGER auto_delete_node_after_storage AFTER DELETE ON storage_nodes
 FOR EACH ROW
 BEGIN
     DELETE FROM nodes WHERE node_uid = OLD.node_uid;
 END;
+
+
 
 CREATE TABLE client_nodes (
     node_id INTEGER PRIMARY KEY
@@ -74,11 +83,13 @@ CREATE TABLE client_nodes (
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete node after client delete" AFTER DELETE ON client_nodes
+CREATE TRIGGER auto_delete_node_after_client AFTER DELETE ON client_nodes
 FOR EACH ROW
 BEGIN
     DELETE FROM nodes WHERE node_uid = OLD.node_uid;
 END;
+
+
 
 CREATE TABLE management_nodes (
     node_id INTEGER PRIMARY KEY
@@ -90,7 +101,7 @@ CREATE TABLE management_nodes (
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete node after management delete" AFTER DELETE ON management_nodes
+CREATE TRIGGER auto_delete_node_after_management AFTER DELETE ON management_nodes
 FOR EACH ROW
 BEGIN
     DELETE FROM nodes WHERE node_uid = OLD.node_uid;
@@ -101,7 +112,7 @@ INSERT INTO entities VALUES (1, "node", "management");
 INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES (1, "management", 0, "");
 INSERT INTO management_nodes (node_id, node_uid) VALUES (1, 1);
 
-CREATE TRIGGER "Prevent default management node deletion" BEFORE DELETE ON management_nodes
+CREATE TRIGGER keep_default_management_node BEFORE DELETE ON management_nodes
 FOR EACH ROW WHEN OLD.node_id == 1
 BEGIN
     SELECT RAISE (ABORT, "Deleting the management node is not allowed");
@@ -110,19 +121,21 @@ END;
 
 
 CREATE TABLE node_nics (
-    nic_uid INTEGER PRIMARY KEY,
     node_uid INTEGER NOT NULL
         REFERENCES nodes (node_uid) ON DELETE CASCADE,
     nic_type TEXT NOT NULL
-        CHECK(nic_type in ("ethernet", "sdp", "rdma")),
+        CHECK(nic_type in ("ethernet", "rdma")),
     addr BLOB NOT NULL
         CHECK(LENGTH(addr) = 4),
     name TEXT NOT NULL
-        -- Nic names tend to contain null bytes which we don't want to be in our database.
+        -- Nic names tend to contain null bytes which we don't want to be in the database.
         -- This feels dirty, but I don't know any better way to check for that
         CHECK(HEX(name) NOT LIKE "%00%")
 ) STRICT;
+
 CREATE INDEX index_node_nics_1 ON node_nics(node_uid);
+
+
 
 CREATE TABLE targets (
     target_uid INTEGER PRIMARY KEY,
@@ -142,15 +155,17 @@ CREATE TABLE targets (
 
     entity_type TEXT GENERATED ALWAYS AS ("target"),
 
-    UNIQUE(target_uid, node_type),
+    UNIQUE(node_type, target_uid),
     FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete entity after target delete" AFTER DELETE ON targets
+CREATE TRIGGER auto_delete_entity_after_target AFTER DELETE ON targets
 FOR EACH ROW
 BEGIN
     DELETE FROM entities WHERE uid = OLD.target_uid;
 END;
+
+
 
 CREATE TABLE meta_targets (
     target_id INTEGER PRIMARY KEY
@@ -169,11 +184,13 @@ CREATE TABLE meta_targets (
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete target after meta delete" AFTER DELETE ON meta_targets
+CREATE TRIGGER auto_delete_target_after_meta AFTER DELETE ON meta_targets
 FOR EACH ROW
 BEGIN
     DELETE FROM targets WHERE target_uid = OLD.target_uid;
 END;
+
+
 
 CREATE TABLE storage_targets (
     target_id INTEGER PRIMARY KEY
@@ -191,11 +208,13 @@ CREATE TABLE storage_targets (
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete target after storage delete" AFTER DELETE ON storage_targets
+CREATE TRIGGER auto_delete_target_after_storage AFTER DELETE ON storage_targets
 FOR EACH ROW
 BEGIN
     DELETE FROM targets WHERE target_uid = OLD.target_uid;
 END;
+
+
 
 CREATE TABLE storage_pools (
     pool_id INTEGER PRIMARY KEY
@@ -207,22 +226,23 @@ CREATE TABLE storage_pools (
     FOREIGN KEY (pool_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete entity after pool delete" AFTER DELETE ON storage_pools
+CREATE TRIGGER auto_delete_entity_after_pool AFTER DELETE ON storage_pools
 FOR EACH ROW
 BEGIN
     DELETE FROM entities WHERE uid = OLD.pool_uid;
 END;
 
-
 -- Default storage pool
 INSERT INTO entities VALUES (2, "storage_pool", "storage_pool_default");
 INSERT INTO storage_pools (pool_id, pool_uid) VALUES (1, 2);
 
-CREATE TRIGGER "Prevent default pool deletion" BEFORE DELETE ON storage_pools
+CREATE TRIGGER keep_default_pool BEFORE DELETE ON storage_pools
 FOR EACH ROW WHEN OLD.pool_id == 1
 BEGIN
     SELECT RAISE (ABORT, "Deleting the default pool is not allowed");
 END;
+
+
 
 CREATE TABLE buddy_groups (
     buddy_group_uid INTEGER PRIMARY KEY,
@@ -231,15 +251,17 @@ CREATE TABLE buddy_groups (
 
     entity_type TEXT GENERATED ALWAYS AS ("buddy_group"),
 
-    UNIQUE(buddy_group_uid, node_type),
+    UNIQUE(node_type, buddy_group_uid),
     FOREIGN KEY (buddy_group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER "Auto delete entity after buddy group delete" AFTER DELETE ON buddy_groups
+CREATE TRIGGER auto_delete_entity_after_buddy_group AFTER DELETE ON buddy_groups
 FOR EACH ROW
 BEGIN
     DELETE FROM entities WHERE uid = OLD.buddy_group_uid;
 END;
+
+
 
 CREATE TABLE meta_buddy_groups (
     buddy_group_id INTEGER PRIMARY KEY
@@ -248,9 +270,9 @@ CREATE TABLE meta_buddy_groups (
         REFERENCES buddy_groups (buddy_group_uid) ON DELETE CASCADE,
 
     -- TODO add trigger to ensure uniqueness over both columns
-    primary_target_id INTEGER UNIQUE NOT NULL
+    p_target_id INTEGER UNIQUE NOT NULL
         REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
-    secondary_target_id INTEGER UNIQUE NOT NULL
+    s_target_id INTEGER UNIQUE NOT NULL
         REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
 
     node_type TEXT GENERATED ALWAYS AS ("meta"),
@@ -258,11 +280,13 @@ CREATE TABLE meta_buddy_groups (
     FOREIGN KEY (buddy_group_uid, node_type) REFERENCES buddy_groups (buddy_group_uid, node_type)
 ) STRICT;
 
-CREATE TRIGGER "Auto delete buddy group after meta delete" AFTER DELETE ON meta_buddy_groups
+CREATE TRIGGER auto_delete_buddy_group_after_meta AFTER DELETE ON meta_buddy_groups
 FOR EACH ROW
 BEGIN
     DELETE FROM buddy_groups WHERE buddy_group_uid = OLD.buddy_group_uid;
 END;
+
+
 
 CREATE TABLE storage_buddy_groups (
     buddy_group_id INTEGER PRIMARY KEY
@@ -271,9 +295,9 @@ CREATE TABLE storage_buddy_groups (
         REFERENCES buddy_groups (buddy_group_uid) ON DELETE CASCADE,
 
     -- TODO add trigger to ensure uniqueness over both columns
-    primary_target_id INTEGER UNIQUE NOT NULL
+    p_target_id INTEGER UNIQUE NOT NULL
         REFERENCES storage_targets (target_id) ON DELETE RESTRICT,
-    secondary_target_id INTEGER UNIQUE NOT NULL
+    s_target_id INTEGER UNIQUE NOT NULL
         REFERENCES storage_targets (target_id) ON DELETE RESTRICT,
 
     pool_id INTEGER NOT NULL
@@ -284,11 +308,13 @@ CREATE TABLE storage_buddy_groups (
     FOREIGN KEY (buddy_group_uid, node_type) REFERENCES buddy_groups (buddy_group_uid, node_type)
 ) STRICT;
 
-CREATE TRIGGER "Auto delete buddy group after storage delete" AFTER DELETE ON storage_buddy_groups
+CREATE TRIGGER auto_delete_buddy_group_after_storage AFTER DELETE ON storage_buddy_groups
 FOR EACH ROW
 BEGIN
     DELETE FROM buddy_groups WHERE buddy_group_uid = OLD.buddy_group_uid;
 END;
+
+
 
 CREATE TABLE root_inode (
     _only_one_row INTEGER PRIMARY KEY DEFAULT 1
@@ -304,6 +330,10 @@ CREATE TABLE root_inode (
     CHECK (target_id IS NULL OR buddy_group_id IS NULL)
 ) STRICT;
 
+
+
+-- Tables with a composite primary key usually benefit from a WITHOUT ROWID table if the
+-- row size is small: https://www.sqlite.org/withoutrowid.html
 CREATE TABLE quota_default_limits (
     id_type TEXT NOT NULL
         CHECK(id_type IN ("user", "group")),
@@ -314,7 +344,9 @@ CREATE TABLE quota_default_limits (
     value INTEGER NOT NULL,
 
     PRIMARY KEY (id_type, quota_type, pool_id)
-) STRICT;
+) STRICT, WITHOUT ROWID;
+
+
 
 CREATE TABLE quota_limits (
     quota_id INTEGER NOT NULL,
@@ -327,7 +359,9 @@ CREATE TABLE quota_limits (
     value INTEGER NOT NULL,
 
     PRIMARY KEY (quota_id, id_type, quota_type, pool_id)
-) STRICT;
+) STRICT, WITHOUT ROWID;
+
+
 
 CREATE TABLE quota_usage (
     quota_id INTEGER NOT NULL,
@@ -340,124 +374,67 @@ CREATE TABLE quota_usage (
     value INTEGER NOT NULL,
 
     PRIMARY KEY (quota_id, id_type, quota_type, target_id)
-) STRICT;
+) STRICT, WITHOUT ROWID;
+
 
 
 -- Views
 
-
 CREATE VIEW all_nodes_v AS
-    WITH all_nodes AS (
-        SELECT n.*, e.alias, (STRFTIME('%s', 'now') - STRFTIME('%s', last_contact)) AS last_contact_s
-        FROM nodes AS n
-        INNER JOIN entities AS e ON e.uid = n.node_uid
-    )
-        SELECT n.*, mn.node_id
-        FROM all_nodes AS n
-        INNER JOIN meta_nodes AS mn USING(node_uid)
-    UNION ALL
-        SELECT n.*, sn.node_id
-        FROM all_nodes AS n
-        INNER JOIN storage_nodes AS sn USING(node_uid)
-    UNION ALL
-        SELECT n.*, cn.node_id
-        FROM all_nodes AS n
-        INNER JOIN client_nodes AS cn USING(node_uid)
-    UNION ALL
-        SELECT n.*, man.node_id
-        FROM all_nodes AS n
-        INNER JOIN management_nodes AS man USING(node_uid)
-;
+    SELECT
+        COALESCE(mn.node_id, sn.node_id, cn.node_id, man.node_id) AS node_id,
+        e.alias, n.*
+    FROM nodes AS n
+    INNER JOIN entities AS e ON e.uid = n.node_uid
 
-CREATE VIEW meta_targets_v AS
-    SELECT t.*, e.alias, mt.target_id, mn.node_id, NULL AS pool_id, n.node_uid,
-        mgp.buddy_group_id AS primary_of,
-        mgs.buddy_group_id AS secondary_of,
-        (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact)) AS last_contact_s
-    FROM targets AS t
-    INNER JOIN meta_targets AS mt USING(target_uid)
-    INNER JOIN meta_nodes AS mn USING(node_id)
-    INNER JOIN nodes AS n USING(node_uid)
-    INNER JOIN entities AS e ON e.uid = t.target_uid
-    LEFT JOIN meta_buddy_groups AS mgp ON mgp.primary_target_id = mt.target_id
-    LEFT JOIN meta_buddy_groups AS mgs ON mgs.secondary_target_id = mt.target_id
-;
+    LEFT JOIN meta_nodes AS mn USING(node_uid)
+    LEFT JOIN storage_nodes AS sn USING(node_uid)
+    LEFT JOIN client_nodes AS cn USING(node_uid)
+    LEFT JOIN management_nodes AS man USING(node_uid)
 
-CREATE VIEW storage_targets_v AS
-    SELECT t.*, e.alias, st.target_id, sn.node_id, st.pool_id, n.node_uid,
-        sgp.buddy_group_id AS primary_of,
-        sgs.buddy_group_id AS secondary_of,
-        (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact)) AS last_contact_s
-    FROM targets AS t
-    INNER JOIN storage_targets AS st USING(target_uid)
-    INNER JOIN storage_nodes AS sn USING(node_id)
-    INNER JOIN nodes AS n USING(node_uid)
-    INNER JOIN entities AS e ON e.uid = t.target_uid
-    LEFT JOIN storage_buddy_groups AS sgp ON sgp.primary_target_id = st.target_id
-    LEFT JOIN storage_buddy_groups AS sgs ON sgs.secondary_target_id = st.target_id
+    WHERE COALESCE(mn.node_id, sn.node_id, cn.node_id, man.node_id) IS NOT NULL
 ;
 
 CREATE VIEW all_targets_v AS
-    SELECT * FROM meta_targets_v
-    UNION ALL
-    SELECT * FROM storage_targets_v
+    SELECT
+        COALESCE(mt.target_id, st.target_id) AS target_id,
+        e.alias, t.*, st.pool_id,
+        COALESCE(mt.node_id, st.node_id) AS node_id,
+        COALESCE(mn.node_uid, sn.node_uid) AS node_uid
+    FROM targets AS t
+    INNER JOIN entities AS e ON e.uid = t.target_uid
+
+    LEFT JOIN meta_targets AS mt USING(target_uid)
+    LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
+
+    LEFT JOIN storage_targets AS st USING(target_uid)
+    LEFT JOIN storage_nodes AS sn ON sn.node_id = st.node_id
+
+    WHERE COALESCE(mt.target_id, st.target_id) IS NOT NULL
+    -- Exclude targets without an assigned node
+    AND COALESCE(mt.node_id, st.node_id) IS NOT NULL
 ;
 
 CREATE VIEW all_buddy_groups_v AS
-    WITH merged_groups AS (
-        SELECT b.*, e.alias, mb.buddy_group_id, mb.primary_target_id, mb.secondary_target_id, NULL AS pool_id
-        FROM buddy_groups AS b
-        INNER JOIN meta_buddy_groups AS mb USING(buddy_group_uid)
-        INNER JOIN entities AS e ON e.uid = buddy_group_uid
-        UNION ALL
-        SELECT b.*, e.alias, sb.buddy_group_id, sb.primary_target_id, sb.secondary_target_id, sb.pool_id
-        FROM buddy_groups AS b
-        INNER JOIN storage_buddy_groups AS sb USING(buddy_group_uid)
-        INNER JOIN entities AS e ON e.uid = buddy_group_uid
-    )
-    SELECT g.*,
-        pt.target_uid AS primary_target_uid, pt.node_id AS primary_node_id,
-        pt.free_space AS primary_free_space, pt.free_inodes AS primary_free_inodes,
-        pt.last_contact_s AS primary_last_contact_s, pt.consistency AS primary_consistency,
-        st.target_uid AS secondary_target_uid, st.node_id AS secondary_node_id,
-        st.free_space AS secondary_free_space, st.free_inodes AS secondary_free_inodes,
-        st.last_contact_s AS secondary_last_contact_s, st.consistency AS secondary_consistency
-    FROM merged_groups AS g
-    INNER JOIN all_targets_v AS pt ON pt.node_type = g.node_type AND pt.target_id = g.primary_target_id
-    INNER JOIN all_targets_v AS st ON st.node_type = g.node_type AND st.target_id = g.secondary_target_id
-;
+    SELECT
+        COALESCE(mg.buddy_group_id, sg.buddy_group_id) AS buddy_group_id,
+        e.alias, g.*, sg.pool_id, sp.pool_uid,
+        COALESCE(mg.p_target_id, sg.p_target_id) AS p_target_id,
+        COALESCE(mg.s_target_id , sg.s_target_id ) AS s_target_id,
+        COALESCE(p_mt.target_uid, p_st.target_uid) AS p_target_uid,
+        COALESCE(s_mt.target_uid, s_st.target_uid) AS s_target_uid
+    FROM buddy_groups AS g
+    INNER JOIN entities AS e ON e.uid = g.buddy_group_uid
 
-CREATE VIEW quota_limits_combined_v AS
-    SELECT DISTINCT l.quota_id, l.id_type, l.pool_id,
-        s.value AS "space_value", i.value AS "inodes_value"
-        FROM quota_limits AS l
-    LEFT JOIN quota_limits AS s ON s.quota_id = l.quota_id AND s.id_type = l.id_type
-        AND s.pool_id = l.pool_id AND s.quota_type = "space"
-    LEFT JOIN quota_limits AS i ON i.quota_id = l.quota_id AND i.id_type = l.id_type
-        AND i.pool_id = l.pool_id AND i.quota_type = "inodes"
-;
+    LEFT JOIN meta_buddy_groups AS mg USING(buddy_group_uid)
+    LEFT JOIN meta_targets AS p_mt ON p_mt.target_id = mg.p_target_id
+    LEFT JOIN meta_targets AS s_mt ON s_mt.target_id = mg.s_target_id
 
-CREATE VIEW quota_default_limits_combined_v AS
-    SELECT DISTINCT l.pool_id,
-            us.value AS "user_space_value", ui.value AS "user_inodes_value",
-            gs.value AS "group_space_value", gi.value AS "group_inodes_value"
-    FROM quota_default_limits AS l
-    LEFT JOIN quota_default_limits AS us ON us.pool_id = l.pool_id
-        AND us.quota_type = "space" AND us.id_type = "user"
-    LEFT JOIN quota_default_limits AS ui ON ui.pool_id = l.pool_id
-        AND ui.quota_type = "inodes" AND ui.id_type = "user"
-    LEFT JOIN quota_default_limits AS gs ON gs.pool_id = l.pool_id
-        AND gs.quota_type = "space" AND gs.id_type = "group"
-    LEFT JOIN quota_default_limits AS gi ON gi.pool_id = l.pool_id
-        AND gi.quota_type = "inodes" AND gi.id_type = "group"
-;
+    LEFT JOIN storage_buddy_groups AS sg USING(buddy_group_uid)
+    LEFT JOIN storage_targets AS p_st ON p_st.target_id = sg.p_target_id
+    LEFT JOIN storage_targets AS s_st ON s_st.target_id = sg.s_target_id
 
-CREATE VIEW exceeded_quota_v AS
-    SELECT e.quota_id, e.id_type, e.quota_type, st.pool_id, SUM(e.value) AS value_sum
-    FROM quota_usage AS e
-    INNER JOIN storage_targets AS st USING(target_id)
-    LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
-    LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
-    GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
-    HAVING SUM(e.value) > COALESCE(l.value, d.value)
+    LEFT JOIN storage_pools AS sp ON sp.pool_id = sg.pool_id
+
+    WHERE COALESCE(mg.buddy_group_id, sg.buddy_group_id) IS NOT NULL
 ;
