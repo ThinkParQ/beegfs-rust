@@ -15,7 +15,7 @@ sqlite = { path = "../sqlite" }
 
 [dependencies]
 shared = { path = "../shared"}
-pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.6" }
+protobuf = { git = "https://github.com/thinkparq/protobuf", tag = "v0.0.7" }
 sqlite = { path = "../sqlite" }
 sqlite_check = { path = "../sqlite_check"}
 

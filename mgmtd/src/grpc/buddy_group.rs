@@ -1,6 +1,6 @@
 use super::*;
 use crate::types::SqliteStr;
-use pb::beegfs::beegfs as pb;
+use protobuf::{beegfs as pb, management as pm};
 
 pub(crate) async fn get(
     ctx: &Context,
@@ -26,7 +26,7 @@ pub(crate) async fn get(
                 |row| {
                     let node_type = pb::NodeType::from_row(row, 3)? as i32;
 
-                    Ok(pb::get_buddy_groups_response::BuddyGroup {
+                    Ok(pm::get_buddy_groups_response::BuddyGroup {
                         id: Some(pb::EntityIdSet {
                             uid: row.get(0)?,
                             legacy_id: Some(pb::LegacyId {

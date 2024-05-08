@@ -2,7 +2,7 @@
 
 use crate::context::Context;
 use anyhow::{Context as AContext, Result};
-use pb::beegfs::beegfs::*;
+use protobuf::management::*;
 use rusqlite::params;
 use shared::error_chain;
 use shared::shutdown::Shutdown;

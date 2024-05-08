@@ -1,7 +1,6 @@
 use super::*;
 use crate::types::SqliteStr;
-use pb::beegfs::beegfs as pb;
-use pb::get_nodes_response::node::Nic;
+use protobuf::{beegfs as pb, management as pm};
 use shared::types::{NicType, NodeID};
 use std::net::Ipv4Addr;
 
@@ -9,7 +8,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
     let (mut nodes, nics, meta_root_node) = ctx
         .db
         .op(move |tx| {
-            let nics: Vec<(EntityUID, Nic)> = if req.include_nics {
+            let nics: Vec<(EntityUID, pm::get_nodes_response::node::Nic)> = if req.include_nics {
                 tx.query_map_collect(
                     sql!(
                         "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
@@ -23,7 +22,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
 
                         Ok((
                             row.get(0)?,
-                            node::Nic {
+                            pm::get_nodes_response::node::Nic {
                                 addr: Ipv4Addr::from(row.get::<_, [u8; 4]>(1)?).to_string(),
                                 name: row.get(4)?,
                                 nic_type,
@@ -35,7 +34,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                 vec![]
             };
 
-            let nodes: Vec<pb::get_nodes_response::Node> = tx.query_map_collect(
+            let nodes: Vec<pm::get_nodes_response::Node> = tx.query_map_collect(
                 sql!(
                     "SELECT node_uid, node_id, node_type, alias, port
                     FROM all_nodes_v"
@@ -46,7 +45,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
 
                     let node = pb::EntityIdSet {
                         uid: row.get(0)?,
-                        legacy_id: Some(LegacyId {
+                        legacy_id: Some(pb::LegacyId {
                             num_id: row.get(1)?,
                             node_type,
                             entity_type: pb::EntityType::Node as i32,
@@ -54,7 +53,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                         alias: row.get(3)?,
                     };
 
-                    Ok(pb::get_nodes_response::Node {
+                    Ok(pm::get_nodes_response::Node {
                         id: Some(node),
                         node_type,
                         port: row.get(4)?,

@@ -1,11 +1,11 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use crate::types::SqliteStr;
-use pb::beegfs::beegfs as pb;
+use protobuf::{beegfs as pb, management as pm};
 use shared::bee_msg::misc::CapacityPool;
 use std::time::Duration;
 
-impl CapacityInfo for &pb::get_targets_response::Target {
+impl CapacityInfo for &pm::get_targets_response::Target {
     fn free_space(&self) -> u64 {
         self.free_space_bytes.unwrap()
     }
@@ -34,33 +34,33 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
     let targets_f = move |row: &rusqlite::Row| {
         let node_type = pb::NodeType::from_row(row, 3)? as i32;
 
-        Ok(pb::get_targets_response::Target {
+        Ok(pm::get_targets_response::Target {
             id: Some(pb::EntityIdSet {
                 uid: row.get(0)?,
-                legacy_id: Some(LegacyId {
+                legacy_id: Some(pb::LegacyId {
                     num_id: row.get(2)?,
                     node_type,
-                    entity_type: EntityType::Target as i32,
+                    entity_type: pb::EntityType::Target as i32,
                 }),
                 alias: row.get(1)?,
             }),
             node_type,
             node: Some(pb::EntityIdSet {
                 uid: row.get(4)?,
-                legacy_id: Some(LegacyId {
+                legacy_id: Some(pb::LegacyId {
                     num_id: row.get(6)?,
                     node_type,
-                    entity_type: EntityType::Node as i32,
+                    entity_type: pb::EntityType::Node as i32,
                 }),
                 alias: row.get(5)?,
             }),
             storage_pool: if let Some(uid) = row.get::<_, Option<EntityUID>>(7)? {
                 Some(pb::EntityIdSet {
                     uid,
-                    legacy_id: Some(LegacyId {
+                    legacy_id: Some(pb::LegacyId {
                         num_id: row.get(9)?,
                         node_type,
-                        entity_type: EntityType::StoragePool as i32,
+                        entity_type: pb::EntityType::StoragePool as i32,
                     }),
                     alias: row.get(8)?,
                 })
@@ -84,7 +84,7 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
 
     let pools_q = sql!("SELECT pool_uid FROM storage_pools");
 
-    let (mut targets, pools): (Vec<pb::get_targets_response::Target>, Vec<EntityUID>) = ctx
+    let (mut targets, pools): (Vec<pm::get_targets_response::Target>, Vec<EntityUID>) = ctx
         .db
         .op(move |tx| {
             Ok((
@@ -153,12 +153,12 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
 pub(crate) fn calc_reachability_state(
     contact_age: Duration,
     timeout: Duration,
-) -> target::ReachabilityState {
+) -> pb::ReachabilityState {
     if contact_age > timeout {
-        target::ReachabilityState::Offline
+        pb::ReachabilityState::Offline
     } else if contact_age > timeout / 2 {
-        target::ReachabilityState::Poffline
+        pb::ReachabilityState::Poffline
     } else {
-        target::ReachabilityState::Online
+        pb::ReachabilityState::Online
     }
 }
