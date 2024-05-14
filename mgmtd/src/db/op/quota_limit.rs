@@ -49,7 +49,7 @@ pub(crate) fn with_quota_id_range(
             quota_id_range.start(),
             quota_id_range.end(),
             pool_id,
-            id_type
+            id_type.sql_str()
         ],
         SpaceAndInodeLimits::from_row,
     )?)
@@ -63,7 +63,7 @@ pub(crate) fn with_quota_id_list(
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2 AND l.quota_id IN rarray(?3)"),
-        params![pool_id, id_type, &rarray_param(quota_ids)],
+        params![pool_id, id_type.sql_str(), &rarray_param(quota_ids)],
         SpaceAndInodeLimits::from_row,
     )?)
 }
@@ -75,7 +75,7 @@ pub(crate) fn all(
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2"),
-        params![pool_id, id_type],
+        params![pool_id, id_type.sql_str()],
         SpaceAndInodeLimits::from_row,
     )?)
 }
@@ -98,15 +98,37 @@ pub(crate) fn update(
 
     for l in iter {
         if let Some(space) = l.2.space {
-            insert_stmt.execute(params![l.2.quota_id, l.0, QuotaType::Space, l.1, space])?;
+            insert_stmt.execute(params![
+                l.2.quota_id,
+                l.0.sql_str(),
+                QuotaType::Space.sql_str(),
+                l.1,
+                space
+            ])?;
         } else {
-            delete_stmt.execute(params![l.2.quota_id, l.0, QuotaType::Space, l.1])?;
+            delete_stmt.execute(params![
+                l.2.quota_id,
+                l.0.sql_str(),
+                QuotaType::Space.sql_str(),
+                l.1
+            ])?;
         }
 
         if let Some(inodes) = l.2.inodes {
-            insert_stmt.execute(params![l.2.quota_id, l.0, QuotaType::Inodes, l.1, inodes])?;
+            insert_stmt.execute(params![
+                l.2.quota_id,
+                l.0.sql_str(),
+                QuotaType::Inodes.sql_str(),
+                l.1,
+                inodes
+            ])?;
         } else {
-            delete_stmt.execute(params![l.2.quota_id, l.0, QuotaType::Inodes, l.1])?;
+            delete_stmt.execute(params![
+                l.2.quota_id,
+                l.0.sql_str(),
+                QuotaType::Inodes.sql_str(),
+                l.1
+            ])?;
         }
     }
 

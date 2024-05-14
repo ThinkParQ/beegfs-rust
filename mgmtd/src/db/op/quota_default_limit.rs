@@ -70,7 +70,7 @@ pub(crate) fn upsert(
             UPDATE SET value = ?4
             WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
         ),
-        params![id_type, quota_type, pool_id, value],
+        params![id_type.sql_str(), quota_type.sql_str(), pool_id, value],
     )?;
 
     Ok(())
@@ -93,7 +93,7 @@ pub(crate) fn delete(
             "DELETE FROM quota_default_limits
             WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
         ),
-        params![id_type, quota_type, pool_id],
+        params![id_type.sql_str(), quota_type.sql_str(), pool_id],
     )?;
 
     Ok(())

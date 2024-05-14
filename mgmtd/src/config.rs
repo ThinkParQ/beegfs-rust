@@ -1,6 +1,6 @@
 //! Program wide config definition and tools for reading and parsing
 
-use crate::types::{CapPoolDynamicLimits, CapPoolLimits};
+use crate::cap_pool::{CapPoolDynamicLimits, CapPoolLimits};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;

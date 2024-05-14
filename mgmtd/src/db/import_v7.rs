@@ -1,16 +1,12 @@
 use self::quota_limit::SpaceAndInodeLimits;
 use crate::db::*;
-use crate::types::{NodeType, NodeTypeServer, QuotaIDType, QuotaType};
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Transaction;
 use shared::bee_msg::buddy_group::CombinedTargetState;
 use shared::bee_msg::quota::{QuotaDefaultLimits, QuotaEntry};
 use shared::bee_msg::storage_pool::StoragePool;
 use shared::bee_serde::{Deserializable, Deserializer};
-use shared::types::{
-    BuddyGroupID, EntityUID, NodeID, StoragePoolID, TargetConsistencyState, TargetID,
-    DEFAULT_STORAGE_POOL,
-};
+use shared::types::*;
 use sql_check::sql;
 use std::path::Path;
 

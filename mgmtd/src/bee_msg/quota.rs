@@ -1,8 +1,8 @@
 use super::*;
 use crate::db::quota_limit::SpaceAndInodeLimits;
 use crate::db::quota_usage::PoolOrTargetID;
-use crate::types::QuotaType;
 use shared::bee_msg::quota::*;
+use shared::types::QuotaType;
 
 impl Handler for GetDefaultQuota {
     type Response = GetDefaultQuotaResp;
@@ -62,13 +62,13 @@ impl Handler for SetDefaultQuota {
                     0 => db::quota_default_limit::delete(
                         tx,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                         QuotaType::Space,
                     )?,
                     n => db::quota_default_limit::upsert(
                         tx,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                         QuotaType::Space,
                         n,
                     )?,
@@ -78,13 +78,13 @@ impl Handler for SetDefaultQuota {
                     0 => db::quota_default_limit::delete(
                         tx,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                         QuotaType::Inodes,
                     )?,
                     n => db::quota_default_limit::upsert(
                         tx,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                         QuotaType::Inodes,
                         n,
                     )?,
@@ -140,24 +140,24 @@ impl Handler for GetQuotaInfo {
                         tx,
                         self.id_range_start..=self.id_range_start,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                     )?,
                     QuotaQueryType::Range => db::quota_limit::with_quota_id_range(
                         tx,
                         self.id_range_start..=self.id_range_end,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                     )?,
                     QuotaQueryType::List => db::quota_limit::with_quota_id_list(
                         tx,
                         self.id_list,
                         self.pool_id,
-                        self.id_type.into(),
+                        self.id_type,
                     )?,
                     QuotaQueryType::All => {
                         // This is actually unused on the old ctl side, if --all is provided, it
                         // sends a list
-                        db::quota_limit::all(tx, self.pool_id, self.id_type.into())?
+                        db::quota_limit::all(tx, self.pool_id, self.id_type)?
                     }
                 };
 
@@ -213,7 +213,7 @@ impl Handler for SetQuota {
                     tx,
                     self.quota_entry.into_iter().map(|e| {
                         (
-                            e.id_type.into(),
+                            e.id_type,
                             self.pool_id,
                             SpaceAndInodeLimits {
                                 quota_id: e.id,
@@ -265,8 +265,8 @@ impl Handler for RequestExceededQuota {
                     } else {
                         PoolOrTargetID::TargetID(self.target_id)
                     },
-                    self.id_type.into(),
-                    self.quota_type.into(),
+                    self.id_type,
+                    self.quota_type,
                 )?;
 
                 Ok(SetExceededQuota {

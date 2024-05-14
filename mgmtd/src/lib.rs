@@ -17,12 +17,11 @@ use anyhow::Result;
 use db::node_nic::ReplaceNic;
 use shared::conn::{incoming, Pool};
 use shared::shutdown::Shutdown;
-use shared::types::{AuthenticationSecret, MGMTD_UID};
+use shared::types::{AuthenticationSecret, NicType, MGMTD_UID};
 use shared::NetworkAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use types::NicType;
 
 /// Contains information that is obtained at the start of the app and then never changes again.
 #[derive(Debug)]

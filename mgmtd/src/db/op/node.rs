@@ -20,7 +20,7 @@ impl Node {
         Ok(Node {
             uid: row.get(0)?,
             id: row.get(1)?,
-            node_type: row.get(2)?,
+            node_type: NodeType::from_row(row, 2)?,
             alias: row.get(3)?,
             port: row.get(4)?,
         })
@@ -35,7 +35,7 @@ pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result
             FROM all_nodes_v
             WHERE node_type = ?1"
         ),
-        [node_type],
+        [node_type.sql_str()],
         Node::from_row,
     )?)
 }
@@ -52,7 +52,7 @@ pub(crate) fn get_uid(
     let res: Option<EntityUID> = tx
         .query_row_cached(
             sql!("SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2"),
-            params![node_id, node_type],
+            params![node_id, node_type.sql_str()],
             |row| row.get(0),
         )
         .optional()?;
@@ -88,7 +88,7 @@ pub(crate) fn insert(
     let node_id = if node_id == 0 {
         misc::find_new_id(
             tx,
-            &format!("{}_nodes", node_type.as_sql_str()),
+            &format!("{}_nodes", node_type.sql_str()),
             "node_id",
             1..=0xFFFF,
         )?
@@ -101,7 +101,7 @@ pub(crate) fn insert(
     let alias = if let Some(alias) = alias {
         Cow::Borrowed(alias)
     } else {
-        Cow::Owned(format!("node_{}_{}", node_type.as_sql_str(), node_id))
+        Cow::Owned(format!("node_{}_{}", node_type.sql_str(), node_id))
     };
 
     let uid = entity::insert(tx, EntityType::Node, alias.as_ref())?;
@@ -111,13 +111,13 @@ pub(crate) fn insert(
             "INSERT INTO nodes (node_uid, node_type, port, last_contact)
             VALUES (?1, ?2, ?3, DATETIME('now'))"
         ),
-        params![uid, node_type, port],
+        params![uid, node_type.sql_str(), port],
     )?;
 
     tx.execute_cached(
         &format!(
             "INSERT INTO {}_nodes (node_id, node_uid) VALUES (?1, ?2)",
-            node_type.as_sql_str()
+            node_type.sql_str()
         ),
         params![node_id, uid],
     )?;
@@ -153,7 +153,10 @@ pub(crate) fn update_last_contact_for_targets(
             SELECT DISTINCT node_uid FROM all_targets_v
             WHERE target_id IN rarray(?1) AND node_type = ?2)"
         ),
-        params![&rarray_param(target_ids.iter().copied()), node_type],
+        params![
+            &rarray_param(target_ids.iter().copied()),
+            node_type.sql_str()
+        ],
     )?)
 }
 

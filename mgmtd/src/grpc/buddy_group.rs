@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::{NodeTypeServer, TargetConsistencyState};
+use crate::types::SqliteStr;
 use pb::beegfs::beegfs as pb;
 
 pub(crate) async fn get(
@@ -24,10 +24,7 @@ pub(crate) async fn get(
                 ),
                 [],
                 |row| {
-                    let node_type = match row.get(3)? {
-                        NodeTypeServer::Meta => pb::NodeType::Meta,
-                        NodeTypeServer::Storage => pb::NodeType::Storage,
-                    } as i32;
+                    let node_type = pb::NodeType::from_row(row, 3)? as i32;
 
                     Ok(pb::get_buddy_groups_response::BuddyGroup {
                         id: Some(pb::EntityIdSet {
@@ -71,20 +68,9 @@ pub(crate) async fn get(
                         } else {
                             None
                         },
-                        primary_consistency_state: match row.get(13)? {
-                            TargetConsistencyState::Good => pb::ConsistencyState::Good,
-                            TargetConsistencyState::NeedsResync => {
-                                pb::ConsistencyState::NeedsResync
-                            }
-                            TargetConsistencyState::Bad => pb::ConsistencyState::Bad,
-                        } as i32,
-                        secondary_consistency_state: match row.get(14)? {
-                            TargetConsistencyState::Good => pb::ConsistencyState::Good,
-                            TargetConsistencyState::NeedsResync => {
-                                pb::ConsistencyState::NeedsResync
-                            }
-                            TargetConsistencyState::Bad => pb::ConsistencyState::Bad,
-                        } as i32,
+                        primary_consistency_state: pb::ConsistencyState::from_row(row, 13)? as i32,
+                        secondary_consistency_state: pb::ConsistencyState::from_row(row, 14)?
+                            as i32,
                     })
                 },
             )?)

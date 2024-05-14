@@ -37,7 +37,7 @@ pub(crate) fn exceeded_quota_ids(
             GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
             HAVING SUM(e.value) > COALESCE(l.value, d.value)"
         ),
-        params![id_type, quota_type, pool_id],
+        params![id_type.sql_str(), quota_type.sql_str(), pool_id],
         |row| row.get(0),
     )?)
 }
@@ -72,8 +72,8 @@ pub(crate) fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<Exceede
         |row| {
             Ok(ExceededQuotaEntry {
                 quota_id: row.get(0)?,
-                id_type: row.get(1)?,
-                quota_type: row.get(2)?,
+                id_type: QuotaIDType::from_row(row, 1)?,
+                quota_type: QuotaType::from_row(row, 2)?,
                 pool_id: row.get(3)?,
             })
         },
@@ -109,27 +109,32 @@ pub(crate) fn update(
 
     for d in data {
         match d.space {
-            0 => {
-                delete_stmt.execute(params![d.quota_id, d.id_type, QuotaType::Space, target_id,])?
-            }
+            0 => delete_stmt.execute(params![
+                d.quota_id,
+                d.id_type.sql_str(),
+                QuotaType::Space.sql_str(),
+                target_id,
+            ])?,
             _ => insert_stmt.execute(params![
                 d.quota_id,
-                d.id_type,
-                QuotaType::Space,
+                d.id_type.sql_str(),
+                QuotaType::Space.sql_str(),
                 target_id,
                 d.space
             ])?,
         };
 
         match d.inodes {
-            0 => {
-                delete_stmt
-                    .execute(params![d.quota_id, d.id_type, QuotaType::Inodes, target_id,])?
-            }
+            0 => delete_stmt.execute(params![
+                d.quota_id,
+                d.id_type.sql_str(),
+                QuotaType::Inodes.sql_str(),
+                target_id,
+            ])?,
             _ => insert_stmt.execute(params![
                 d.quota_id,
-                d.id_type,
-                QuotaType::Inodes,
+                d.id_type.sql_str(),
+                QuotaType::Inodes.sql_str(),
                 target_id,
                 d.inodes
             ])?,

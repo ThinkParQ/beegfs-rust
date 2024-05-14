@@ -2,8 +2,62 @@
 //!
 //! Pools are calculated based on the behavior in old management.
 
-use crate::types::{CapPoolDynamicLimits, CapPoolLimits, CapacityPool};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use shared::bee_msg::misc::CapacityPool;
+use shared::parser::integer_with_generic_unit;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CapPoolLimits {
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_emergency: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_emergency: u64,
+}
+
+impl CapPoolLimits {
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.space_low < self.space_emergency || self.inodes_low < self.inodes_emergency {
+            bail!("The low limit is lower than the emergency limit");
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CapPoolDynamicLimits {
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_normal_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_low_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_normal_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_low_threshold: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub inodes_emergency: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_low: u64,
+    #[serde(with = "integer_with_generic_unit")]
+    pub space_emergency: u64,
+}
+
+impl CapPoolDynamicLimits {
+    pub fn check(&self) -> anyhow::Result<()> {
+        if self.space_low < self.space_emergency || self.inodes_low < self.inodes_emergency {
+            bail!("the low limit is lower than the emergency limit");
+        }
+
+        Ok(())
+    }
+}
 
 pub(crate) trait CapacityInfo {
     fn free_space(&self) -> u64;

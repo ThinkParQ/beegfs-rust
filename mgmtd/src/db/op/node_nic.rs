@@ -52,7 +52,7 @@ impl NodeNic {
             node_uid: row.get(0)?,
             addr: row.get::<_, [u8; 4]>(1)?.into(),
             port: row.get(2)?,
-            nic_type: row.get(3)?,
+            nic_type: NicType::from_row(row, 3)?,
             name: row.get(4)?,
         })
     }
@@ -83,7 +83,7 @@ pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result
             WHERE n.node_type = ?1
             ORDER BY nn.node_uid ASC"
         ),
-        params![node_type],
+        params![node_type.sql_str()],
         NodeNic::from_row,
     )?)
 }
@@ -112,7 +112,12 @@ pub(crate) fn replace<'a>(
     ))?;
 
     for nic in nics {
-        stmt.execute(params![node_uid, nic.nic_type, nic.addr.octets(), nic.name])?;
+        stmt.execute(params![
+            node_uid,
+            nic.nic_type.sql_str(),
+            nic.addr.octets(),
+            nic.name
+        ])?;
     }
 
     Ok(())
