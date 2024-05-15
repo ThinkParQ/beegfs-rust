@@ -5,6 +5,7 @@ use shared::types::AuthenticationSecret;
 use shared::{journald_logger, shutdown};
 use std::backtrace::Backtrace;
 use std::panic;
+use std::path::Path;
 use tokio::signal::ctrl_c;
 
 fn main() -> Result<(), i32> {
@@ -37,16 +38,12 @@ fn inner_main() -> anyhow::Result<()> {
         log::info!(target: "mgmtd::config", "{l}");
     }
 
-    // If the user set --init, init the database and then exit
-    if user_config.init {
-        mgmtd::db::create_file(user_config.db_file.as_path())?;
-
-        let mut conn = mgmtd::db::open(user_config.db_file.as_path())?;
-        let mut tx = conn.transaction()?;
-        mgmtd::db::create_schema(&mut tx)?;
-        tx.commit()?;
-
-        println!("Database initialized");
+    if user_config.init || user_config.import_from_v7.is_some() {
+        setup_db(
+            &user_config.db_file,
+            user_config.init,
+            user_config.import_from_v7.as_deref(),
+        )?;
         return Ok(());
     }
 
@@ -116,4 +113,34 @@ fn inner_main() -> anyhow::Result<()> {
 
         Ok(())
     })
+}
+
+/// Create and initialize a new database and / or import data from old v7 management
+fn setup_db(db_path: &Path, init: bool, v7_path: Option<&Path>) -> anyhow::Result<()> {
+    // Create database file
+    if init {
+        mgmtd::db::create_file(db_path)?;
+    }
+
+    // Connect
+    let mut conn = mgmtd::db::open(db_path)?;
+    let mut tx = conn.transaction()?;
+
+    // Fill database
+    if init {
+        mgmtd::db::create_schema(&mut tx).with_context(|| "Creating database schema failed")?;
+
+        println!("Database schema created\n");
+    }
+
+    // Import data from v7 management
+    if let Some(v7_path) = v7_path {
+        mgmtd::db::import_v7(&mut tx, v7_path).context("v7 management data import failed")?;
+
+        println!("v7 management data successfully imported
+Before starting the whole system, make sure that all the nodes, targets, storage pools, buddy groups and quota settings are correct.");
+    }
+
+    tx.commit()?;
+    Ok(())
 }

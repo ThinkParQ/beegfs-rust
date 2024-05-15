@@ -6,11 +6,13 @@
 //! it. The latter hide the raw SQL and resemble a primitive ORM, defining data models in terms of
 //! Rust and interfaces to obtain the data.
 
+mod import_v7;
 mod op;
 #[cfg(test)]
 mod test;
 
 use anyhow::{anyhow, bail, Context, Result};
+pub use import_v7::import_v7;
 pub(crate) use op::*;
 use rusqlite::config::DbConfig;
 use rusqlite::{OpenFlags, Transaction};
