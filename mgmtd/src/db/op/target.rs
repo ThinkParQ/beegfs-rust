@@ -2,6 +2,7 @@
 
 use super::*;
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::time::Duration;
 
@@ -100,15 +101,26 @@ pub(crate) fn validate_ids(
 /// Inserts a new meta target.
 ///
 /// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
-/// meta target per meta node with their IDs being the same. Due to that restriction, the type
-/// `NodeID` is expected.
-pub(crate) fn insert_meta(tx: &mut Transaction, target_id: TargetID, alias: &str) -> Result<()> {
+/// meta target per meta node with their IDs being the same.
+pub(crate) fn insert_meta(
+    tx: &mut Transaction,
+    target_id: TargetID,
+    alias: Option<&str>,
+) -> Result<()> {
+    let target_id = if target_id == 0 {
+        misc::find_new_id(tx, "meta_targets", "target_id", 1..=0xFFFF)?
+    } else if get_uid(tx, target_id, NodeTypeServer::Meta)?.is_some() {
+        bail!(TypedError::value_exists("target ID", target_id));
+    } else {
+        target_id
+    };
+
     insert(
         tx,
         target_id,
+        alias,
         NodeTypeServer::Meta,
         Some(target_id.into()),
-        alias,
     )?;
 
     // If this is the first meta target, set it as meta root
@@ -122,32 +134,24 @@ pub(crate) fn insert_meta(tx: &mut Transaction, target_id: TargetID, alias: &str
 
 /// Inserts a new storage target if it doesn't exist yet.
 ///
-/// Providing `None` for `target_id` chooses the ID automatically.
+/// Providing 0 for `target_id` chooses the ID automatically.
 ///
 /// # Return value
 /// Returns the ID of the new target.
-pub(crate) fn insert_or_ignore_storage(
+pub(crate) fn insert_storage(
     tx: &mut Transaction,
-    target_id: Option<TargetID>,
-    alias: &str,
+    target_id: TargetID,
+    alias: Option<&str>,
 ) -> Result<TargetID> {
-    let target_id = if let Some(target_id) = target_id {
-        let count = tx.query_row_cached(
-            sql!("SELECT COUNT(*) FROM storage_targets WHERE target_id = ?1"),
-            params![target_id],
-            |row| row.get::<_, i32>(0),
-        )?;
-
-        if count == 0 {
-            insert(tx, target_id, NodeTypeServer::Storage, None, alias)?;
-        }
-
-        target_id
+    let target_id = if target_id == 0 {
+        misc::find_new_id(tx, "storage_targets", "target_id", 1..=0xFFFF)?
+    } else if get_uid(tx, target_id, NodeTypeServer::Storage)?.is_some() {
+        return Ok(target_id);
     } else {
-        let target_id = misc::find_new_id(tx, "storage_targets", "target_id", 1..=0xFFFF)?;
-        insert(tx, target_id, NodeTypeServer::Storage, None, alias)?;
         target_id
     };
+
+    insert(tx, target_id, alias, NodeTypeServer::Storage, None)?;
 
     Ok(target_id)
 }
@@ -155,12 +159,18 @@ pub(crate) fn insert_or_ignore_storage(
 fn insert(
     tx: &mut Transaction,
     target_id: TargetID,
+    alias: Option<&str>,
     node_type: NodeTypeServer,
     // This is optional because storage targets come "unmapped"
     node_id: Option<NodeID>,
-    alias: &str,
 ) -> Result<()> {
-    let new_uid = entity::insert(tx, EntityType::Target, alias)?;
+    let alias = if let Some(alias) = alias {
+        Cow::Borrowed(alias)
+    } else {
+        Cow::Owned(format!("target_{}_{}", node_type.as_sql_str(), target_id))
+    };
+
+    let new_uid = entity::insert(tx, EntityType::Target, alias.as_ref())?;
 
     tx.execute(
         sql!("INSERT INTO targets (target_uid, node_type) VALUES (?1, ?2)"),
@@ -217,17 +227,16 @@ pub(crate) fn update_storage_pools(
     new_pool_id: StoragePoolID,
     target_ids: &[TargetID],
 ) -> Result<()> {
-    let updated = tx.execute(
+    if storage_pool::get_uid(tx, new_pool_id)?.is_none() {
+        bail!(TypedError::value_not_found("pool ID", new_pool_id));
+    }
+
+    validate_ids(tx, target_ids, NodeTypeServer::Storage)?;
+
+    tx.execute(
         sql!("UPDATE storage_targets SET pool_id = ?1 WHERE target_id IN rarray(?2)"),
         params![new_pool_id, &rarray_param(target_ids.iter().copied())],
     )?;
-
-    if updated != target_ids.len() {
-        bail!(
-            "At least one of the given storage target IDs ({}) doesn't exist",
-            target_ids.iter().join(",")
-        );
-    }
 
     Ok(())
 }
@@ -349,10 +358,10 @@ mod test {
     #[test]
     fn set_get_meta() {
         with_test_data(|tx| {
-            super::insert_meta(tx, 1, "existing_meta_target").unwrap_err();
-            super::insert_meta(tx, 99, "new_meta_target").unwrap();
+            super::insert_meta(tx, 1, Some("existing_meta_target")).unwrap_err();
+            super::insert_meta(tx, 99, Some("new_meta_target")).unwrap();
             // existing alias
-            super::insert_meta(tx, 99, "new_meta_target").unwrap_err();
+            super::insert_meta(tx, 99, Some("new_meta_target")).unwrap_err();
 
             let targets = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
 
@@ -363,12 +372,11 @@ mod test {
     #[test]
     fn set_get_storage_and_map() {
         with_test_data(|tx| {
-            let new_target_id =
-                super::insert_or_ignore_storage(tx, None, "new_storage_target").unwrap();
-            super::insert_or_ignore_storage(tx, Some(1000), "new_storage_target_2").unwrap();
+            let new_target_id = super::insert_storage(tx, 0, Some("new_storage_target")).unwrap();
+            super::insert_storage(tx, 1000, Some("new_storage_target_2")).unwrap();
 
             // existing alias
-            super::insert_or_ignore_storage(tx, None, "new_storage_target").unwrap_err();
+            super::insert_storage(tx, 0, Some("new_storage_target")).unwrap_err();
 
             super::update_storage_node_mappings(tx, &[new_target_id, 1000], 1).unwrap();
 

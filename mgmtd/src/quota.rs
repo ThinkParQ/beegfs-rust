@@ -145,7 +145,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             // Insert quota usage data into the database
             ctx.db
                 .op(move |tx| {
-                    db::quota_usage::upsert(
+                    db::quota_usage::update(
                         tx,
                         target_id,
                         r.quota_entry.into_iter().map(|e| QuotaData {

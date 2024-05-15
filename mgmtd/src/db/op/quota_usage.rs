@@ -90,7 +90,7 @@ pub(crate) struct QuotaData {
 }
 
 /// Inserts or updates quota usage entries for a storage target.
-pub(crate) fn upsert(
+pub(crate) fn update(
     tx: &mut Transaction,
     target_id: TargetID,
     data: impl IntoIterator<Item = QuotaData>,
@@ -146,7 +146,7 @@ mod test {
     #[test]
     fn upsert_and_get() {
         with_test_data(|tx| {
-            upsert(
+            update(
                 tx,
                 1,
                 [
@@ -198,7 +198,7 @@ mod test {
 
             assert_eq!(4, all_exceeded_quota_ids(tx,).unwrap().len());
 
-            upsert(
+            update(
                 tx,
                 1,
                 [QuotaData {

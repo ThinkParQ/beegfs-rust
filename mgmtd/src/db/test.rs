@@ -1,4 +1,4 @@
-//! Testing suppport for the database layer
+//! Testing support for the database layer
 
 use super::*;
 use rusqlite::{Connection, Transaction};
@@ -6,8 +6,7 @@ use rusqlite::{Connection, Transaction};
 /// Sets ups a fresh database instance in memory and fills, with the test data set and provides a
 /// transaction handle.
 pub(crate) fn with_test_data(op: impl FnOnce(&mut Transaction)) {
-    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-    connection::setup_connection(&conn).unwrap();
+    let mut conn = open_in_memory().unwrap();
 
     // Setup test data
     conn.execute_batch(include_str!("schema/schema.sql"))

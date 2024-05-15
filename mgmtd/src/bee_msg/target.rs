@@ -87,13 +87,10 @@ impl Handler for RegisterTarget {
 
             ctx.db
                 .op(move |tx| {
-                    db::target::insert_or_ignore_storage(
+                    db::target::insert_storage(
                         tx,
-                        match self.target_id {
-                            0 => None,
-                            n => Some(n),
-                        },
-                        format!("target_{}", std::str::from_utf8(&self.alias)?).as_str(),
+                        self.target_id,
+                        Some(format!("target_{}", std::str::from_utf8(&self.alias)?).as_str()),
                     )
                 })
                 .await

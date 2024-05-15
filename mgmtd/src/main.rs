@@ -39,7 +39,13 @@ fn inner_main() -> anyhow::Result<()> {
 
     // If the user set --init, init the database and then exit
     if user_config.init {
-        mgmtd::db::initialize(user_config.db_file.as_path())?;
+        mgmtd::db::create_file(user_config.db_file.as_path())?;
+
+        let mut conn = mgmtd::db::open(user_config.db_file.as_path())?;
+        let mut tx = conn.transaction()?;
+        mgmtd::db::create_schema(&mut tx)?;
+        tx.commit()?;
+
         println!("Database initialized");
         return Ok(());
     }
@@ -61,7 +67,7 @@ fn inner_main() -> anyhow::Result<()> {
     // Ensure the program ends if a task panics
     panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::capture();
-        eprintln!("PANIC occured: {info}\n\nBACKTRACE:\n{backtrace}");
+        eprintln!("PANIC occurred: {info}\n\nBACKTRACE:\n{backtrace}");
         std::process::exit(1);
     }));
 

@@ -2,6 +2,7 @@
 
 use super::*;
 use rusqlite::OptionalExtension;
+use std::borrow::Cow;
 use std::time::Duration;
 
 /// Represents a node entry.
@@ -76,37 +77,52 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
     Ok(affected)
 }
 
-/// Inserts a node into the database.
+/// Inserts a node into the database. If node_id is 0, a new ID is chosen automatically.
 pub(crate) fn insert(
     tx: &mut Transaction,
     node_id: NodeID,
-    node_uid: EntityUID,
+    alias: Option<&str>,
     node_type: NodeType,
-    new_port: Port,
-) -> Result<()> {
+    port: Port,
+) -> Result<(EntityUID, NodeID)> {
+    let node_id = if node_id == 0 {
+        misc::find_new_id(
+            tx,
+            &format!("{}_nodes", node_type.as_sql_str()),
+            "node_id",
+            1..=0xFFFF,
+        )?
+    } else if get_uid(tx, node_id, node_type)?.is_some() {
+        bail!(TypedError::value_exists("node ID", node_id));
+    } else {
+        node_id
+    };
+
+    let alias = if let Some(alias) = alias {
+        Cow::Borrowed(alias)
+    } else {
+        Cow::Owned(format!("node_{}_{}", node_type.as_sql_str(), node_id))
+    };
+
+    let uid = entity::insert(tx, EntityType::Node, alias.as_ref())?;
+
     tx.execute_cached(
         sql!(
             "INSERT INTO nodes (node_uid, node_type, port, last_contact)
             VALUES (?1, ?2, ?3, DATETIME('now'))"
         ),
-        params![node_uid, node_type, new_port],
+        params![uid, node_type, port],
     )?;
 
     tx.execute_cached(
-        match node_type {
-            NodeType::Meta => sql!("INSERT INTO meta_nodes (node_id, node_uid) VALUES (?1, ?2)"),
-            NodeType::Storage => {
-                sql!("INSERT INTO storage_nodes (node_id, node_uid) VALUES (?1, ?2)")
-            }
-            NodeType::Client => {
-                sql!("INSERT INTO client_nodes (node_id, node_uid) VALUES (?1, ?2)")
-            }
-            NodeType::Management => "",
-        },
-        params![node_id, node_uid],
+        &format!(
+            "INSERT INTO {}_nodes (node_id, node_uid) VALUES (?1, ?2)",
+            node_type.as_sql_str()
+        ),
+        params![node_id, uid],
     )?;
 
-    Ok(())
+    Ok((uid, node_id))
 }
 
 /// Updates a node in the database.
@@ -159,16 +175,13 @@ mod test {
     fn insert_get_delete() {
         with_test_data(|tx| {
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
-            let node_uid = entity::insert(tx, EntityType::Node, "new_node").unwrap();
-            let node_uid2 = entity::insert(tx, EntityType::Node, "new_node2").unwrap();
-
-            insert(tx, 1234, node_uid, NodeType::Meta, 10000).unwrap();
-            insert(tx, 1234, node_uid2, NodeType::Meta, 10000).unwrap_err();
-            insert(tx, 1235, node_uid, NodeType::Meta, 10000).unwrap_err();
+            let (uid, _) = insert(tx, 1234, Some("new_node"), NodeType::Meta, 10000).unwrap();
+            insert(tx, 1234, Some("new_node_2"), NodeType::Meta, 10000).unwrap_err();
+            insert(tx, 1235, Some("new_node"), NodeType::Meta, 10000).unwrap_err();
             assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
 
-            delete(tx, node_uid).unwrap();
-            delete(tx, node_uid).unwrap_err();
+            delete(tx, uid).unwrap();
+            delete(tx, uid).unwrap_err();
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
         });
     }

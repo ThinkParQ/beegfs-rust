@@ -1,7 +1,7 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use crate::db::TransactionExt;
-use crate::types::{EntityType, NodeType, NodeTypeServer};
+use crate::types::{NodeType, NodeTypeServer};
 use shared::bee_msg::misc::CapacityPool;
 use shared::bee_msg::storage_pool::*;
 use shared::types::{BuddyGroupID, NodeID, StoragePoolID, TargetID, DEFAULT_STORAGE_POOL};
@@ -16,34 +16,7 @@ impl Handler for AddStoragePool {
             .op(move |tx| {
                 let alias = &std::str::from_utf8(&self.alias)?;
 
-                // Check alias is free
-                if db::entity::get_uid(tx, alias)?.is_some() {
-                    bail!(TypedError::value_exists("Alias", alias));
-                }
-
-                // Check all of the given target IDs exist
-                db::target::validate_ids(tx, &self.move_target_ids, NodeTypeServer::Storage)?;
-                // Check all of the given buddy group IDs exist
-                db::buddy_group::validate_ids(
-                    tx,
-                    &self.move_buddy_group_ids,
-                    NodeTypeServer::Storage,
-                )?;
-
-                let pool_id = if self.pool_id != 0 {
-                    // Check given pool_id is free
-                    if db::storage_pool::get_uid(tx, self.pool_id)?.is_some() {
-                        bail!(TypedError::value_exists("storage pool ID", self.pool_id));
-                    }
-
-                    self.pool_id
-                } else {
-                    db::misc::find_new_id(tx, "storage_pools", "pool_id", 1..=0xFFFF)?
-                };
-
-                // Insert entity then storage pool entry
-                let new_uid = db::entity::insert(tx, EntityType::StoragePool, alias)?;
-                db::storage_pool::insert(tx, pool_id, new_uid)?;
+                let (_, pool_id) = db::storage_pool::insert(tx, self.pool_id, alias)?;
 
                 // Update storage pool assignments for the given targets
                 db::target::update_storage_pools(tx, pool_id, &self.move_target_ids)?;
