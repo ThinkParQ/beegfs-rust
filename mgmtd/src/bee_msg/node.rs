@@ -1,6 +1,5 @@
 use super::*;
 use crate::db::node_nic::ReplaceNic;
-use crate::types::EntityType;
 use db::misc::MetaRoot;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
@@ -195,47 +194,22 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                         bail!("Registration of new nodes is not allowed");
                     }
 
-                    // Services send a 0 value when they want the new node to be assigned an ID
-                    // automatically
-                    let node_id = if msg.node_id == 0 {
-                        db::misc::find_new_id(
-                            tx,
-                            &format!("{}_nodes", node_type.as_sql_str()),
-                            "node_id",
-                            1..=0xFFFF,
-                        )?
-                    } else {
-                        msg.node_id
-                    };
-
-                    // To ensure aliases are unique and they start with a letter, we prepend the
-                    // reported nodeStrId with nodetype and nodeID.
-                    let alias = format!(
-                        "{}_{}_{}",
-                        node_type.as_sql_str(),
-                        node_id,
-                        std::str::from_utf8(&msg.node_alias)?
-                    );
-
-                    // Insert new entity and node entry
-                    let node_uid = db::entity::insert(tx, EntityType::Node, &alias)?;
-                    db::node::insert(tx, node_id, node_uid, node_type, msg.port)?;
+                    // Insert new node entry
+                    let (node_uid, node_id) =
+                        db::node::insert(tx, msg.node_id, None, node_type, msg.port)?;
 
                     // if this is a meta node, auto-add a corresponding meta target after the node.
-                    // This is required because currently the rest of BeeGFS
-                    // doesn't know about meta targets and expects exactly one
-                    // meta target per meta node (with the same ID).
                     if node_type == NodeType::Meta {
                         // Convert the NodeID to a TargetID. Due to the difference in bitsize, meta
                         // node IDs are not allowed to be bigger than u16
                         let Ok(target_id) = TargetID::try_from(node_id) else {
                             bail!(
-                                "{node_id} is not a valid meta node ID \
+                                "{node_id} is not a valid meta node ID\
                                 (must be between 1 and 65535)"
                             );
                         };
 
-                        db::target::insert_meta(tx, target_id, &format!("target_{alias}"))?;
+                        db::target::insert_meta(tx, target_id, None)?;
                     }
 
                     (node_id, node_uid)

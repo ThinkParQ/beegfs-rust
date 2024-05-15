@@ -22,6 +22,7 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct Config {
     pub init: bool,
+    pub import_from_v7: Option<PathBuf>,
     pub beemsg_port: Port,
     pub grpc_port: Port,
     pub grpc_tls_enable: bool,
@@ -65,6 +66,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             init: false,
+            import_from_v7: None,
             beemsg_port: 8008,
             grpc_port: 8010,
             grpc_tls_enable: true,
@@ -224,6 +226,16 @@ struct CommandLineArgs {
     /// Initialize a new installation, then quit
     #[arg(long)]
     init: bool,
+    #[arg(long)]
+    /// Set to a v7 management installation directory to import its data.
+    ///
+    /// The database must be new, e.g. freshly generated using --init. The two
+    /// flags can be combined. Before importing a production BeeGFS, ensure
+    /// that all targets are in GOOD state, all clients are unmounted and the
+    /// whole system has been shutdown. After importing the data, verify its
+    /// correctness by only starting the management and checking the existing
+    /// nodes, targets, buddy groups, storage pools and quota settings.
+    import_from_v7: Option<PathBuf>,
     /// Config file location
     #[arg(long, default_value = "/etc/beegfs/mgmtd.toml")]
     config_file: PathBuf,
@@ -274,6 +286,9 @@ impl Config {
     /// [[CommandLineArgs]], otherwise they were not given and shall stay as they are.
     fn update_from_command_line_args(&mut self, args: CommandLineArgs) {
         self.init = args.init;
+        if let Some(v) = args.import_from_v7 {
+            self.import_from_v7 = v.into();
+        }
         if let Some(v) = args.beegfs_port {
             self.beemsg_port = v;
         }

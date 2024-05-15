@@ -2,6 +2,7 @@
 
 use super::*;
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::time::Duration;
 
@@ -99,25 +100,33 @@ pub(crate) fn validate_ids(
 
 /// Inserts a new buddy group.
 ///
+/// Providing 0 for `buddy_group_id` chooses the ID automatically.
+///
 /// # Return value
 /// Returns the ID of the new buddy group.
 pub(crate) fn insert(
     tx: &mut Transaction,
-    buddy_group_id: Option<BuddyGroupID>,
+    buddy_group_id: BuddyGroupID,
+    alias: Option<&str>,
     node_type: NodeTypeServer,
     primary_target_id: TargetID,
     secondary_target_id: TargetID,
-) -> Result<BuddyGroupID> {
-    let new_id = if let Some(buddy_group_id) = buddy_group_id {
-        buddy_group_id
-    } else {
+) -> Result<(EntityUID, BuddyGroupID)> {
+    let buddy_group_id = if buddy_group_id == 0 {
         misc::find_new_id(
             tx,
             &format!("{}_buddy_groups", node_type.as_sql_str()),
             "buddy_group_id",
             1..=0xFFFF,
         )?
+    } else if get_uid(tx, buddy_group_id, node_type)?.is_some() {
+        bail!(TypedError::value_exists("buddy group ID", buddy_group_id));
+    } else {
+        buddy_group_id
     };
+
+    // Check targets exist
+    target::validate_ids(tx, &[primary_target_id, secondary_target_id], node_type)?;
 
     // Check that both given target IDs are not assigned to any buddy group
     if tx.query_row(
@@ -136,12 +145,18 @@ pub(crate) fn insert(
         );
     }
 
+    let alias = if let Some(alias) = alias {
+        Cow::Borrowed(alias)
+    } else {
+        Cow::Owned(format!(
+            "buddy_group_{}_{}",
+            node_type.as_sql_str(),
+            buddy_group_id
+        ))
+    };
+
     // Insert entity
-    let new_uid = entity::insert(
-        tx,
-        EntityType::BuddyGroup,
-        &format!("buddy_group_{}_{new_id}", node_type.as_sql_str()),
-    )?;
+    let new_uid = entity::insert(tx, EntityType::BuddyGroup, alias.as_ref())?;
 
     // Insert generic buddy group
     tx.execute(
@@ -169,10 +184,15 @@ pub(crate) fn insert(
                 )
             }
         },
-        params![new_id, new_uid, primary_target_id, secondary_target_id],
+        params![
+            buddy_group_id,
+            new_uid,
+            primary_target_id,
+            secondary_target_id
+        ],
     )?;
 
-    Ok(new_id)
+    Ok((new_uid, buddy_group_id))
 }
 
 /// Changes the storage pool of the given buddy group IDs to a new one.
@@ -181,17 +201,16 @@ pub(crate) fn update_storage_pools(
     new_pool_id: StoragePoolID,
     buddy_group_ids: &[BuddyGroupID],
 ) -> Result<()> {
-    let updated = tx.execute_cached(
+    if storage_pool::get_uid(tx, new_pool_id)?.is_none() {
+        bail!(TypedError::value_not_found("pool ID", new_pool_id));
+    }
+
+    validate_ids(tx, buddy_group_ids, NodeTypeServer::Storage)?;
+
+    tx.execute_cached(
         sql!("UPDATE storage_buddy_groups SET pool_id = ?1 WHERE buddy_group_id IN rarray(?2)"),
         params![new_pool_id, rarray_param(buddy_group_ids.iter().copied())],
     )?;
-
-    if updated != buddy_group_ids.len() {
-        bail!(
-            "At least one of the given buddy group IDs ({}) doesn't exist",
-            buddy_group_ids.iter().join(",")
-        );
-    }
 
     Ok(())
 }
@@ -322,17 +341,14 @@ mod test {
     #[test]
     fn insert_and_get_with_type() {
         with_test_data(|tx| {
-            super::insert(tx, Some(1234), NodeTypeServer::Meta, 3, 4).unwrap();
-            super::insert(tx, None, NodeTypeServer::Storage, 2, 6).unwrap();
-
-            super::insert(tx, None, NodeTypeServer::Meta, 5, 6).unwrap_err();
-            super::insert(tx, Some(1), NodeTypeServer::Storage, 3, 7).unwrap_err();
+            super::insert(tx, 1234, None, NodeTypeServer::Meta, 3, 4).unwrap();
+            super::insert(tx, 1, None, NodeTypeServer::Storage, 3, 7).unwrap_err();
 
             let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
             let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
             assert_eq!(2, meta_groups.len());
-            assert_eq!(3, storage_groups.len());
+            assert_eq!(2, storage_groups.len());
             assert!(meta_groups.iter().any(|e| e.id == 1234));
         })
     }

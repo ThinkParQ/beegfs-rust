@@ -230,32 +230,16 @@ impl Handler for SetMirrorBuddyGroup {
             .op(move |tx| {
                 let node_type = self.node_type.try_into()?;
 
-                // Check buddy group doesn't exist
-                if db::buddy_group::get_uid(tx, self.buddy_group_id, node_type)?.is_some() {
-                    bail!(TypedError::value_exists(
-                        "buddy group ID",
-                        self.buddy_group_id
-                    ));
-                }
-
-                // Check targets exist
-                db::target::validate_ids(
+                let (_, new_id) = db::buddy_group::insert(
                     tx,
-                    &[self.primary_target_id, self.secondary_target_id],
-                    node_type,
-                )?;
-
-                db::buddy_group::insert(
-                    tx,
-                    if self.buddy_group_id == 0 {
-                        None
-                    } else {
-                        Some(self.buddy_group_id)
-                    },
+                    self.buddy_group_id,
+                    None,
                     node_type,
                     self.primary_target_id,
                     self.secondary_target_id,
-                )
+                )?;
+
+                Ok(new_id)
             })
             .await;
 

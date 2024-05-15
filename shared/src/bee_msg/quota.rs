@@ -56,7 +56,7 @@ impl Msg for SetDefaultQuotaResp {
 
 /// Fetch quota info for the given type and list or range of IDs.
 ///
-/// Used by the ctl to query management and by the managment to query the nodes
+/// Used by the ctl to query management and by the management to query the nodes
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GetQuotaInfo {
     pub query_type: QuotaQueryType,

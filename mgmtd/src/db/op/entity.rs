@@ -67,6 +67,11 @@ pub(crate) fn insert(
 ) -> Result<EntityUID> {
     check_alias(alias)?;
 
+    // Check alias is free
+    if get_uid(tx, alias)?.is_some() {
+        bail!(TypedError::value_exists("Alias", alias));
+    }
+
     let affected = tx.execute_cached(
         sql!("INSERT INTO entities (entity_type, alias) VALUES (?1, ?2)"),
         params![entity_type, alias],
