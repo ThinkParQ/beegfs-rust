@@ -23,6 +23,7 @@ use std::time::Duration;
 pub struct Config {
     pub init: bool,
     pub import_from_v7: Option<PathBuf>,
+    pub upgrade: bool,
     pub beemsg_port: Port,
     pub grpc_port: Port,
     pub grpc_tls_enable: bool,
@@ -67,6 +68,7 @@ impl Default for Config {
         Self {
             init: false,
             import_from_v7: None,
+            upgrade: false,
             beemsg_port: 8008,
             grpc_port: 8010,
             grpc_tls_enable: true,
@@ -236,6 +238,9 @@ struct CommandLineArgs {
     /// correctness by only starting the management and checking the existing
     /// nodes, targets, buddy groups, storage pools and quota settings.
     import_from_v7: Option<PathBuf>,
+    /// Upgrade the managements database to the current version
+    #[arg(long)]
+    upgrade: bool,
     /// Config file location
     #[arg(long, default_value = "/etc/beegfs/mgmtd.toml")]
     config_file: PathBuf,
@@ -289,6 +294,7 @@ impl Config {
         if let Some(v) = args.import_from_v7 {
             self.import_from_v7 = v.into();
         }
+        self.upgrade = args.upgrade;
         if let Some(v) = args.beegfs_port {
             self.beemsg_port = v;
         }

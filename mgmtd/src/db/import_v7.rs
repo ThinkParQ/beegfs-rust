@@ -18,7 +18,9 @@ use std::path::Path;
 /// automatically on the running management. This includes quota usage data, client nodes and the
 /// nodes nic lists. The old BeeGFS should be completely shut down before upgrading and all targets
 /// must be in GOOD state.
-pub fn import_v7(tx: &mut Transaction, base_path: &Path) -> Result<()> {
+pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()> {
+    let mut tx = conn.transaction()?;
+
     // Check DB is new
     let max_uid: EntityUID =
         tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
@@ -35,16 +37,16 @@ pub fn import_v7(tx: &mut Transaction, base_path: &Path) -> Result<()> {
     // Read from files, write to database. Order is important.
 
     // Storage
-    storage_nodes(tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
+    storage_nodes(&mut tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
     storage_targets(
-        tx,
+        &mut tx,
         &base_path.join("targets"),
         &base_path.join("targetNumIDs"),
     )
     .context("storage targets (target + targetNumIDs)")?;
-    storage_pools(tx, &base_path.join("storagePools")).context("storagePools")?;
+    storage_pools(&mut tx, &base_path.join("storagePools")).context("storagePools")?;
     buddy_groups(
-        tx,
+        &mut tx,
         &base_path.join("storagebuddygroups"),
         NodeTypeServer::Storage,
     )
@@ -52,16 +54,23 @@ pub fn import_v7(tx: &mut Transaction, base_path: &Path) -> Result<()> {
 
     // Meta
     let (root_id, root_mirrored) =
-        meta_nodes(tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
-    buddy_groups(tx, &base_path.join("metabuddygroups"), NodeTypeServer::Meta)
-        .context("meta buddy groups (metabuddygroups)")?;
-    set_meta_root(tx, root_id, root_mirrored).context("meta root")?;
+        meta_nodes(&mut tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
+    buddy_groups(
+        &mut tx,
+        &base_path.join("metabuddygroups"),
+        NodeTypeServer::Meta,
+    )
+    .context("meta buddy groups (metabuddygroups)")?;
+    set_meta_root(&mut tx, root_id, root_mirrored).context("meta root")?;
 
     // Quota
     if std::path::Path::try_exists(&base_path.join("quota"))? {
-        quota(tx, &base_path.join("quota"))?;
+        quota(&mut tx, &base_path.join("quota"))?;
     }
 
+    tx.commit()?;
+
+    println!("v7 management data imported");
     Ok(())
 }
 

@@ -10,6 +10,9 @@ documentation.workspace = true
 homepage.workspace = true
 publish.workspace = true
 
+[build-dependencies]
+rusqlite = { version = "~0", features = ["bundled"]}
+
 [dependencies]
 shared = { path = "../shared"}
 pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.6" }

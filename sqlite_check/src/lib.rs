@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use syn::{parse_macro_input, LitStr};
 
@@ -56,10 +57,9 @@ fn open_db() -> Arc<Mutex<rusqlite::Connection>> {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     rusqlite::vtab::array::load_module(&conn).unwrap();
 
-    // Setup test data
-    conn.execute_batch(include_str!("../../mgmtd/src/db/schema/schema.sql"))
-        .unwrap();
-    conn.execute_batch(include_str!("../../mgmtd/src/db/schema/test_data.sql"))
+    let schema_file = Path::new(&std::env::var_os("OUT_DIR").unwrap()).join("current.sql");
+
+    conn.execute_batch(&std::fs::read_to_string(schema_file).unwrap())
         .unwrap();
 
     Arc::new(Mutex::new(conn))

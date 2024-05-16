@@ -47,6 +47,11 @@ fn inner_main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if user_config.upgrade {
+        upgrade_db(&user_config.db_file)?;
+        return Ok(());
+    }
+
     let auth_secret = if user_config.auth_enable {
         let secret = std::fs::read(&user_config.auth_file).with_context(|| {
             format!(
@@ -124,23 +129,25 @@ fn setup_db(db_path: &Path, init: bool, v7_path: Option<&Path>) -> anyhow::Resul
 
     // Connect
     let mut conn = mgmtd::db::open(db_path)?;
-    let mut tx = conn.transaction()?;
 
     // Fill database
     if init {
-        mgmtd::db::create_schema(&mut tx).with_context(|| "Creating database schema failed")?;
-
-        println!("Database schema created\n");
+        mgmtd::db::migrate_schema(&mut conn).with_context(|| "Creating database schema failed")?;
     }
 
     // Import data from v7 management
     if let Some(v7_path) = v7_path {
-        mgmtd::db::import_v7(&mut tx, v7_path).context("v7 management data import failed")?;
-
-        println!("v7 management data successfully imported
-Before starting the whole system, make sure that all the nodes, targets, storage pools, buddy groups and quota settings are correct.");
+        mgmtd::db::import_v7(&mut conn, v7_path).context("v7 management data import failed")?;
     }
 
-    tx.commit()?;
+    println!("Database created");
+    Ok(())
+}
+
+fn upgrade_db(db_path: &Path) -> anyhow::Result<()> {
+    let mut conn = mgmtd::db::open(db_path)?;
+    mgmtd::db::migrate_schema(&mut conn).with_context(|| "Upgrading database schema failed")?;
+
+    println!("Database upgraded");
     Ok(())
 }

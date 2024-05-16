@@ -16,8 +16,122 @@ pub use import_v7::import_v7;
 pub(crate) use op::*;
 use rusqlite::config::DbConfig;
 use rusqlite::{OpenFlags, Transaction};
+use sqlite_check::sql;
 use std::fmt::Debug;
 use std::path::Path;
+
+struct Migration<'a> {
+    version: u32,
+    sql: &'a str,
+}
+
+/// Include the generated migration list. First element is the migration number, second is the
+/// SQL text to execute. The elements are guaranteed to be contiguous, but may start later than 1.
+const MIGRATIONS: &[Migration] = include!(concat!(env!("OUT_DIR"), "/migrations.slice"));
+
+/// Sets connection parameters on an SQLite connection.
+pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    // We use the carray extension to bind arrays to parameters
+    rusqlite::vtab::array::load_module(conn)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
+    conn.pragma_update(None, "journal_mode", "DELETE")?;
+    conn.pragma_update(None, "synchronous", "ON")?;
+
+    Ok(())
+}
+
+pub fn open(db_path: &Path) -> Result<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+    )?;
+
+    setup_connection(&conn)?;
+
+    Ok(conn)
+}
+
+pub fn open_in_memory() -> Result<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open_in_memory()?;
+    setup_connection(&conn)?;
+    Ok(conn)
+}
+
+pub fn create_file(db_path: &Path) -> Result<()> {
+    if db_path.try_exists()? {
+        bail!("Database file {db_path:?} already exists");
+    }
+
+    std::fs::create_dir_all(db_path.parent().ok_or_else(|| {
+        anyhow!("Could not determine parent folder of database file {db_path:?}")
+    })?)?;
+
+    std::fs::File::create(db_path)
+        .with_context(|| format!("Creating database file {db_path:?} failed"))?;
+
+    println!("Database file created at {db_path:?}");
+    Ok(())
+}
+
+pub fn migrate_schema(conn: &mut rusqlite::Connection) -> Result<()> {
+    migrate_schema_with(conn, MIGRATIONS)
+}
+
+fn migrate_schema_with(conn: &mut rusqlite::Connection, migrations: &[Migration]) -> Result<()> {
+    let tx = conn.transaction()?;
+
+    if migrations.is_empty() {
+        bail!("No migrations defined");
+    }
+
+    let base = migrations.first().unwrap().version;
+    let latest = migrations.last().unwrap().version;
+
+    if !migrations.iter().map(|mig| mig.version).eq(base..=latest) {
+        bail!(
+            "Migration sequence {:?} is not contiguous",
+            migrations
+                .iter()
+                .map(|mig| mig.version)
+                .collect::<Vec<u32>>()
+        );
+    }
+
+    let mut version: u32 = tx.query_row(sql!("PRAGMA user_version"), [], |row| row.get(0))?;
+
+    if version == 0 {
+        println!("New database, migrating to latest version {latest}");
+    } else if (base..latest).contains(&version) {
+        println!("Database has version {version}, migrating to latest version {latest}");
+    } else if version == latest {
+        bail!("Database schema is up to date (version {version})");
+    } else {
+        bail!(
+            "Database schema version {version} is outside of the valid range ({} to {})",
+            base,
+            latest
+        )
+    };
+
+    // Since the base migration is the starting point for new databases, a new database version can
+    // be handled like the version before the current base
+    if version == 0 {
+        version = base - 1;
+    }
+
+    for Migration { version, sql } in migrations.iter().skip((1 + version - base) as usize) {
+        tx.execute_batch(sql)
+            .with_context(|| format!("Database migration {version} failed"))?;
+    }
+
+    tx.pragma_update(None, "user_version", latest)?;
+
+    tx.commit()?;
+
+    println!("Database schema successfully migrated to version {latest}");
+    Ok(())
+}
 
 /// Wraps an async database connection and provides means to use it
 #[derive(Clone, Debug)]
@@ -76,54 +190,4 @@ impl Connection {
             }
         }
     }
-}
-
-/// Sets connection parameters on an SQLite connection.
-pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    // We use the carray extension to bind arrays to parameters
-    rusqlite::vtab::array::load_module(conn)?;
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
-    conn.pragma_update(None, "journal_mode", "DELETE")?;
-    conn.pragma_update(None, "synchronous", "ON")?;
-
-    Ok(())
-}
-
-pub fn create_file(db_path: &Path) -> Result<()> {
-    if db_path.try_exists()? {
-        bail!("Database file {db_path:?} already exists");
-    }
-
-    std::fs::create_dir_all(db_path.parent().ok_or_else(|| {
-        anyhow!("Could not determine parent folder of database file {db_path:?}")
-    })?)?;
-
-    std::fs::File::create(db_path)
-        .with_context(|| format!("Creating database file {db_path:?} failed"))?;
-
-    Ok(())
-}
-
-pub fn create_schema(tx: &mut Transaction) -> Result<()> {
-    tx.execute_batch(include_str!("db/schema/schema.sql"))?;
-
-    Ok(())
-}
-
-pub fn open(db_path: &Path) -> Result<rusqlite::Connection> {
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )?;
-
-    setup_connection(&conn)?;
-
-    Ok(conn)
-}
-
-pub fn open_in_memory() -> Result<rusqlite::Connection> {
-    let conn = rusqlite::Connection::open_in_memory()?;
-    setup_connection(&conn)?;
-    Ok(conn)
 }
