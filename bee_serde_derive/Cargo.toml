@@ -1,11 +1,13 @@
 [package]
 name = "bee_serde_derive"
-version = "0.1.0"
-edition = "2021"
-authors = ["ThinkParQ GmbH"]
 description = "Derive macro for bee_serde"
-homepage = "https://www.beegfs.io"
-publish = false
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+publish.workspace = true
 
 [lib]
 proc-macro = true

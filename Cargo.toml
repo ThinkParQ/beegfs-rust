@@ -1,6 +1,15 @@
 [workspace]
 resolver = "2"
-members = ["shared", "mgmtd"]
+members = ["shared", "mgmtd", "sqlite_check", "bee_serde_derive"]
+
+[workspace.package]
+version = "0.1.0"
+license = "undecided"
+edition = "2021"
+authors = ["ThinkParQ GmbH"]
+homepage = "https://www.beegfs.io"
+documentation = "https://doc.beegfs.io"
+publish = false
 
 [workspace.dependencies]
 anyhow = "~1"

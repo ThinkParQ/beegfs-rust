@@ -1,19 +1,19 @@
 [package]
 name = "mgmtd"
-version = "0.1.0"
-license = "undecided"
-edition = "2021"
-authors = ["ThinkParQ GmbH"]
 description = "BeeGFS management node Rust prototype"
 readme = "README.md"
-homepage = "https://www.beegfs.io"
-documentation = "https://doc.beegfs.io"
-publish = false
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+publish.workspace = true
 
 [dependencies]
 shared = { path = "../shared"}
 pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.6" }
-sql_check = { path = "sql_check"}
+sqlite_check = { path = "../sqlite_check"}
 
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

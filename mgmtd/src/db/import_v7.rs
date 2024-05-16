@@ -7,7 +7,7 @@ use shared::bee_msg::quota::{QuotaDefaultLimits, QuotaEntry};
 use shared::bee_msg::storage_pool::StoragePool;
 use shared::bee_serde::{Deserializable, Deserializer};
 use shared::types::*;
-use sql_check::sql;
+use sqlite_check::sql;
 use std::path::Path;
 
 /// Import v7 management data into the database. The database must be new, there must be no entries

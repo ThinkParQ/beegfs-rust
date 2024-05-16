@@ -4,7 +4,7 @@ use crate::db::TransactionExt;
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
 use shared::types::StoragePoolID;
-use sql_check::sql;
+use sqlite_check::sql;
 
 impl Handler for Ack {
     type Response = ();

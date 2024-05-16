@@ -8,7 +8,7 @@ use rusqlite::params;
 use shared::error_chain;
 use shared::shutdown::Shutdown;
 use shared::types::EntityUID;
-use sql_check::sql;
+use sqlite_check::sql;
 use std::net::SocketAddr;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};

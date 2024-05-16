@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Result};
 use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension, Params, Row, Transaction};
 use shared::types::*;
-use sql_check::sql;
+use sqlite_check::sql;
 use std::rc::Rc;
 
 pub(crate) mod buddy_group;
