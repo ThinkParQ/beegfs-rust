@@ -7,6 +7,7 @@ use shared::bee_msg::target::RefreshTargetStates;
 use shared::log_error_chain;
 use shared::shutdown::Shutdown;
 use shared::types::NodeType;
+use sqlite::ConnectionExt;
 use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 

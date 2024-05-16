@@ -11,6 +11,7 @@ use shared::bee_msg::quota::{
 use shared::bee_msg::OpsErr;
 use shared::log_error_chain;
 use shared::types::{NodeType, NodeTypeServer, QuotaID};
+use sqlite::ConnectionExt;
 use std::collections::HashSet;
 use std::path::Path;
 

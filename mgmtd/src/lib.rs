@@ -19,6 +19,7 @@ use shared::conn::{incoming, Pool};
 use shared::shutdown::Shutdown;
 use shared::types::{AuthenticationSecret, NicType, MGMTD_UID};
 use shared::NetworkAddr;
+use sqlite::ConnectionExt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
@@ -63,7 +64,11 @@ pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
         info.auth_secret,
     );
 
-    let db = db::Connection::open(info.user_config.db_file.as_path()).await?;
+    let db = sqlite::open_async(info.user_config.db_file.as_path()).await?;
+    log::info!(
+        "Opened database at {:?}",
+        info.user_config.db_file.as_path()
+    );
 
     db.op(|tx| {
         // Update management node entry in db

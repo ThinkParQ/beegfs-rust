@@ -13,5 +13,7 @@ publish.workspace = true
 proc-macro = true
 
 [dependencies]
+sqlite = {path = "../sqlite" }
+
 syn = { version = "~2", features = ["parsing"] }
 rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}

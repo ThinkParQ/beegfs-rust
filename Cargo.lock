@@ -653,6 +653,7 @@ dependencies = [
  "sd-notify",
  "serde",
  "shared",
+ "sqlite",
  "sqlite_check",
  "thiserror",
  "tokio",
@@ -1092,10 +1093,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
+name = "sqlite"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rusqlite",
+ "tokio-rusqlite",
+]
+
+[[package]]
 name = "sqlite_check"
 version = "0.1.0"
 dependencies = [
  "rusqlite",
+ "sqlite",
  "syn",
 ]
 

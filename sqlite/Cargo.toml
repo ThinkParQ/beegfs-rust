@@ -1,0 +1,16 @@
+[package]
+name = "sqlite"
+description = "SQLite tools"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+rusqlite = { workspace = true }
+tokio-rusqlite = { workspace = true }
+

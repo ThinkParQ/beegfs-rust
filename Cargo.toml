@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["shared", "mgmtd", "sqlite_check", "bee_serde_derive"]
+members = ["shared", "mgmtd", "sqlite", "sqlite_check", "bee_serde_derive"]
 
 [workspace.package]
 version = "0.1.0"
@@ -20,7 +20,9 @@ itertools = "~0"
 log = { version = "~0", features = ["std"] }
 prost = "~0"
 regex = "~1"
+rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}
 serde = "~1"
 thiserror = "~1"
 tokio = { version = "~1", features = ["rt", "sync", "macros"] }
+tokio-rusqlite = "0.5.0"
 tonic = { version = "~0", features = ["tls"] }

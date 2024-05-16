@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{anyhow, bail, Context};
 use mgmtd::config::LogTarget;
 use mgmtd::{start, StaticInfo};
 use shared::types::AuthenticationSecret;
@@ -124,11 +124,22 @@ fn inner_main() -> anyhow::Result<()> {
 fn setup_db(db_path: &Path, init: bool, v7_path: Option<&Path>) -> anyhow::Result<()> {
     // Create database file
     if init {
-        mgmtd::db::create_file(db_path)?;
+        if db_path.try_exists()? {
+            bail!("Database file {db_path:?} already exists");
+        }
+
+        std::fs::create_dir_all(db_path.parent().ok_or_else(|| {
+            anyhow!("Could not determine parent folder of database file {db_path:?}")
+        })?)?;
+
+        std::fs::File::create(db_path)
+            .with_context(|| format!("Creating database file {db_path:?} failed"))?;
+
+        println!("Database file created at {db_path:?}");
     }
 
     // Connect
-    let mut conn = mgmtd::db::open(db_path)?;
+    let mut conn = sqlite::open(db_path)?;
 
     // Fill database
     if init {
@@ -145,7 +156,7 @@ fn setup_db(db_path: &Path, init: bool, v7_path: Option<&Path>) -> anyhow::Resul
 }
 
 fn upgrade_db(db_path: &Path) -> anyhow::Result<()> {
-    let mut conn = mgmtd::db::open(db_path)?;
+    let mut conn = sqlite::open(db_path)?;
     mgmtd::db::migrate_schema(&mut conn).with_context(|| "Upgrading database schema failed")?;
 
     println!("Database upgraded");

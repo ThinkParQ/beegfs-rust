@@ -1,9 +1,7 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::db::TransactionExt;
 use shared::bee_msg::storage_pool::*;
 use shared::types::{BuddyGroupID, NodeID, StoragePoolID, TargetID, DEFAULT_STORAGE_POOL};
-use sqlite_check::sql;
 
 impl Handler for AddStoragePool {
     type Response = AddStoragePoolResp;

@@ -1,9 +1,9 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::db::TransactionExt;
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
 use shared::types::StoragePoolID;
+use sqlite::TransactionExt;
 use sqlite_check::sql;
 
 impl Handler for Ack {

@@ -11,11 +11,12 @@ homepage.workspace = true
 publish.workspace = true
 
 [build-dependencies]
-rusqlite = { version = "~0", features = ["bundled"]}
+sqlite = { path = "../sqlite" }
 
 [dependencies]
 shared = { path = "../shared"}
 pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.6" }
+sqlite = { path = "../sqlite" }
 sqlite_check = { path = "../sqlite_check"}
 
 anyhow = { workspace = true }
@@ -26,7 +27,7 @@ libc = { version = "~0" }
 log = { workspace = true }
 prost = { workspace = true }
 regex = { workspace = true }
-rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}
+rusqlite = { workspace = true }
 sd-notify = "~0"
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
@@ -38,7 +39,7 @@ tokio = { workspace = true, features = [
     "time",
     "io-util",
 ] }
-tokio-rusqlite = "0.5.0"
+tokio-rusqlite = { workspace = true }
 toml = "~0"
 tonic = { workspace = true }
 

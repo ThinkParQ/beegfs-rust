@@ -54,9 +54,7 @@ pub fn sql(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 /// Set up an in memory SQLite database for testing
 fn open_db() -> Arc<Mutex<rusqlite::Connection>> {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    rusqlite::vtab::array::load_module(&conn).unwrap();
-
+    let conn = sqlite::open_in_memory().unwrap();
     let schema_file = Path::new(&std::env::var_os("OUT_DIR").unwrap()).join("current.sql");
 
     conn.execute_batch(&std::fs::read_to_string(schema_file).unwrap())
