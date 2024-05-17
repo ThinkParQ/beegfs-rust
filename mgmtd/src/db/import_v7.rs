@@ -44,13 +44,13 @@ pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()
         &base_path.join("targetNumIDs"),
     )
     .context("storage targets (target + targetNumIDs)")?;
-    storage_pools(&mut tx, &base_path.join("storagePools")).context("storagePools")?;
     buddy_groups(
         &mut tx,
         &base_path.join("storagebuddygroups"),
         NodeTypeServer::Storage,
     )
     .context("storage buddy groups (storagebuddygroups)")?;
+    storage_pools(&mut tx, &base_path.join("storagePools")).context("storagePools")?;
 
     // Meta
     let (root_id, root_mirrored) =
