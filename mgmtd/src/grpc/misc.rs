@@ -1,7 +1,7 @@
 use super::*;
 use crate::db;
 use crate::db::entity::check_alias;
-use crate::types::EntityType;
+use crate::types::{EntityType, SqliteStr};
 use anyhow::bail;
 use rusqlite::OptionalExtension;
 
@@ -16,7 +16,7 @@ pub(crate) async fn set_alias(ctx: &Context, req: SetAliasRequest) -> Result<Set
                 .query_row_cached(
                     sql!("SELECT entity_type FROM entities WHERE alias = ?1"),
                     [&req.new_alias],
-                    |row| row.get(0),
+                    |row| EntityType::from_row(row, 0),
                 )
                 .optional()?;
 
@@ -24,7 +24,7 @@ pub(crate) async fn set_alias(ctx: &Context, req: SetAliasRequest) -> Result<Set
                 bail!(
                     "Alias {} is already in use by a {}",
                     req.new_alias,
-                    et.as_sql_str()
+                    et.sql_str()
                 );
             }
 

@@ -6,13 +6,16 @@
 use crate::context::Context;
 use crate::db;
 use crate::error::TypedError;
-use crate::types::{NodeType, NodeTypeServer};
+use crate::types::SqliteStr;
 use anyhow::{bail, Result};
 use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
 use shared::bee_msg::{Msg, OpsErr};
 use shared::bee_serde::Serializable;
 use shared::conn::msg_dispatch::*;
 use shared::log_error_chain;
+use shared::types::*;
+use sqlite::{ConnectionExt, TransactionExt};
+use sqlite_check::sql;
 use std::collections::HashMap;
 
 mod buddy_group;

@@ -1,19 +1,23 @@
 [package]
 name = "mgmtd"
-version = "0.1.0"
-license = "undecided"
-edition = "2021"
-authors = ["ThinkParQ GmbH"]
 description = "BeeGFS management node Rust prototype"
 readme = "README.md"
-homepage = "https://www.beegfs.io"
-documentation = "https://doc.beegfs.io"
-publish = false
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+sqlite = { path = "../sqlite" }
 
 [dependencies]
 shared = { path = "../shared"}
 pb = { package = "protobuf", git = "https://github.com/thinkparq/protobuf", tag = "v0.0.6" }
-sql_check = { path = "sql_check"}
+sqlite = { path = "../sqlite" }
+sqlite_check = { path = "../sqlite_check"}
 
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -23,7 +27,7 @@ libc = { version = "~0" }
 log = { workspace = true }
 prost = { workspace = true }
 regex = { workspace = true }
-rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}
+rusqlite = { workspace = true }
 sd-notify = "~0"
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
@@ -35,7 +39,7 @@ tokio = { workspace = true, features = [
     "time",
     "io-util",
 ] }
-tokio-rusqlite = "0.5.0"
+tokio-rusqlite = { workspace = true }
 toml = "~0"
 tonic = { workspace = true }
 

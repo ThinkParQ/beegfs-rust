@@ -1,5 +1,9 @@
+use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use syn::{parse_macro_input, LitStr};
+
+/// The global connection handle
+static DB_CONN: OnceLock<Arc<Mutex<rusqlite::Connection>>> = OnceLock::new();
 
 /// Takes a string literal and executes it against the Managements SQLite database, checking it for
 /// validity. This includes the general SQL syntax as well as the provided field and table names.
@@ -15,7 +19,7 @@ use syn::{parse_macro_input, LitStr};
 ///
 /// # Example
 /// Valid SQL:
-/// ```
+/// ```ignore
 /// use sql_check::sql;
 ///
 /// let query = sql!("SELECT * FROM nodes");
@@ -31,10 +35,8 @@ use syn::{parse_macro_input, LitStr};
 #[proc_macro]
 pub fn sql(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // Parse the input
-    let input2 = input.clone();
+    let orig_input = input.clone();
     let input = parse_macro_input!(input as LitStr).value();
-
-    // let input = input.replace("{}", "");
 
     let result = {
         // Get the global connection handle
@@ -47,21 +49,15 @@ pub fn sql(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         panic!("SQL statement is invalid: {err}");
     }
 
-    input2
+    orig_input
 }
-
-/// The global connection handle
-static DB_CONN: OnceLock<Arc<Mutex<rusqlite::Connection>>> = OnceLock::new();
 
 /// Set up an in memory SQLite database for testing
 fn open_db() -> Arc<Mutex<rusqlite::Connection>> {
-    let conn = rusqlite::Connection::open_in_memory().unwrap();
-    rusqlite::vtab::array::load_module(&conn).unwrap();
+    let conn = sqlite::open_in_memory().unwrap();
+    let schema_file = Path::new(&std::env::var_os("OUT_DIR").unwrap()).join("current.sql");
 
-    // Setup test data
-    conn.execute_batch(include_str!("../../src/db/schema/schema.sql"))
-        .unwrap();
-    conn.execute_batch(include_str!("../../src/db/schema/test_data.sql"))
+    conn.execute_batch(&std::fs::read_to_string(schema_file).unwrap())
         .unwrap();
 
     Arc::new(Mutex::new(conn))

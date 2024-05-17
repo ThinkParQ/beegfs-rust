@@ -1,7 +1,8 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::types::{CapacityPool, NodeTypeServer, TargetConsistencyState};
+use crate::types::SqliteStr;
 use pb::beegfs::beegfs as pb;
+use shared::bee_msg::misc::CapacityPool;
 use std::time::Duration;
 
 impl CapacityInfo for &pb::get_targets_response::Target {
@@ -31,10 +32,7 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
     );
 
     let targets_f = move |row: &rusqlite::Row| {
-        let node_type = match row.get(3)? {
-            NodeTypeServer::Meta => pb::NodeType::Meta,
-            NodeTypeServer::Storage => pb::NodeType::Storage,
-        } as i32;
+        let node_type = pb::NodeType::from_row(row, 3)? as i32;
 
         Ok(pb::get_targets_response::Target {
             id: Some(pb::EntityIdSet {
@@ -74,11 +72,7 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 Duration::from_secs(row.get(11)?),
                 node_offline_timeout,
             ) as i32,
-            consistency_state: match row.get(10)? {
-                TargetConsistencyState::Good => target::ConsistencyState::Good,
-                TargetConsistencyState::NeedsResync => target::ConsistencyState::NeedsResync,
-                TargetConsistencyState::Bad => target::ConsistencyState::Bad,
-            } as i32,
+            consistency_state: pb::ConsistencyState::from_row(row, 10)? as i32,
             last_contact_s: row.get(11)?,
             free_space_bytes: row.get(12)?,
             free_inodes: row.get(13)?,
@@ -155,7 +149,7 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
     Ok(GetTargetsResponse { targets })
 }
 
-/// Calculate reachability state as known by old BeeGFS code.
+/// Calculate reachability state
 pub(crate) fn calc_reachability_state(
     contact_age: Duration,
     timeout: Duration,

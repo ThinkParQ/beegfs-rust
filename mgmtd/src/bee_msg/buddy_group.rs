@@ -78,7 +78,7 @@ impl Handler for GetStatesAndBuddyGroups {
                                     e.last_contact,
                                     ctx.info.user_config.node_offline_timeout,
                                 ),
-                                consistency: e.consistency.into(),
+                                consistency: e.consistency,
                             },
                         )
                     })

@@ -4,14 +4,14 @@ use crate::context::Context;
 use crate::db;
 use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
-use crate::types::{NodeType, NodeTypeServer};
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
 };
 use shared::bee_msg::OpsErr;
 use shared::log_error_chain;
-use shared::types::QuotaID;
+use shared::types::{NodeType, NodeTypeServer, QuotaID};
+use sqlite::ConnectionExt;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -150,7 +150,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
                         target_id,
                         r.quota_entry.into_iter().map(|e| QuotaData {
                             quota_id: e.id,
-                            id_type: e.id_type.into(),
+                            id_type: e.id_type,
                             space: e.space,
                             inodes: e.inodes,
                         }),
@@ -165,8 +165,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     for e in ctx.db.op(db::quota_usage::all_exceeded_quota_ids).await? {
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
-                && e.id_type == last.id_type.into()
-                && e.quota_type == last.quota_type.into()
+                && e.id_type == last.id_type
+                && e.quota_type == last.quota_type
             {
                 last.exceeded_quota_ids.push(e.quota_id);
                 continue;
@@ -175,8 +175,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 
         msges.push(SetExceededQuota {
             pool_id: e.pool_id,
-            id_type: e.id_type.into(),
-            quota_type: e.quota_type.into(),
+            id_type: e.id_type,
+            quota_type: e.quota_type,
             exceeded_quota_ids: vec![e.quota_id],
         });
     }

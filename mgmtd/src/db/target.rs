@@ -32,14 +32,14 @@ pub(crate) fn get_with_type(
             INNER JOIN nodes AS n USING(node_uid)
             WHERE t.node_type = ?1 AND t.node_id IS NOT NULL;"
         ),
-        [node_type],
+        [node_type.sql_str()],
         |row| {
             Ok(Target {
                 target_id: row.get(0)?,
                 node_uid: row.get(1)?,
                 node_id: row.get(2)?,
                 pool_id: row.get(3)?,
-                consistency: row.get(4)?,
+                consistency: TargetConsistencyState::from_row(row, 4)?,
                 last_contact: Duration::from_secs(row.get(5)?),
             })
         },
@@ -58,7 +58,7 @@ pub(crate) fn get_uid(
     Ok(tx
         .query_row_cached(
             sql!("SELECT target_uid FROM all_targets_v WHERE target_id = ?1 AND node_type = ?2"),
-            params![target_id, node_type],
+            params![target_id, node_type.sql_str()],
             |row| row.get(0),
         )
         .optional()?)
@@ -167,14 +167,14 @@ fn insert(
     let alias = if let Some(alias) = alias {
         Cow::Borrowed(alias)
     } else {
-        Cow::Owned(format!("target_{}_{}", node_type.as_sql_str(), target_id))
+        Cow::Owned(format!("target_{}_{}", node_type.sql_str(), target_id))
     };
 
     let new_uid = entity::insert(tx, EntityType::Target, alias.as_ref())?;
 
     tx.execute(
         sql!("INSERT INTO targets (target_uid, node_type) VALUES (?1, ?2)"),
-        params![new_uid, node_type],
+        params![new_uid, node_type.sql_str()],
     )?;
 
     tx.execute(
@@ -215,7 +215,7 @@ pub(crate) fn update_consistency_states(
 
     let mut updated = 0;
     for e in changes {
-        updated += update.execute(params![e.0, node_type, e.1])?;
+        updated += update.execute(params![e.0, node_type.sql_str(), e.1.sql_str()])?;
     }
 
     Ok(updated)
@@ -316,7 +316,7 @@ pub(crate) fn get_and_update_capacities(
     let mut old_values = vec![];
 
     for i in items {
-        old_values.push(select.query_row(params![i.0, node_type], |row| {
+        old_values.push(select.query_row(params![i.0, node_type.sql_str()], |row| {
             Ok((
                 i.0,
                 TargetCapacities {
@@ -334,7 +334,7 @@ pub(crate) fn get_and_update_capacities(
             i.1.free_space,
             i.1.free_inodes,
             i.0,
-            node_type
+            node_type.sql_str()
         ])?;
     }
 

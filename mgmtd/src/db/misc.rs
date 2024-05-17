@@ -152,39 +152,31 @@ pub(crate) fn uid_from_proto_entity_id(
                 };
 
                 node::get_uid(tx, legacy_id.num_id, nt)?.ok_or_else(|| {
-                    anyhow!(
-                        "node {}:{} doesn't exist",
-                        nt.as_sql_str(),
-                        legacy_id.num_id
-                    )
+                    anyhow!("node {}:{} doesn't exist", nt.sql_str(), legacy_id.num_id)
                 })?
             }
             EntityType::Target => {
                 let nt = match legacy_id.node_type() {
                     beegfs::NodeType::Meta => NodeTypeServer::Meta,
-                    beegfs::NodeType::Storage => crate::types::NodeTypeServer::Storage,
+                    beegfs::NodeType::Storage => NodeTypeServer::Storage,
                     t => bail!("invalid node type: {t:?}"),
                 };
 
                 target::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.ok_or_else(|| {
-                    anyhow!(
-                        "target {}:{} doesn't exist",
-                        nt.as_sql_str(),
-                        legacy_id.num_id
-                    )
+                    anyhow!("target {}:{} doesn't exist", nt.sql_str(), legacy_id.num_id)
                 })?
             }
             EntityType::BuddyGroup => {
                 let nt = match legacy_id.node_type() {
                     beegfs::NodeType::Meta => NodeTypeServer::Meta,
-                    beegfs::NodeType::Storage => crate::types::NodeTypeServer::Storage,
+                    beegfs::NodeType::Storage => NodeTypeServer::Storage,
                     t => bail!("invalid node type: {t:?}"),
                 };
 
                 buddy_group::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.ok_or_else(|| {
                     anyhow!(
                         "buddy group {}:{} doesn't exist",
-                        nt.as_sql_str(),
+                        nt.sql_str(),
                         legacy_id.num_id
                     )
                 })?

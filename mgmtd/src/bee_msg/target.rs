@@ -1,6 +1,5 @@
 use super::*;
 use crate::db::target::TargetCapacities;
-use crate::types::{NodeType, NodeTypeServer, TargetConsistencyState};
 use shared::bee_msg::misc::RefreshCapacityPools;
 use shared::bee_msg::target::*;
 use std::time::Duration;
@@ -50,7 +49,7 @@ impl Handler for GetTargetStates {
                         e.last_contact,
                         ctx.info.user_config.node_offline_timeout,
                     ));
-                    consistency_states.push(e.consistency.into());
+                    consistency_states.push(e.consistency);
                 }
 
                 GetTargetStatesResp {

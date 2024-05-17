@@ -1,7 +1,7 @@
 //! Interfaces and implementations for in-app interaction between tasks or threads.
 
 use crate::bee_msg::dispatch_request;
-use crate::{db, StaticInfo};
+use crate::StaticInfo;
 use anyhow::Result;
 use shared::conn::msg_dispatch::*;
 use shared::conn::Pool;
@@ -24,7 +24,7 @@ pub(crate) struct Context {
 #[derive(Debug)]
 pub(crate) struct InnerContext {
     pub conn: Pool,
-    pub db: db::Connection,
+    pub db: tokio_rusqlite::Connection,
     pub info: &'static StaticInfo,
 }
 
@@ -32,7 +32,11 @@ impl Context {
     /// Creates a new AppHandles object.
     ///
     /// Takes all the stored handles.
-    pub(crate) fn new(conn: Pool, db: db::Connection, info: &'static StaticInfo) -> Self {
+    pub(crate) fn new(
+        conn: Pool,
+        db: tokio_rusqlite::Connection,
+        info: &'static StaticInfo,
+    ) -> Self {
         Self {
             inner: Arc::new(InnerContext { conn, db, info }),
         }

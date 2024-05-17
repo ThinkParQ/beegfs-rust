@@ -1,0 +1,19 @@
+[package]
+name = "sqlite_check"
+description = "SQLite query checker"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+authors.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+publish.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+sqlite = {path = "../sqlite" }
+
+syn = { version = "~2", features = ["parsing"] }
+rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}

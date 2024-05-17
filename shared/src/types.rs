@@ -1,7 +1,7 @@
 //! Various BeeGFS type definitions, mainly for use by BeeMsg.
 
 use crate::bee_serde::*;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bee_serde_derive::BeeSerde;
 use core::hash::Hash;
 use std::fmt::Debug;
@@ -41,6 +41,36 @@ impl_enum_to_int!(NodeType,
     Client => 3,
     Management => 4
 );
+
+/// A node type only accepting server nodes.
+///
+/// In a lot of operations, only meta or storage makes sense, so we provide this extra enum for
+/// that.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NodeTypeServer {
+    Meta,
+    Storage,
+}
+
+impl TryFrom<NodeType> for NodeTypeServer {
+    type Error = anyhow::Error;
+
+    fn try_from(value: NodeType) -> Result<Self, Self::Error> {
+        match value {
+            NodeType::Meta => Ok(Self::Meta),
+            NodeType::Storage => Ok(Self::Storage),
+            t => Err(anyhow!("{t:?} cannot be converted")),
+        }
+    }
+}
+impl From<NodeTypeServer> for NodeType {
+    fn from(value: NodeTypeServer) -> Self {
+        match value {
+            NodeTypeServer::Meta => Self::Meta,
+            NodeTypeServer::Storage => Self::Storage,
+        }
+    }
+}
 
 /// The network interface type as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

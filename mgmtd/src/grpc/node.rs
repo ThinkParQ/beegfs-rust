@@ -1,8 +1,8 @@
 use super::*;
-use crate::types::{NicType, NodeType};
+use crate::types::SqliteStr;
 use pb::beegfs::beegfs as pb;
 use pb::get_nodes_response::node::Nic;
-use shared::types::NodeID;
+use shared::types::{NicType, NodeID};
 use std::net::Ipv4Addr;
 
 pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesResponse> {
@@ -19,10 +19,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                     ),
                     [],
                     |row| {
-                        let nic_type = match row.get(3)? {
-                            NicType::Ethernet => pb::NicType::Ethernet,
-                            NicType::Rdma => pb::NicType::Rdma,
-                        } as i32;
+                        let nic_type = NicType::from_row(row, 3)? as i32;
 
                         Ok((
                             row.get(0)?,
@@ -45,12 +42,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                 ),
                 [],
                 |row| {
-                    let node_type = match row.get(2)? {
-                        NodeType::Meta => pb::NodeType::Meta,
-                        NodeType::Storage => pb::NodeType::Storage,
-                        NodeType::Client => pb::NodeType::Client,
-                        NodeType::Management => pb::NodeType::Management,
-                    } as i32;
+                    let node_type = pb::NodeType::from_row(row, 2)? as i32;
 
                     let node = pb::EntityIdSet {
                         uid: row.get(0)?,

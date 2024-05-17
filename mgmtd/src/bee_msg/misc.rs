@@ -1,10 +1,10 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::db::TransactionExt;
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
 use shared::types::StoragePoolID;
-use sql_check::sql;
+use sqlite::TransactionExt;
+use sqlite_check::sql;
 
 impl Handler for Ack {
     type Response = ();
@@ -96,7 +96,7 @@ fn load_targets_by_type(
             FROM all_targets_v
             WHERE node_type = ?1 AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
         ),
-        [node_type],
+        [node_type.sql_str()],
         |row| {
             Ok(TargetOrBuddyGroup {
                 id: row.get(0)?,
@@ -126,7 +126,7 @@ fn load_buddy_groups_by_type(
                 AND p_t.free_space IS NOT NULL AND s_t.free_space IS NOT NULL
                 AND p_t.free_inodes IS NOT NULL AND s_t.free_inodes IS NOT NULL"
         ),
-        [node_type],
+        [node_type.sql_str()],
         |row| {
             Ok(TargetOrBuddyGroup {
                 id: row.get(0)?,
@@ -163,10 +163,7 @@ impl Handler for GetNodeCapacityPools {
 
                     let mut res = vec![Vec::<u16>::new(), vec![], vec![]];
                     for t in targets {
-                        res[usize::from(CapacityPool::from(
-                            cp_calc.cap_pool(t.free_space, t.free_inodes),
-                        ))]
-                        .push(t.id);
+                        res[usize::from(cp_calc.cap_pool(t.free_space, t.free_inodes))].push(t.id);
                     }
 
                     [(0, res)].into()
@@ -203,9 +200,8 @@ impl Handler for GetNodeCapacityPools {
 
                         res.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
                         for t in f_targets {
-                            res.get_mut(&sp).unwrap()[usize::from(CapacityPool::from(
-                                cp_calc.cap_pool(t.free_space, t.free_inodes),
-                            ))]
+                            res.get_mut(&sp).unwrap()
+                                [usize::from(cp_calc.cap_pool(t.free_space, t.free_inodes))]
                             .push(t.id);
                         }
                     }
@@ -228,10 +224,7 @@ impl Handler for GetNodeCapacityPools {
                     let mut res = vec![Vec::<u16>::new(), vec![], vec![]];
 
                     for e in groups {
-                        res[usize::from(CapacityPool::from(
-                            cp_calc.cap_pool(e.free_space, e.free_inodes),
-                        ))]
-                        .push(e.id);
+                        res[usize::from(cp_calc.cap_pool(e.free_space, e.free_inodes))].push(e.id);
                     }
 
                     [(0, res)].into()
@@ -268,9 +261,8 @@ impl Handler for GetNodeCapacityPools {
 
                         cap_pools.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
                         for t in f_groups {
-                            cap_pools.get_mut(&sp).unwrap()[usize::from(CapacityPool::from(
-                                cp_calc.cap_pool(t.free_space, t.free_inodes),
-                            ))]
+                            cap_pools.get_mut(&sp).unwrap()
+                                [usize::from(cp_calc.cap_pool(t.free_space, t.free_inodes))]
                             .push(t.id);
                         }
                     }

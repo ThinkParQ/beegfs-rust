@@ -27,7 +27,7 @@ pub(crate) fn get_with_type(
             FROM all_buddy_groups_v
             WHERE node_type = ?1;"
         ),
-        [node_type],
+        [node_type.sql_str()],
         |row| {
             Ok(BuddyGroup {
                 id: row.get(0)?,
@@ -54,7 +54,7 @@ pub(crate) fn get_uid(
                 "SELECT buddy_group_uid FROM all_buddy_groups_v
                 WHERE buddy_group_id = ?1 AND node_type = ?2"
             ),
-            params![buddy_group_id, node_type],
+            params![buddy_group_id, node_type.sql_str()],
             |row| row.get(0),
         )
         .optional()?;
@@ -115,7 +115,7 @@ pub(crate) fn insert(
     let buddy_group_id = if buddy_group_id == 0 {
         misc::find_new_id(
             tx,
-            &format!("{}_buddy_groups", node_type.as_sql_str()),
+            &format!("{}_buddy_groups", node_type.sql_str()),
             "buddy_group_id",
             1..=0xFFFF,
         )?
@@ -135,7 +135,7 @@ pub(crate) fn insert(
              WHERE node_type = ?1
              AND (p_target_id IN (?2, ?3) OR s_target_id IN (?2, ?3))"
         ),
-        params![node_type, primary_target_id, secondary_target_id],
+        params![node_type.sql_str(), primary_target_id, secondary_target_id],
         |row| row.get::<_, i64>(0),
     )? > 0
     {
@@ -150,7 +150,7 @@ pub(crate) fn insert(
     } else {
         Cow::Owned(format!(
             "buddy_group_{}_{}",
-            node_type.as_sql_str(),
+            node_type.sql_str(),
             buddy_group_id
         ))
     };
@@ -161,7 +161,7 @@ pub(crate) fn insert(
     // Insert generic buddy group
     tx.execute(
         sql!("INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES (?1, ?2)"),
-        params![new_uid, node_type],
+        params![new_uid, node_type.sql_str()],
     )?;
 
     // Insert type specific buddy group
@@ -261,7 +261,7 @@ pub(crate) fn check_and_swap_buddies(
                 AND (STRFTIME('%s', 'now') - STRFTIME('%s', s_n.last_contact)) < (?1 / 2)"
         ),
         [timeout.as_secs()],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| Ok((row.get(0)?, NodeTypeServer::from_row(row, 1)?)),
     )?;
 
     for &(id, node_type) in &affected_groups {

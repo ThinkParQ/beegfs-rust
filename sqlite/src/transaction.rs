@@ -1,24 +1,7 @@
-#[cfg(test)]
-use super::test::*;
-use crate::error::TypedError;
-use crate::types::*;
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use rusqlite::types::Value;
-use rusqlite::{params, OptionalExtension, Params, Row, Transaction};
-use shared::types::{BuddyGroupID, EntityUID, NodeID, Port, QuotaID, StoragePoolID, TargetID};
-use sql_check::sql;
+use rusqlite::{Params, Row, Transaction};
 use std::rc::Rc;
-
-pub(crate) mod buddy_group;
-pub(crate) mod entity;
-pub(crate) mod misc;
-pub(crate) mod node;
-pub(crate) mod node_nic;
-pub(crate) mod quota_default_limit;
-pub(crate) mod quota_limit;
-pub(crate) mod quota_usage;
-pub(crate) mod storage_pool;
-pub(crate) mod target;
 
 /// Convenience methods meant for extending [rusqlite::Transaction].
 ///
@@ -87,7 +70,7 @@ impl TransactionExt for Transaction<'_> {
 /// Transforms an iterator into a type suitable for passing as a parameter to a rusqlite statement.
 ///
 /// The bound parameter must be accessed using `rarray(?n)` within the statement.
-pub(crate) fn rarray_param<T>(iter: impl IntoIterator<Item = T>) -> Rc<Vec<Value>>
+pub fn rarray_param<T>(iter: impl IntoIterator<Item = T>) -> Rc<Vec<Value>>
 where
     Value: From<T>,
 {
@@ -97,7 +80,7 @@ where
 /// Checks if the given affected rows count matches one of the allowed entries
 ///
 /// If not, returns an en error
-pub(crate) fn check_affected_rows(
+pub fn check_affected_rows(
     affected: usize,
     allowed: impl IntoIterator<Item = usize>,
 ) -> Result<()> {

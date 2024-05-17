@@ -6,124 +6,61 @@
 //! it. The latter hide the raw SQL and resemble a primitive ORM, defining data models in terms of
 //! Rust and interfaces to obtain the data.
 
+pub(crate) mod buddy_group;
+pub(crate) mod entity;
 mod import_v7;
-mod op;
-#[cfg(test)]
-mod test;
+pub(crate) mod misc;
+pub(crate) mod node;
+pub(crate) mod node_nic;
+pub(crate) mod quota_default_limit;
+pub(crate) mod quota_limit;
+pub(crate) mod quota_usage;
+pub(crate) mod storage_pool;
+pub(crate) mod target;
 
-use anyhow::{anyhow, bail, Context, Result};
+use crate::error::TypedError;
+use crate::types::*;
+use anyhow::{anyhow, bail, Result};
 pub use import_v7::import_v7;
-pub(crate) use op::*;
-use rusqlite::config::DbConfig;
-use rusqlite::{OpenFlags, Transaction};
-use std::fmt::Debug;
-use std::path::Path;
+use rusqlite::{params, OptionalExtension, Row, Transaction};
+use shared::types::*;
+use sqlite::*;
+use sqlite_check::sql;
+#[cfg(test)]
+use test::with_test_data;
 
-/// Wraps an async database connection and provides means to use it
-#[derive(Clone, Debug)]
-pub(crate) struct Connection {
-    conn: tokio_rusqlite::Connection,
+/// Include the generated migration list. First element is the migration number, second is the
+/// SQL text to execute. The elements are guaranteed to be contiguous, but may start later than 1.
+const MIGRATIONS: &[sqlite::Migration] = include!(concat!(env!("OUT_DIR"), "/migrations.slice"));
+
+pub fn migrate_schema(conn: &mut rusqlite::Connection) -> Result<()> {
+    sqlite::migrate_schema(conn, MIGRATIONS)
 }
 
-impl Connection {
-    /// Opens a new asynchronous SQLite connection.
-    pub(crate) async fn open(path: impl AsRef<Path> + Debug) -> Result<Self> {
-        let conn =
-            tokio_rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
-                .await?;
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rusqlite::{Connection, Transaction};
 
-        conn.call(|conn| setup_connection(conn).map_err(|err| err.into()))
-            .await?;
+    /// Sets ups a fresh database instance in memory and fills, with the test data set and provides
+    /// a transaction handle.
+    pub(crate) fn with_test_data(op: impl FnOnce(&mut Transaction)) {
+        let mut conn = sqlite::open_in_memory().unwrap();
+        migrate_schema(&mut conn).unwrap();
 
-        log::info!("Opened database at {:?}", path);
+        // Setup test data
+        conn.execute_batch(include_str!("db/schema/test_data.sql"))
+            .unwrap();
 
-        Ok(Self { conn })
+        transaction(&mut conn, op)
     }
 
-    /// Executes code within the database thread.
+    /// Sets up a transaction for the given [rusqlite::Connection] and executes the provided code.
     ///
-    /// Automatically wraps the provided code in a transaction that is committed on successful
-    /// completion or rolled in case of an Error.
-    ///
-    /// Database access is provided using a single thread, so blocking or heavy computation must be
-    /// avoided.
-    pub(crate) async fn op<
-        T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>,
-        R: Send + 'static,
-    >(
-        &self,
-        op: T,
-    ) -> Result<R> {
-        let res = self
-            .conn
-            .call(move |conn| {
-                let mut tx = conn.transaction()?;
-                let res = op(&mut tx).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
-                tx.commit()?;
-
-                Ok(res)
-            })
-            .await;
-
-        match res {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                if let tokio_rusqlite::Error::Other(other) = err {
-                    return Err(anyhow!(other));
-                }
-
-                Err(err.into())
-            }
-        }
+    /// Meant for tests and does not return results.
+    pub(crate) fn transaction(conn: &mut Connection, op: impl FnOnce(&mut Transaction)) {
+        let mut tx = conn.transaction().unwrap();
+        op(&mut tx);
+        tx.commit().unwrap();
     }
-}
-
-/// Sets connection parameters on an SQLite connection.
-pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    // We use the carray extension to bind arrays to parameters
-    rusqlite::vtab::array::load_module(conn)?;
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
-    conn.pragma_update(None, "journal_mode", "DELETE")?;
-    conn.pragma_update(None, "synchronous", "ON")?;
-
-    Ok(())
-}
-
-pub fn create_file(db_path: &Path) -> Result<()> {
-    if db_path.try_exists()? {
-        bail!("Database file {db_path:?} already exists");
-    }
-
-    std::fs::create_dir_all(db_path.parent().ok_or_else(|| {
-        anyhow!("Could not determine parent folder of database file {db_path:?}")
-    })?)?;
-
-    std::fs::File::create(db_path)
-        .with_context(|| format!("Creating database file {db_path:?} failed"))?;
-
-    Ok(())
-}
-
-pub fn create_schema(tx: &mut Transaction) -> Result<()> {
-    tx.execute_batch(include_str!("db/schema/schema.sql"))?;
-
-    Ok(())
-}
-
-pub fn open(db_path: &Path) -> Result<rusqlite::Connection> {
-    let conn = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )?;
-
-    setup_connection(&conn)?;
-
-    Ok(conn)
-}
-
-pub fn open_in_memory() -> Result<rusqlite::Connection> {
-    let conn = rusqlite::Connection::open_in_memory()?;
-    setup_connection(&conn)?;
-    Ok(conn)
 }

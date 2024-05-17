@@ -74,7 +74,7 @@ pub(crate) fn insert(
 
     let affected = tx.execute_cached(
         sql!("INSERT INTO entities (entity_type, alias) VALUES (?1, ?2)"),
-        params![entity_type, alias],
+        params![entity_type.sql_str(), alias],
     )?;
 
     check_affected_rows(affected, [1])?;

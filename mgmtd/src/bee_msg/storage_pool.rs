@@ -1,11 +1,7 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::db::TransactionExt;
-use crate::types::{NodeType, NodeTypeServer};
-use shared::bee_msg::misc::CapacityPool;
 use shared::bee_msg::storage_pool::*;
 use shared::types::{BuddyGroupID, NodeID, StoragePoolID, TargetID, DEFAULT_STORAGE_POOL};
-use sql_check::sql;
 
 impl Handler for AddStoragePool {
     type Response = AddStoragePoolResp;
@@ -188,9 +184,9 @@ impl Handler for GetStoragePools {
 
                     // Only collect targets belonging to the current pool
                     for target in f_targets {
-                        let cap_pool_i = usize::from(CapacityPool::from(
+                        let cap_pool_i = usize::from(
                             cp_targets_calc.cap_pool(target.free_space, target.free_inodes),
-                        ));
+                        );
 
                         let target_id: TargetID = target.id;
                         let node_id = target.node_id.expect("targets have a node id");
@@ -210,9 +206,9 @@ impl Handler for GetStoragePools {
                     // Only collect buddy groups belonging to the current pool
                     for group in f_buddy_groups {
                         buddy_group_vec.push(group.id);
-                        buddy_group_cap_pools[usize::from(CapacityPool::from(
+                        buddy_group_cap_pools[usize::from(
                             cp_buddy_groups_calc.cap_pool(group.free_space, group.free_inodes),
-                        ))]
+                        )]
                         .push(group.id);
                     }
 

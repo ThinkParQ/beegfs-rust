@@ -14,7 +14,7 @@ impl Handler for GetNodes {
         let res = ctx
             .db
             .op(move |tx| {
-                let node_type = self.node_type.into();
+                let node_type = self.node_type;
                 let res = (
                     db::node::get_with_type(tx, node_type)?,
                     db::node_nic::get_with_type(tx, node_type)?,
@@ -43,12 +43,12 @@ impl Handler for GetNodes {
                             .map(|e| Nic {
                                 addr: e.addr,
                                 name: e.name.to_string().into_bytes(),
-                                nic_type: e.nic_type.into(),
+                                nic_type: e.nic_type,
                             })
                             .collect(),
                         port: n.port,
                         _unused_tcp_port: n.port,
-                        node_type: n.node_type.into(),
+                        node_type: n.node_type,
                     })
                     .collect(),
                 root_num_id: match res.2 {
@@ -171,7 +171,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
         let db_res = ctx
             .db
             .op(move |tx| {
-                let node_type = msg.node_type.into();
+                let node_type = msg.node_type;
 
                 let node_uid = if msg.node_id == 0 {
                     // No node ID given => new node
@@ -220,7 +220,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     tx,
                     node_uid,
                     msg.nics.iter().map(|e| ReplaceNic {
-                        nic_type: e.nic_type.into(),
+                        nic_type: e.nic_type,
                         addr: &e.addr,
                         name: std::str::from_utf8(&e.name).unwrap_or("INVALID_UTF8"),
                     }),
@@ -318,7 +318,7 @@ impl Handler for RemoveNode {
         let res = ctx
             .db
             .op(move |tx| {
-                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type.into())?
+                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type)?
                     .ok_or_else(|| TypedError::value_not_found("node ID", self.node_id))?;
 
                 db::node::delete(tx, node_uid)?;
