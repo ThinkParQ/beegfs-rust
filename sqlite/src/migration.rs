@@ -1,6 +1,7 @@
-use anyhow::{bail, Context, Result};
+use crate::ConnectionExt;
+use anyhow::{anyhow, bail, Context, Result};
 use std::fmt::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Represents a migration step using a static SQL string. A slice of these is generated as Rust
 /// code and stored to disk by write_migrations_file() to be read in at runtime.
@@ -55,22 +56,7 @@ pub fn read_migrations(src_dir: impl AsRef<Path>) -> Result<Vec<OwnedMigration>>
     // Migration order is important
     migrations.sort_by_key(|mig| mig.version);
 
-    let base = migrations.iter().min_by_key(|mig| mig.version).unwrap();
-    let latest = migrations.iter().max_by_key(|mig| mig.version).unwrap();
-
-    if !migrations
-        .iter()
-        .map(|mig| mig.version)
-        .eq(base.version..=latest.version)
-    {
-        bail!(
-            "Migration sequence {:?} is not contiguous",
-            migrations
-                .iter()
-                .map(|mig| mig.version)
-                .collect::<Vec<u32>>()
-        );
-    }
+    check_migration_versions(migrations.iter().map(|m| m.version))?;
 
     Ok(migrations)
 }
@@ -105,23 +91,9 @@ pub fn migrations_slice_code(migrations: &[OwnedMigration]) -> Result<String> {
 ///
 /// This function is meant to be run from a build script.
 pub fn flatten_migrations(migrations: &[OwnedMigration]) -> Result<String> {
+    check_migration_versions(migrations.iter().map(|m| m.version))?;
+
     let conn = rusqlite::Connection::open_in_memory()?;
-
-    if migrations.is_empty() {
-        bail!("No migrations given");
-    }
-
-    let base = migrations.first().unwrap().version;
-    let latest = migrations.last().unwrap().version;
-    if !migrations.iter().map(|mig| mig.version).eq(base..=latest) {
-        bail!(
-            "Migration sequence {:?} is not contiguous",
-            migrations
-                .iter()
-                .map(|mig| mig.version)
-                .collect::<Vec<u32>>()
-        );
-    }
 
     for m in migrations {
         conn.execute_batch(&m.sql)?;
@@ -152,44 +124,69 @@ pub fn flatten_migrations(migrations: &[OwnedMigration]) -> Result<String> {
     Ok(sql)
 }
 
+/// Creates a new sqlite database file. Created parent dirs if they don't exist.
+pub fn create_db_file(db_file: impl AsRef<Path>) -> Result<()> {
+    let db_file = db_file.as_ref();
+
+    if db_file.try_exists()? {
+        bail!("{db_file:?} already exists");
+    }
+    std::fs::create_dir_all(
+        db_file
+            .parent()
+            .ok_or_else(|| anyhow!("{db_file:?} does not have a parent folder"))?,
+    )?;
+    std::fs::File::create(db_file)?;
+
+    Ok(())
+}
+
+/// Checks that the database schema is up to date to the current latest migrations
+pub async fn check_schema_async(
+    conn: &mut tokio_rusqlite::Connection,
+    migrations: &'static [Migration],
+) -> Result<()> {
+    let (base, latest) = check_migration_versions(migrations.iter().map(|m| m.version))?;
+
+    let version: u32 = conn
+        .op(|tx| {
+            // The databases version is stored in this special sqlite header variable
+            Ok(tx.query_row("PRAGMA user_version", [], |row| row.get(0))?)
+        })
+        .await?;
+
+    if version == latest {
+        Ok(())
+    } else if (base..latest).contains(&version) {
+        bail!(
+            "Database schema version {version} is outdated. Please upgrade to latest version \
+            {latest}"
+        );
+    } else {
+        bail!(
+            "Database schema version {version} is outside of the valid range ({base} to {latest})"
+        );
+    }
+}
+
 /// Migrates a database to the latest version using the given migration list.
 ///
 /// This function is meant to be called at runtime to upgrade the database.
-pub fn migrate_schema(conn: &mut rusqlite::Connection, migrations: &[Migration]) -> Result<()> {
-    let tx = conn.transaction()?;
-
-    if migrations.is_empty() {
-        bail!("No migrations given");
-    }
-
-    let base = migrations.first().unwrap().version;
-    let latest = migrations.last().unwrap().version;
-    if !migrations.iter().map(|mig| mig.version).eq(base..=latest) {
-        bail!(
-            "Migration sequence {:?} is not contiguous",
-            migrations
-                .iter()
-                .map(|mig| mig.version)
-                .collect::<Vec<u32>>()
-        );
-    }
+pub fn migrate_schema(conn: &mut rusqlite::Connection, migrations: &[Migration]) -> Result<u32> {
+    let (base, latest) = check_migration_versions(migrations.iter().map(|m| m.version))?;
 
     // The databases version is stored in this special sqlite header variable
-    let mut version: u32 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let mut version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
-    if version == 0 {
-        println!("New database, migrating to latest version {latest}");
-    } else if (base..latest).contains(&version) {
-        println!("Database has version {version}, migrating to latest version {latest}");
-    } else if version == latest {
-        bail!("Database schema is up to date (version {version})");
-    } else {
+    if version == latest {
+        bail!("Database schema is up to date with version {version}");
+    } else if version != 0 && !(base..latest).contains(&version) {
         bail!(
-            "Database schema version {version} is outside of the valid range ({} to {})",
-            base,
-            latest
+            "Database schema version {version} is outside of the valid range ({base} to {latest})",
         )
     };
+
+    let tx = conn.transaction()?;
 
     // Since the base migration is the starting point for new databases, a new database version can
     // be handled like the version before the current base
@@ -208,8 +205,40 @@ pub fn migrate_schema(conn: &mut rusqlite::Connection, migrations: &[Migration])
 
     tx.commit()?;
 
-    println!("Database schema successfully migrated to version {latest}");
-    Ok(())
+    Ok(latest)
+}
+
+/// Safely backs up the database
+pub fn backup_db(conn: &mut rusqlite::Connection) -> Result<PathBuf> {
+    let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+
+    let Some(db_file) = conn.path() else {
+        bail!("Database connection has no file assigned");
+    };
+
+    let backup_file = format!("{db_file}.v{version}");
+
+    conn.backup(rusqlite::DatabaseName::Main, &backup_file, None)
+        .with_context(|| format!("Database backup to {backup_file} failed"))?;
+
+    Ok(PathBuf::from(backup_file))
+}
+
+/// Checks the given migration versions for being valid and contiguous
+fn check_migration_versions(migrations: impl IntoIterator<Item = u32>) -> Result<(u32, u32)> {
+    let mut m = migrations.into_iter();
+
+    let base = m.next().ok_or_else(|| anyhow!("No migrations given"))?;
+    let mut latest = base;
+
+    for version in m {
+        if version != latest + 1 {
+            bail!("Migration sequence is not contiguous",);
+        }
+        latest = version;
+    }
+
+    Ok((base, latest))
 }
 
 #[cfg(test)]

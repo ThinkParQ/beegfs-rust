@@ -64,7 +64,9 @@ pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
         info.auth_secret,
     );
 
-    let db = sqlite::open_async(info.user_config.db_file.as_path()).await?;
+    let mut db = sqlite::open_async(info.user_config.db_file.as_path()).await?;
+    sqlite::check_schema_async(&mut db, db::MIGRATIONS).await?;
+
     log::info!(
         "Opened database at {:?}",
         info.user_config.db_file.as_path()

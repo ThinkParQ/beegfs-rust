@@ -15,9 +15,9 @@ pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
 }
 
 /// Opens an existing sqlite database for read and write, applying the common config options
-pub fn open(db_path: impl AsRef<Path>) -> Result<rusqlite::Connection> {
+pub fn open(db_file: impl AsRef<Path>) -> Result<rusqlite::Connection> {
     let conn = rusqlite::Connection::open_with_flags(
-        db_path,
+        db_file,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
     )?;
     setup_connection(&conn)?;
@@ -25,9 +25,9 @@ pub fn open(db_path: impl AsRef<Path>) -> Result<rusqlite::Connection> {
 }
 
 /// Opens an existing sqlite database for async read and write, applying the common config options
-pub async fn open_async(path: impl AsRef<Path>) -> Result<tokio_rusqlite::Connection> {
+pub async fn open_async(db_file: impl AsRef<Path>) -> Result<tokio_rusqlite::Connection> {
     let conn =
-        tokio_rusqlite::Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        tokio_rusqlite::Connection::open_with_flags(&db_file, OpenFlags::SQLITE_OPEN_READ_WRITE)
             .await?;
     conn.call(|conn| setup_connection(conn).map_err(|err| err.into()))
         .await?;
