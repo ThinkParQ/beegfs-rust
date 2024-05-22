@@ -31,11 +31,8 @@ use test::with_test_data;
 
 /// Include the generated migration list. First element is the migration number, second is the
 /// SQL text to execute. The elements are guaranteed to be contiguous, but may start later than 1.
-const MIGRATIONS: &[sqlite::Migration] = include!(concat!(env!("OUT_DIR"), "/migrations.slice"));
-
-pub fn migrate_schema(conn: &mut rusqlite::Connection) -> Result<()> {
-    sqlite::migrate_schema(conn, MIGRATIONS)
-}
+pub const MIGRATIONS: &[sqlite::Migration] =
+    include!(concat!(env!("OUT_DIR"), "/migrations.slice"));
 
 #[cfg(test)]
 mod test {
@@ -46,7 +43,7 @@ mod test {
     /// a transaction handle.
     pub(crate) fn with_test_data(op: impl FnOnce(&mut Transaction)) {
         let mut conn = sqlite::open_in_memory().unwrap();
-        migrate_schema(&mut conn).unwrap();
+        sqlite::migrate_schema(&mut conn, MIGRATIONS).unwrap();
 
         // Setup test data
         conn.execute_batch(include_str!("db/schema/test_data.sql"))

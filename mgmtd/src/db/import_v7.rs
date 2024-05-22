@@ -69,8 +69,6 @@ pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()
     }
 
     tx.commit()?;
-
-    println!("v7 management data imported");
     Ok(())
 }
 

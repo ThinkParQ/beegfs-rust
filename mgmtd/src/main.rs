@@ -1,5 +1,6 @@
-use anyhow::{anyhow, bail, Context};
+use anyhow::Context;
 use mgmtd::config::LogTarget;
+use mgmtd::db::{self};
 use mgmtd::{start, StaticInfo};
 use shared::types::AuthenticationSecret;
 use shared::{journald_logger, shutdown};
@@ -121,44 +122,44 @@ fn inner_main() -> anyhow::Result<()> {
 }
 
 /// Create and initialize a new database and / or import data from old v7 management
-fn setup_db(db_path: &Path, init: bool, v7_path: Option<&Path>) -> anyhow::Result<()> {
+fn setup_db(db_file: impl AsRef<Path>, init: bool, v7_path: Option<&Path>) -> anyhow::Result<()> {
+    let db_file = db_file.as_ref();
+
     // Create database file
     if init {
-        if db_path.try_exists()? {
-            bail!("Database file {db_path:?} already exists");
-        }
-
-        std::fs::create_dir_all(db_path.parent().ok_or_else(|| {
-            anyhow!("Could not determine parent folder of database file {db_path:?}")
-        })?)?;
-
-        std::fs::File::create(db_path)
-            .with_context(|| format!("Creating database file {db_path:?} failed"))?;
-
-        println!("Database file created at {db_path:?}");
+        sqlite::create_db_file(db_file)
+            .with_context(|| format!("Creating database file {db_file:?} failed"))?;
+        println!("Database file created at {db_file:?}");
     }
 
     // Connect
-    let mut conn = sqlite::open(db_path)?;
+    let mut conn = sqlite::open(db_file)?;
 
     // Fill database
     if init {
-        mgmtd::db::migrate_schema(&mut conn).with_context(|| "Creating database schema failed")?;
+        let version = sqlite::migrate_schema(&mut conn, db::MIGRATIONS)
+            .context("Creating database schema failed")?;
+        println!("Created and migrated new database to version {version}");
     }
 
     // Import data from v7 management
     if let Some(v7_path) = v7_path {
-        mgmtd::db::import_v7(&mut conn, v7_path).context("v7 management data import failed")?;
+        db::import_v7(&mut conn, v7_path).context("v7 management data import failed")?;
+        println!("v7 management data imported");
     }
 
-    println!("Database created");
     Ok(())
 }
 
-fn upgrade_db(db_path: &Path) -> anyhow::Result<()> {
-    let mut conn = sqlite::open(db_path)?;
-    mgmtd::db::migrate_schema(&mut conn).with_context(|| "Upgrading database schema failed")?;
+fn upgrade_db(db_file: &Path) -> anyhow::Result<()> {
+    let mut conn = sqlite::open(db_file)?;
 
-    println!("Database upgraded");
+    let backup_file = sqlite::backup_db(&mut conn)?;
+    println!("Old database backed up to {backup_file:?}");
+
+    let version = sqlite::migrate_schema(&mut conn, db::MIGRATIONS)
+        .with_context(|| "Upgrading database schema failed")?;
+    println!("Upgraded database to version {version}");
+
     Ok(())
 }
