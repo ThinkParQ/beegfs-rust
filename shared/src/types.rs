@@ -4,7 +4,12 @@ use crate::bee_serde::*;
 use anyhow::{anyhow, Result};
 use bee_serde_derive::BeeSerde;
 use core::hash::Hash;
+#[cfg(feature = "protobuf")]
+use protobuf::beegfs as pb;
 use std::fmt::Debug;
+
+mod entity;
+pub use entity::*;
 
 // Type aliases for convenience. Used by BeeGFS messaging and the management.
 //
@@ -12,21 +17,20 @@ use std::fmt::Debug;
 // do not. It still has to be checked for each BeeGFS message individually which exact type is
 // needed for serialization.
 
-pub type EntityUID = u64;
-pub type TargetID = u16;
-pub type BuddyGroupID = u16;
+pub type Uid = i64;
+pub type TargetId = u16;
+pub type BuddyGroupId = u16;
 pub type Port = u16;
-pub type NodeID = u32;
-pub type StoragePoolID = u16;
-pub type QuotaID = u32;
+pub type NodeId = u32;
+pub type PoolId = u16;
+pub type QuotaId = u32;
 
-pub const MGMTD_ID: NodeID = 1;
-pub const MGMTD_UID: EntityUID = 1;
+pub const MGMTD_ID: NodeId = 1;
+pub const MGMTD_UID: Uid = 1;
+pub const DEFAULT_STORAGE_POOL: PoolId = 1;
 
-pub const DEFAULT_STORAGE_POOL: StoragePoolID = 1;
-
-/// The node type as used by most BeeGFS messages
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+/// The BeeGFS node type
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NodeType {
     #[default]
     Meta,
@@ -42,6 +46,22 @@ impl_enum_to_int!(NodeType,
     Management => 4
 );
 
+impl_enum_user_str! {NodeType,
+    NodeType::Meta => "meta",
+    NodeType::Storage => "storage",
+    NodeType::Client => "client",
+    NodeType::Management => "management"
+}
+
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {NodeType => pb::NodeType,
+    unspecified => pb::NodeType::Unspecified,
+    NodeType::Meta => pb::NodeType::Meta,
+    NodeType::Storage => pb::NodeType::Storage,
+    NodeType::Client => pb::NodeType::Client,
+    NodeType::Management => pb::NodeType::Management,
+}
+
 /// A node type only accepting server nodes.
 ///
 /// In a lot of operations, only meta or storage makes sense, so we provide this extra enum for
@@ -52,6 +72,11 @@ pub enum NodeTypeServer {
     Storage,
 }
 
+impl_enum_user_str! {NodeTypeServer,
+    NodeTypeServer::Meta => "meta",
+    NodeTypeServer::Storage => "storage",
+}
+
 impl TryFrom<NodeType> for NodeTypeServer {
     type Error = anyhow::Error;
 
@@ -59,11 +84,34 @@ impl TryFrom<NodeType> for NodeTypeServer {
         match value {
             NodeType::Meta => Ok(Self::Meta),
             NodeType::Storage => Ok(Self::Storage),
-            t => Err(anyhow!("{t:?} cannot be converted")),
+            t => Err(anyhow!("{t} can not be converted to NodeTypeServer")),
         }
     }
 }
 impl From<NodeTypeServer> for NodeType {
+    fn from(value: NodeTypeServer) -> Self {
+        match value {
+            NodeTypeServer::Meta => Self::Meta,
+            NodeTypeServer::Storage => Self::Storage,
+        }
+    }
+}
+
+impl TryFrom<pb::NodeType> for NodeTypeServer {
+    type Error = anyhow::Error;
+
+    fn try_from(value: pb::NodeType) -> Result<Self, Self::Error> {
+        match value {
+            pb::NodeType::Meta => Ok(Self::Meta),
+            pb::NodeType::Storage => Ok(Self::Storage),
+            pb::NodeType::Client | pb::NodeType::Management => {
+                Err(anyhow!("NodeTypeServer only allows Meta or Storage"))
+            }
+            pb::NodeType::Unspecified => Err(anyhow!("NodeType is unspecified")),
+        }
+    }
+}
+impl From<NodeTypeServer> for pb::NodeType {
     fn from(value: NodeTypeServer) -> Self {
         match value {
             NodeTypeServer::Meta => Self::Meta,
@@ -82,31 +130,41 @@ pub enum NicType {
 
 impl_enum_to_int!(NicType, Ethernet => 0, Rdma => 1);
 
-/// Type of a quota ID as used by BeeMsg
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum QuotaIDType {
-    #[default]
-    User,
-    Group,
+impl_enum_user_str! {NicType,
+    NicType::Ethernet => "meta",
+    NicType::Rdma => "storage",
 }
 
-impl_enum_to_int!(QuotaIDType,
-    User => 1,
-    Group => 2
-);
-
-/// Type of a quota entry as used by BeeMsg
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum QuotaType {
-    #[default]
-    Space,
-    Inodes,
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {NicType => pb::NicType,
+    unspecified => pb::NicType::Unspecified,
+    NicType::Ethernet => pb::NicType::Ethernet,
+    NicType::Rdma => pb::NicType::Rdma,
 }
 
-impl_enum_to_int!(QuotaType,
-    Space => 1,
-    Inodes => 2
-);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CapacityPool {
+    Normal,
+    Low,
+    Emergency,
+}
+
+// Defines which pool maps to which index in the response below
+impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
+
+impl_enum_user_str! {CapacityPool,
+    CapacityPool::Normal => "normal",
+    CapacityPool::Low => "low",
+    CapacityPool::Emergency=> "emergency",
+}
+
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {CapacityPool => pb::CapacityPool,
+    unspecified => pb::CapacityPool::Unspecified,
+    CapacityPool::Normal => pb::CapacityPool::Normal,
+    CapacityPool::Low => pb::CapacityPool::Low,
+    CapacityPool::Emergency=> pb::CapacityPool::Emergency,
+}
 
 /// The consistency state of a target as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -123,6 +181,20 @@ impl_enum_to_int!(TargetConsistencyState,
     Bad => 2
 );
 
+impl_enum_user_str! {TargetConsistencyState,
+    TargetConsistencyState::Good => "good",
+    TargetConsistencyState::NeedsResync => "needs_resync",
+    TargetConsistencyState::Bad => "bad",
+}
+
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {TargetConsistencyState => pb::ConsistencyState,
+    unspecified => pb::ConsistencyState::Unspecified,
+    TargetConsistencyState::Good => pb::ConsistencyState::Good,
+    TargetConsistencyState::NeedsResync => pb::ConsistencyState::NeedsResync,
+    TargetConsistencyState::Bad => pb::ConsistencyState::Bad,
+}
+
 impl Serializable for TargetConsistencyState {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         ser.u8((*self).into())
@@ -133,6 +205,44 @@ impl Deserializable for TargetConsistencyState {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         des.u8()?.try_into()
     }
+}
+
+/// A node type only accepting server nodes.
+
+/// Type of a quota ID as used by BeeMsg
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum QuotaIdType {
+    #[default]
+    User,
+    Group,
+}
+
+impl_enum_to_int!(QuotaIdType,
+    User => 1,
+    Group => 2
+);
+
+impl_enum_user_str! {QuotaIdType,
+    QuotaIdType::User => "user",
+    QuotaIdType::Group => "group",
+}
+
+/// Type of a quota entry as used by BeeMsg
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum QuotaType {
+    #[default]
+    Space,
+    Inodes,
+}
+
+impl_enum_to_int!(QuotaType,
+    Space => 1,
+    Inodes => 2
+);
+
+impl_enum_user_str! {QuotaType,
+    QuotaType::Space => "space",
+    QuotaType::Inodes => "inodes",
 }
 
 /// The BeeGFS authentication secret

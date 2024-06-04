@@ -90,9 +90,9 @@ INSERT INTO node_nics (node_uid, nic_type, addr, name) VALUES
 ;
 
 INSERT INTO entities (uid, entity_type, alias) VALUES
-    (401002, "storage_pool", "storage_pool_2"),
-    (401003, "storage_pool", "storage_pool_3"),
-    (401004, "storage_pool", "storage_pool_4")
+    (401002, "pool", "storage_pool_2"),
+    (401003, "pool", "storage_pool_3"),
+    (401004, "pool", "storage_pool_4")
 ;
 
 INSERT INTO storage_pools (pool_id, pool_uid) VALUES
@@ -188,24 +188,24 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (302002, "buddy_group", "storage_buddy_group_2")
 ;
 
-INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES
+INSERT INTO buddy_groups (group_uid, node_type) VALUES
     (301001, "meta"),
     (302001, "storage"),
     (302002, "storage")
 ;
 
-INSERT INTO meta_buddy_groups (buddy_group_id, buddy_group_uid, p_target_id, s_target_id)
+INSERT INTO meta_buddy_groups (group_id, group_uid, p_target_id, s_target_id)
 VALUES
     (1, 301001, 1, 2)
 ;
 
-INSERT INTO storage_buddy_groups (buddy_group_id, buddy_group_uid, p_target_id, s_target_id, pool_id)
+INSERT INTO storage_buddy_groups (group_id, group_uid, p_target_id, s_target_id, pool_id)
 VALUES
     (1, 302001, 1, 5, 1),
     (2, 302002, 9, 13, 1)
 ;
 
-INSERT INTO root_inode (_only_one_row, target_id, buddy_group_id) VALUES
+INSERT INTO root_inode (_only_one_row, target_id, group_id) VALUES
     (1, 1, NULL)
 ;
 

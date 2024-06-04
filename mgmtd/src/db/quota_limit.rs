@@ -4,7 +4,7 @@ use std::ops::RangeInclusive;
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub(crate) struct SpaceAndInodeLimits {
-    pub quota_id: QuotaID,
+    pub quota_id: QuotaId,
     pub space: Option<u64>,
     pub inodes: Option<u64>,
 }
@@ -36,10 +36,10 @@ macro_rules! select_limits {
 }
 
 pub(crate) fn with_quota_id_range(
-    tx: &mut Transaction,
-    quota_id_range: RangeInclusive<QuotaID>,
-    pool_id: StoragePoolID,
-    id_type: QuotaIDType,
+    tx: &Transaction,
+    quota_id_range: RangeInclusive<QuotaId>,
+    pool_id: PoolId,
+    id_type: QuotaIdType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!(
@@ -56,10 +56,10 @@ pub(crate) fn with_quota_id_range(
 }
 
 pub(crate) fn with_quota_id_list(
-    tx: &mut Transaction,
-    quota_ids: impl IntoIterator<Item = QuotaID>,
-    pool_id: StoragePoolID,
-    id_type: QuotaIDType,
+    tx: &Transaction,
+    quota_ids: impl IntoIterator<Item = QuotaId>,
+    pool_id: PoolId,
+    id_type: QuotaIdType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2 AND l.quota_id IN rarray(?3)"),
@@ -69,9 +69,9 @@ pub(crate) fn with_quota_id_list(
 }
 
 pub(crate) fn all(
-    tx: &mut Transaction,
-    pool_id: StoragePoolID,
-    id_type: QuotaIDType,
+    tx: &Transaction,
+    pool_id: PoolId,
+    id_type: QuotaIdType,
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2"),
@@ -81,8 +81,8 @@ pub(crate) fn all(
 }
 
 pub(crate) fn update(
-    tx: &mut Transaction,
-    iter: impl IntoIterator<Item = (QuotaIDType, StoragePoolID, SpaceAndInodeLimits)>,
+    tx: &Transaction,
+    iter: impl IntoIterator<Item = (QuotaIdType, PoolId, SpaceAndInodeLimits)>,
 ) -> Result<()> {
     let mut insert_stmt = tx.prepare_cached(sql!(
         "INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value)
@@ -142,13 +142,13 @@ mod test {
     #[test]
     fn set_get() {
         with_test_data(|tx| {
-            assert_eq!(0, all(tx, 1, QuotaIDType::User).unwrap().len());
+            assert_eq!(0, all(tx, 1, QuotaIdType::User).unwrap().len());
 
             update(
                 tx,
                 [
                     (
-                        QuotaIDType::User,
+                        QuotaIdType::User,
                         1,
                         SpaceAndInodeLimits {
                             quota_id: 1000,
@@ -157,7 +157,7 @@ mod test {
                         },
                     ),
                     (
-                        QuotaIDType::User,
+                        QuotaIdType::User,
                         1,
                         SpaceAndInodeLimits {
                             quota_id: 1001,
@@ -166,7 +166,7 @@ mod test {
                         },
                     ),
                     (
-                        QuotaIDType::User,
+                        QuotaIdType::User,
                         1,
                         SpaceAndInodeLimits {
                             quota_id: 1002,
@@ -178,16 +178,16 @@ mod test {
             )
             .unwrap();
 
-            assert_eq!(3, all(tx, 1, QuotaIDType::User).unwrap().len());
+            assert_eq!(3, all(tx, 1, QuotaIdType::User).unwrap().len());
             assert_eq!(
                 2,
-                with_quota_id_range(tx, 900..=1001, 1, QuotaIDType::User)
+                with_quota_id_range(tx, 900..=1001, 1, QuotaIdType::User)
                     .unwrap()
                     .len()
             );
             assert_eq!(
                 2,
-                with_quota_id_list(tx, [900, 1000, 1002], 1, QuotaIDType::User)
+                with_quota_id_list(tx, [900, 1000, 1002], 1, QuotaIdType::User)
                     .unwrap()
                     .len()
             );
@@ -196,7 +196,7 @@ mod test {
                 tx,
                 [
                     (
-                        QuotaIDType::User,
+                        QuotaIdType::User,
                         1,
                         SpaceAndInodeLimits {
                             quota_id: 1000,
@@ -205,7 +205,7 @@ mod test {
                         },
                     ),
                     (
-                        QuotaIDType::User,
+                        QuotaIdType::User,
                         1,
                         SpaceAndInodeLimits {
                             quota_id: 1001,
@@ -217,7 +217,7 @@ mod test {
             )
             .unwrap();
 
-            assert_eq!(2, all(tx, 1, QuotaIDType::User).unwrap().len());
+            assert_eq!(2, all(tx, 1, QuotaIdType::User).unwrap().len());
         })
     }
 

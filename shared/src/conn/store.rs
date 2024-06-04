@@ -6,7 +6,7 @@
 use super::async_queue::AsyncQueue;
 use crate::conn::stream::Stream;
 use crate::conn::MsgBuf;
-use crate::types::EntityUID;
+use crate::types::Uid;
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
@@ -22,9 +22,9 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Debug, Default)]
 pub struct Store {
     #[allow(clippy::type_complexity)]
-    streams: Mutex<HashMap<EntityUID, (Arc<AsyncQueue<StoredStream>>, Arc<Semaphore>)>>,
+    streams: Mutex<HashMap<Uid, (Arc<AsyncQueue<StoredStream>>, Arc<Semaphore>)>>,
     bufs: Mutex<VecDeque<MsgBuf>>,
-    addrs: RwLock<HashMap<EntityUID, Arc<[SocketAddr]>>>,
+    addrs: RwLock<HashMap<Uid, Arc<[SocketAddr]>>>,
     connection_limit: usize,
 }
 
@@ -49,7 +49,7 @@ impl Store {
     ///
     /// This should be the first thing to try when acquiring a connection (reusing existing
     /// connections > opening a new one)
-    pub fn try_pop_stream(&self, node_uid: EntityUID) -> Option<StoredStream> {
+    pub fn try_pop_stream(&self, node_uid: Uid) -> Option<StoredStream> {
         let mut streams = self.streams.lock().unwrap();
 
         let (queue, _) = streams
@@ -62,7 +62,7 @@ impl Store {
     /// Try to acquire a permit to open a new connection.
     ///
     /// If no connection is available, a requester can open a new one if there are permits left.
-    pub fn try_acquire_permit(&self, node_uid: EntityUID) -> Option<StoredStreamPermit> {
+    pub fn try_acquire_permit(&self, node_uid: Uid) -> Option<StoredStreamPermit> {
         let mut streams = self.streams.lock().unwrap();
 
         let (_, sem) = streams
@@ -82,7 +82,7 @@ impl Store {
     ///
     /// This is the last resort if the store is empty and no more permits are available. Times out
     /// after a fixed time.
-    pub async fn pop_stream(&self, node_uid: EntityUID) -> Result<StoredStream> {
+    pub async fn pop_stream(&self, node_uid: Uid) -> Result<StoredStream> {
         let queue = {
             let mut streams = self.streams.lock().unwrap();
 
@@ -125,13 +125,13 @@ impl Store {
     }
 
     /// Get a list of known addresses for the given node UID
-    pub fn get_node_addrs(&self, node_uid: EntityUID) -> Option<Arc<[SocketAddr]>> {
+    pub fn get_node_addrs(&self, node_uid: Uid) -> Option<Arc<[SocketAddr]>> {
         let addrs = self.addrs.read().unwrap();
         addrs.get(&node_uid).cloned()
     }
 
     /// Replace **all** addresses for the given node UID
-    pub fn replace_node_addrs(&self, node_uid: EntityUID, new_addrs: impl Into<Arc<[SocketAddr]>>) {
+    pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
         let mut addrs = self.addrs.write().unwrap();
         let addr = addrs.entry(node_uid).or_insert_with(|| Arc::new([]));
         *addr = new_addrs.into();
@@ -141,7 +141,7 @@ impl Store {
 /// A permit, representing the permission to open a new stream to a specific node
 #[derive(Debug)]
 pub struct StoredStreamPermit {
-    node_uid: EntityUID,
+    node_uid: Uid,
     _permit: OwnedSemaphorePermit,
 }
 

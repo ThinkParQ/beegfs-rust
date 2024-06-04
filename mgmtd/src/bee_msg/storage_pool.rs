@@ -1,66 +1,12 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use shared::bee_msg::storage_pool::*;
-use shared::types::{BuddyGroupID, NodeID, StoragePoolID, TargetID, DEFAULT_STORAGE_POOL};
-
-impl Handler for AddStoragePool {
-    type Response = AddStoragePoolResp;
-
-    async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Self::Response {
-        let res = ctx
-            .db
-            .op(move |tx| {
-                let alias = &std::str::from_utf8(&self.alias)?;
-
-                let (_, pool_id) = db::storage_pool::insert(tx, self.pool_id, alias)?;
-
-                // Update storage pool assignments for the given targets
-                db::target::update_storage_pools(tx, pool_id, &self.move_target_ids)?;
-                db::buddy_group::update_storage_pools(tx, pool_id, &self.move_buddy_group_ids)?;
-
-                Ok(pool_id)
-            })
-            .await;
-
-        match res {
-            Ok(actual_id) => {
-                log::info!(
-                    "Added new storage pool with ID {} (Requested: {})",
-                    actual_id,
-                    self.pool_id,
-                );
-
-                notify_nodes(
-                    ctx,
-                    &[NodeType::Meta, NodeType::Storage],
-                    &RefreshStoragePools { ack_id: "".into() },
-                )
-                .await;
-
-                AddStoragePoolResp {
-                    result: OpsErr::SUCCESS,
-                    pool_id: actual_id,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(err, "Adding storage pool with ID {} failed", self.pool_id);
-
-                AddStoragePoolResp {
-                    result: match err.downcast_ref() {
-                        Some(TypedError::ValueExists { .. }) => OpsErr::EXISTS,
-                        _ => OpsErr::INTERNAL,
-                    },
-                    pool_id: 0,
-                }
-            }
-        }
-    }
-}
+use shared::types::{BuddyGroupId, NodeId, PoolId, TargetId};
 
 struct TargetOrBuddyGroup {
     id: u16,
-    node_id: Option<NodeID>,
-    pool_id: StoragePoolID,
+    node_id: Option<NodeId>,
+    pool_id: PoolId,
     free_space: u64,
     free_inodes: u64,
 }
@@ -83,7 +29,7 @@ impl Handler for GetStoragePools {
             let (pools, targets, buddy_groups) = ctx
                 .db
                 .op(move |tx| {
-                    let pools: Vec<(StoragePoolID, String)> = tx.query_map_collect(
+                    let pools: Vec<(PoolId, String)> = tx.query_map_collect(
                         sql!(
                             "SELECT p.pool_id, e.alias
                             FROM storage_pools AS p
@@ -114,7 +60,7 @@ impl Handler for GetStoragePools {
 
                     let buddy_groups: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
                         sql!(
-                            "SELECT buddy_group_id, pool_id,
+                            "SELECT group_id, pool_id,
                                 MIN(p_t.free_space, s_t.free_space),
                                 MIN(p_t.free_inodes, s_t.free_inodes)
                             FROM all_buddy_groups_v AS g
@@ -152,14 +98,14 @@ impl Handler for GetStoragePools {
 
                     // NodeID -> Vec<TargetID> map for each cap pool
                     let mut grouped_target_cap_pools = [
-                        HashMap::<NodeID, Vec<TargetID>>::new(),
+                        HashMap::<NodeId, Vec<TargetId>>::new(),
                         HashMap::new(),
                         HashMap::new(),
                     ];
 
                     // Target / buddy group info without cap pools
-                    let mut target_map: HashMap<TargetID, NodeID> = HashMap::new();
-                    let mut buddy_group_vec: Vec<BuddyGroupID> = vec![];
+                    let mut target_map: HashMap<TargetId, NodeId> = HashMap::new();
+                    let mut buddy_group_vec: Vec<BuddyGroupId> = vec![];
 
                     let f_targets = targets.iter().filter(|t| t.pool_id == pool.0);
                     let f_buddy_groups = buddy_groups.iter().filter(|t| t.pool_id == pool.0);
@@ -188,7 +134,7 @@ impl Handler for GetStoragePools {
                             cp_targets_calc.cap_pool(target.free_space, target.free_inodes),
                         );
 
-                        let target_id: TargetID = target.id;
+                        let target_id: TargetId = target.id;
                         let node_id = target.node_id.expect("targets have a node id");
 
                         target_map.insert(target_id, node_id);
@@ -240,152 +186,5 @@ impl Handler for GetStoragePools {
         };
 
         GetStoragePoolsResp { pools }
-    }
-}
-
-impl Handler for ModifyStoragePool {
-    type Response = ModifyStoragePoolResp;
-
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match async {
-            ctx.db
-                .op(move |tx| {
-                    // Check ID exists
-                    let uid = db::storage_pool::get_uid(tx, self.pool_id)?.ok_or_else(|| {
-                        TypedError::value_not_found("storage pool ID", self.pool_id)
-                    })?;
-
-                    // Check all of the given target IDs exist
-                    db::target::validate_ids(tx, &self.add_target_ids, NodeTypeServer::Storage)?;
-                    db::target::validate_ids(tx, &self.remove_target_ids, NodeTypeServer::Storage)?;
-                    db::buddy_group::validate_ids(
-                        tx,
-                        &self.add_buddy_group_ids,
-                        NodeTypeServer::Storage,
-                    )?;
-                    db::buddy_group::validate_ids(
-                        tx,
-                        &self.remove_buddy_group_ids,
-                        NodeTypeServer::Storage,
-                    )?;
-
-                    if let Some(ref new_alias) = self.alias {
-                        let new_alias = &std::str::from_utf8(new_alias)?;
-                        // Check alias is free
-                        if db::entity::get_uid(tx, new_alias)?.is_some() {
-                            bail!(TypedError::value_exists("Alias", new_alias));
-                        }
-
-                        db::entity::update_alias(tx, uid, new_alias)?;
-                    }
-
-                    // Move given target IDs to the given pool or the default pool
-                    db::target::update_storage_pools(tx, self.pool_id, &self.add_target_ids)?;
-                    db::target::update_storage_pools(
-                        tx,
-                        DEFAULT_STORAGE_POOL,
-                        &self.remove_target_ids,
-                    )?;
-
-                    // Same with buddy groups
-                    db::buddy_group::update_storage_pools(
-                        tx,
-                        self.pool_id,
-                        &self.add_buddy_group_ids,
-                    )?;
-                    db::buddy_group::update_storage_pools(
-                        tx,
-                        DEFAULT_STORAGE_POOL,
-                        &self.remove_buddy_group_ids,
-                    )?;
-
-                    Ok(())
-                })
-                .await
-        }
-        .await
-        {
-            Ok(_) => {
-                log::info!("Storage pool {} modified", self.pool_id,);
-
-                notify_nodes(
-                    ctx,
-                    &[NodeType::Meta, NodeType::Storage],
-                    &RefreshStoragePools { ack_id: "".into() },
-                )
-                .await;
-
-                ModifyStoragePoolResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(err, "Modifying storage pool {} failed", self.pool_id);
-
-                ModifyStoragePoolResp {
-                    result: match err.downcast_ref() {
-                        // Yes, returning OpsErr::INVAL is intended for value not found. Unlike
-                        // remove_storage_pool, here this signals that pool ID is invalid
-                        Some(TypedError::ValueNotFound { .. }) => OpsErr::INVAL,
-                        _ => OpsErr::INTERNAL,
-                    },
-                }
-            }
-        }
-    }
-}
-
-impl Handler for RemoveStoragePool {
-    type Response = RemoveStoragePoolResp;
-
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let res = ctx
-            .db
-            .op(move |tx| {
-                // Check ID exists
-                db::storage_pool::get_uid(tx, self.pool_id)?
-                    .ok_or_else(|| TypedError::value_not_found("storage pool ID", self.pool_id))?;
-
-                // Check it is not the default pool
-                if self.pool_id == DEFAULT_STORAGE_POOL {
-                    bail!("The default pool cannot be removed");
-                }
-
-                // move all targets in this pool to the default pool
-                db::target::reset_storage_pool(tx, self.pool_id)?;
-                db::buddy_group::reset_storage_pool(tx, self.pool_id)?;
-
-                db::storage_pool::delete(tx, self.pool_id)?;
-
-                Ok(())
-            })
-            .await;
-
-        match res {
-            Ok(_) => {
-                log::info!("Storage pool {} removed", self.pool_id,);
-
-                notify_nodes(
-                    ctx,
-                    &[NodeType::Meta, NodeType::Storage],
-                    &RefreshStoragePools { ack_id: "".into() },
-                )
-                .await;
-
-                RemoveStoragePoolResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(err, "Removing storage pool {} failed", self.pool_id);
-
-                RemoveStoragePoolResp {
-                    result: match err.downcast_ref() {
-                        Some(TypedError::ValueNotFound { .. }) => OpsErr::UNKNOWN_POOL,
-                        _ => OpsErr::INTERNAL,
-                    },
-                }
-            }
-        }
     }
 }

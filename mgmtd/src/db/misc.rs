@@ -1,7 +1,6 @@
 //! Miscellaneous functions for database interaction and other business logic.
 
 use super::*;
-use protobuf::beegfs as pb;
 use rusqlite::types::FromSql;
 use std::ops::RangeInclusive;
 
@@ -22,7 +21,7 @@ use std::ops::RangeInclusive;
 /// # Warning
 /// Vulnerable to sql injection, do not call with user supplied input!
 pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
-    tx: &mut Transaction,
+    tx: &Transaction,
     table: &str,
     field: &str,
     range: RangeInclusive<T>,
@@ -61,23 +60,23 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum MetaRoot {
     Unknown,
-    Normal(NodeID, EntityUID),
-    Mirrored(BuddyGroupID),
+    Normal(NodeId, Uid),
+    Mirrored(BuddyGroupId),
 }
 
 /// Retrieves the meta root information of the BeeGFS system.
-pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
+pub(crate) fn get_meta_root(tx: &Transaction) -> Result<MetaRoot> {
     let res = tx
         .query_row_cached(
             sql!(
-                "SELECT mt.node_id, mn.node_uid, ri.buddy_group_id
+                "SELECT mt.node_id, mn.node_uid, ri.group_id
                 FROM root_inode AS ri
                 LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
                 LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id"
             ),
             [],
             |row| {
-                Ok(match row.get::<_, Option<NodeID>>(0)? {
+                Ok(match row.get::<_, Option<NodeId>>(0)? {
                     Some(node_id) => MetaRoot::Normal(node_id, row.get(1)?),
                     None => MetaRoot::Mirrored(row.get(2)?),
                 })
@@ -95,12 +94,12 @@ pub(crate) fn get_meta_root(tx: &mut Transaction) -> Result<MetaRoot> {
 ///
 /// Gets the meta target with the root inode and moves the root inode to the buddy group which
 /// contains that target as primary target. Then a resync for the secondary target is triggered.
-pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
+pub(crate) fn enable_metadata_mirroring(tx: &Transaction) -> Result<()> {
     let affected = tx.execute(
         sql!(
             "UPDATE root_inode
-            SET target_id = NULL, buddy_group_id = (
-                SELECT mg.buddy_group_id FROM root_inode AS ri
+            SET target_id = NULL, group_id = (
+                SELECT mg.group_id FROM root_inode AS ri
                 INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id
             )"
         ),
@@ -114,7 +113,7 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
             "UPDATE targets SET consistency = 'needs_resync'
             WHERE target_uid = (
                 SELECT mt.target_uid FROM root_inode AS ri
-                INNER JOIN meta_buddy_groups AS mg USING(buddy_group_id)
+                INNER JOIN meta_buddy_groups AS mg USING(group_id)
                 INNER JOIN meta_targets AS mt ON mt.target_id = mg.s_target_id
             )"
         ),
@@ -122,75 +121,6 @@ pub(crate) fn enable_metadata_mirroring(tx: &mut Transaction) -> Result<()> {
     )?;
 
     check_affected_rows(affected, [1])
-}
-
-pub(crate) fn uid_from_proto_entity_id(
-    tx: &mut Transaction,
-    entity_id: pb::EntityIdVariant,
-) -> Result<EntityUID> {
-    let uid = match entity_id.variant.as_ref().unwrap() {
-        pb::entity_id_variant::Variant::Uid(ref uid) => {
-            let res: Option<EntityUID> = tx
-                .query_row_cached(
-                    sql!("SELECT uid FROM entities WHERE uid = ?1"),
-                    [uid],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            res.ok_or_else(|| anyhow!("uid {uid} doesn't exist"))?
-        }
-        pb::entity_id_variant::Variant::LegacyId(legacy_id) => match legacy_id.entity_type() {
-            pb::EntityType::Unspecified => bail!("unable to determine entity type"),
-            pb::EntityType::Node => {
-                let nt = match legacy_id.node_type() {
-                    pb::NodeType::Client => NodeType::Client,
-                    pb::NodeType::Meta => NodeType::Meta,
-                    pb::NodeType::Storage => NodeType::Storage,
-                    pb::NodeType::Management => NodeType::Management,
-                    t => bail!("invalid node type: {t:?}"),
-                };
-
-                node::get_uid(tx, legacy_id.num_id, nt)?.ok_or_else(|| {
-                    anyhow!("node {}:{} doesn't exist", nt.sql_str(), legacy_id.num_id)
-                })?
-            }
-            pb::EntityType::Target => {
-                let nt = match legacy_id.node_type() {
-                    pb::NodeType::Meta => NodeTypeServer::Meta,
-                    pb::NodeType::Storage => NodeTypeServer::Storage,
-                    t => bail!("invalid node type: {t:?}"),
-                };
-
-                target::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.ok_or_else(|| {
-                    anyhow!("target {}:{} doesn't exist", nt.sql_str(), legacy_id.num_id)
-                })?
-            }
-            pb::EntityType::BuddyGroup => {
-                let nt = match legacy_id.node_type() {
-                    pb::NodeType::Meta => NodeTypeServer::Meta,
-                    pb::NodeType::Storage => NodeTypeServer::Storage,
-                    t => bail!("invalid node type: {t:?}"),
-                };
-
-                buddy_group::get_uid(tx, legacy_id.num_id.try_into()?, nt)?.ok_or_else(|| {
-                    anyhow!(
-                        "buddy group {}:{} doesn't exist",
-                        nt.sql_str(),
-                        legacy_id.num_id
-                    )
-                })?
-            }
-            pb::EntityType::StoragePool => storage_pool::get_uid(tx, legacy_id.num_id.try_into()?)?
-                .ok_or_else(|| {
-                    anyhow!("storage pool storage:{} doesn't exist", legacy_id.num_id)
-                })?,
-        },
-        pb::entity_id_variant::Variant::Alias(ref alias) => {
-            entity::get_uid(tx, alias)?.ok_or_else(|| anyhow!("alias {alias} doesn't exist"))?
-        }
-    };
-
-    Ok(uid)
 }
 
 #[cfg(test)]
@@ -219,7 +149,7 @@ mod test {
     fn meta_root() {
         with_test_data(|tx| {
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(MetaRoot::Normal(1, 101001u64), meta_root);
+            assert_eq!(MetaRoot::Normal(1, 101001i64), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap();
 

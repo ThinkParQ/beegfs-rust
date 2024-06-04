@@ -5,11 +5,11 @@ use super::*;
 /// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetDefaultQuota {
-    pub pool_id: StoragePoolID,
+    pub pool_id: PoolId,
 }
 
 impl Msg for GetDefaultQuota {
-    const ID: MsgID = 2109;
+    const ID: MsgId = 2109;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -18,7 +18,7 @@ pub struct GetDefaultQuotaResp {
 }
 
 impl Msg for GetDefaultQuotaResp {
-    const ID: MsgID = 2110;
+    const ID: MsgId = 2110;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
@@ -34,15 +34,15 @@ pub struct QuotaDefaultLimits {
 /// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetDefaultQuota {
-    pub pool_id: StoragePoolID,
+    pub pool_id: PoolId,
     pub space: u64,
     pub inodes: u64,
     #[bee_serde(as = Int<i32>)]
-    pub id_type: QuotaIDType,
+    pub id_type: QuotaIdType,
 }
 
 impl Msg for SetDefaultQuota {
-    const ID: MsgID = 2111;
+    const ID: MsgId = 2111;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -51,7 +51,7 @@ pub struct SetDefaultQuotaResp {
 }
 
 impl Msg for SetDefaultQuotaResp {
-    const ID: MsgID = 2112;
+    const ID: MsgId = 2112;
 }
 
 /// Fetch quota info for the given type and list or range of IDs.
@@ -60,30 +60,30 @@ impl Msg for SetDefaultQuotaResp {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GetQuotaInfo {
     pub query_type: QuotaQueryType,
-    pub id_type: QuotaIDType,
-    pub id_range_start: QuotaID,
-    pub id_range_end: QuotaID,
-    pub id_list: Vec<QuotaID>,
+    pub id_type: QuotaIdType,
+    pub id_range_start: QuotaId,
+    pub id_range_end: QuotaId,
+    pub id_list: Vec<QuotaId>,
     pub transfer_method: GetQuotaInfoTransferMethod,
     /// If "one request per target" is chosen as transfer method, the target ID goes in here.
     ///
     /// It is the only mode ctl uses, and the only mode we use to send requests to the node.
-    pub target_id: TargetID,
+    pub target_id: TargetId,
     /// If targets shall be combined by pool in one response message, the pool ID goes in here.
     ///
     /// Completely unused.
-    pub pool_id: StoragePoolID,
+    pub pool_id: PoolId,
 }
 
 impl GetQuotaInfo {
     pub fn with_group_ids(
-        mut group_ids: HashSet<QuotaID>,
-        target_id: TargetID,
-        pool_id: StoragePoolID,
+        mut group_ids: HashSet<QuotaId>,
+        target_id: TargetId,
+        pool_id: PoolId,
     ) -> Self {
         Self {
             query_type: QuotaQueryType::List,
-            id_type: QuotaIDType::Group,
+            id_type: QuotaIdType::Group,
             id_range_start: 0,
             id_range_end: 0,
             id_list: group_ids.drain().collect(),
@@ -94,13 +94,13 @@ impl GetQuotaInfo {
     }
 
     pub fn with_user_ids(
-        mut user_ids: HashSet<QuotaID>,
-        target_id: TargetID,
-        pool_id: StoragePoolID,
+        mut user_ids: HashSet<QuotaId>,
+        target_id: TargetId,
+        pool_id: PoolId,
     ) -> Self {
         Self {
             query_type: QuotaQueryType::List,
-            id_type: QuotaIDType::User,
+            id_type: QuotaIdType::User,
             id_range_start: 0,
             id_range_end: 0,
             id_list: user_ids.drain().collect(),
@@ -112,7 +112,7 @@ impl GetQuotaInfo {
 }
 
 impl Msg for GetQuotaInfo {
-    const ID: MsgID = 2097;
+    const ID: MsgId = 2097;
 }
 
 // Custom BeeSerde impl because (de-)serialization actions depend on msg data
@@ -157,8 +157,8 @@ impl Deserializable for GetQuotaInfo {
                 _ => vec![],
             },
             transfer_method: des.u32()?.try_into()?,
-            target_id: TargetID::deserialize(des)?,
-            pool_id: StoragePoolID::deserialize(des)?,
+            target_id: TargetId::deserialize(des)?,
+            pool_id: PoolId::deserialize(des)?,
         })
     }
 }
@@ -168,13 +168,13 @@ impl Deserializable for GetQuotaInfo {
 /// Used by old ctl only
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetQuota {
-    pub pool_id: StoragePoolID,
+    pub pool_id: PoolId,
     #[bee_serde(as = Seq<false, _>)]
     pub quota_entry: Vec<QuotaEntry>,
 }
 
 impl Msg for SetQuota {
-    const ID: MsgID = 2075;
+    const ID: MsgId = 2075;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -183,7 +183,7 @@ pub struct SetQuotaResp {
 }
 
 impl Msg for SetQuotaResp {
-    const ID: MsgID = 2076;
+    const ID: MsgId = 2076;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -195,7 +195,7 @@ pub struct GetQuotaInfoResp {
 }
 
 impl Msg for GetQuotaInfoResp {
-    const ID: MsgID = 2098;
+    const ID: MsgId = 2098;
 }
 
 /// Sets exceeded quota information on server nodes.
@@ -205,17 +205,17 @@ impl Msg for GetQuotaInfoResp {
 /// Used by self
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetExceededQuota {
-    pub pool_id: StoragePoolID,
+    pub pool_id: PoolId,
     #[bee_serde(as = Int<i32>)]
-    pub id_type: QuotaIDType,
+    pub id_type: QuotaIdType,
     #[bee_serde(as = Int<i32>)]
     pub quota_type: QuotaType,
     #[bee_serde(as = Seq<true, _>)]
-    pub exceeded_quota_ids: Vec<QuotaID>,
+    pub exceeded_quota_ids: Vec<QuotaId>,
 }
 
 impl Msg for SetExceededQuota {
-    const ID: MsgID = 2077;
+    const ID: MsgId = 2077;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -224,7 +224,7 @@ pub struct SetExceededQuotaResp {
 }
 
 impl Msg for SetExceededQuotaResp {
-    const ID: MsgID = 2078;
+    const ID: MsgId = 2078;
 }
 
 /// Fetches user / group IDs which exceed the quota limits.
@@ -233,15 +233,15 @@ impl Msg for SetExceededQuotaResp {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RequestExceededQuota {
     #[bee_serde(as = Int<i32>)]
-    pub id_type: QuotaIDType,
+    pub id_type: QuotaIdType,
     #[bee_serde(as = Int<i32>)]
     pub quota_type: QuotaType,
-    pub pool_id: StoragePoolID,
-    pub target_id: TargetID,
+    pub pool_id: PoolId,
+    pub target_id: TargetId,
 }
 
 impl Msg for RequestExceededQuota {
-    const ID: MsgID = 2079;
+    const ID: MsgId = 2079;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -251,7 +251,7 @@ pub struct RequestExceededQuotaResp {
 }
 
 impl Msg for RequestExceededQuotaResp {
-    const ID: MsgID = 2080;
+    const ID: MsgId = 2080;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -306,8 +306,8 @@ impl_enum_to_int!(QuotaQueryType,
 pub struct QuotaEntry {
     pub space: u64,
     pub inodes: u64,
-    pub id: QuotaID,
+    pub id: QuotaId,
     #[bee_serde(as = Int<i32>)]
-    pub id_type: QuotaIDType,
+    pub id_type: QuotaIdType,
     pub valid: u8,
 }

@@ -2,7 +2,7 @@
 
 use super::msg_buf::MsgBuf;
 use super::stream::Stream;
-use crate::bee_msg::{Msg, MsgID};
+use crate::bee_msg::{Msg, MsgId};
 use crate::bee_serde::{Deserializable, Serializable};
 use anyhow::Result;
 use std::fmt::Debug;
@@ -26,7 +26,7 @@ pub trait Request: Send + Sync {
     fn respond<M: Msg + Serializable>(self, msg: &M) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
     fn addr(&self) -> SocketAddr;
-    fn msg_id(&self) -> MsgID;
+    fn msg_id(&self) -> MsgId;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
 }
 
@@ -61,7 +61,7 @@ impl<'a> Request for StreamRequest<'a> {
         self.buf.deserialize_msg()
     }
 
-    fn msg_id(&self) -> MsgID {
+    fn msg_id(&self) -> MsgId {
         self.buf.msg_id()
     }
 }
@@ -95,7 +95,7 @@ impl<'a> Request for SocketRequest<'a> {
         self.msg_buf.deserialize_msg()
     }
 
-    fn msg_id(&self) -> MsgID {
+    fn msg_id(&self) -> MsgId {
         self.msg_buf.msg_id()
     }
 }

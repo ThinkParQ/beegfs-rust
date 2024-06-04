@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::quota_limit::SpaceAndInodeLimits;
-use crate::db::quota_usage::PoolOrTargetID;
+use crate::db::quota_usage::PoolOrTargetId;
 use shared::bee_msg::quota::*;
 use shared::types::QuotaType;
 
@@ -12,9 +12,8 @@ impl Handler for GetDefaultQuota {
             .db
             .op(move |tx| {
                 // Check pool ID exists
-                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
-                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
-                }
+                let _ =
+                    resolve_num_id(tx, EntityType::Pool, NodeType::Storage, self.pool_id.into())?;
 
                 let res = db::quota_default_limit::get_with_pool_id(tx, self.pool_id)?;
 
@@ -54,9 +53,8 @@ impl Handler for SetDefaultQuota {
             .db
             .op(move |tx| {
                 // Check pool ID exists
-                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
-                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
-                }
+                let _ =
+                    resolve_num_id(tx, EntityType::Pool, NodeType::Storage, self.pool_id.into())?;
 
                 match self.space {
                     0 => db::quota_default_limit::delete(
@@ -130,9 +128,8 @@ impl Handler for GetQuotaInfo {
             .db
             .op(move |tx| {
                 // Check pool id exists
-                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
-                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
-                }
+                let _ =
+                    resolve_num_id(tx, EntityType::Pool, NodeType::Storage, self.pool_id.into())?;
 
                 let limits = match self.query_type {
                     QuotaQueryType::None => return Ok(vec![]),
@@ -205,9 +202,8 @@ impl Handler for SetQuota {
             .db
             .op(move |tx| {
                 // Check pool ID exists
-                if db::storage_pool::get_uid(tx, self.pool_id)?.is_none() {
-                    bail!(TypedError::value_not_found("storage pool ID", self.pool_id));
-                }
+                let _ =
+                    resolve_num_id(tx, EntityType::Pool, NodeType::Storage, self.pool_id.into())?;
 
                 db::quota_limit::update(
                     tx,
@@ -261,9 +257,9 @@ impl Handler for RequestExceededQuota {
                 let exceeded_ids = db::quota_usage::exceeded_quota_ids(
                     tx,
                     if self.pool_id != 0 {
-                        PoolOrTargetID::PoolID(self.pool_id)
+                        PoolOrTargetId::PoolID(self.pool_id)
                     } else {
-                        PoolOrTargetID::TargetID(self.target_id)
+                        PoolOrTargetId::TargetID(self.target_id)
                     },
                     self.id_type,
                     self.quota_type,
@@ -286,7 +282,7 @@ impl Handler for RequestExceededQuota {
             Err(err) => {
                 log_error_chain!(
                     err,
-                    "Fetching exceeded quota IDs for storage pool {} or target {} failed",
+                    "Fetching exceeded quota ids for storage pool {} or target {} failed",
                     self.pool_id,
                     self.target_id
                 );

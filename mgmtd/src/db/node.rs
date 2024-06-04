@@ -1,15 +1,13 @@
 //! Functions for node management
 
 use super::*;
-use rusqlite::OptionalExtension;
-use std::borrow::Cow;
 use std::time::Duration;
 
 /// Represents a node entry.
 #[derive(Clone, Debug)]
 pub(crate) struct Node {
-    pub uid: EntityUID,
-    pub id: NodeID,
+    pub uid: Uid,
+    pub id: NodeId,
     pub node_type: NodeType,
     pub alias: String,
     pub port: Port,
@@ -28,7 +26,7 @@ impl Node {
 }
 
 /// Retrieve a list of nodes filtered by node type.
-pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Vec<Node>> {
+pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Vec<Node>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT node_uid, node_id, node_type, alias, port
@@ -40,31 +38,11 @@ pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result
     )?)
 }
 
-/// Retrieve the global UID for the given node ID and type.
-///
-/// # Return value
-/// Returns `None` if the entry doesn't exist.
-pub(crate) fn get_uid(
-    tx: &mut Transaction,
-    node_id: NodeID,
-    node_type: NodeType,
-) -> Result<Option<EntityUID>> {
-    let res: Option<EntityUID> = tx
-        .query_row_cached(
-            sql!("SELECT node_uid FROM all_nodes_v WHERE node_id = ?1 AND node_type = ?2"),
-            params![node_id, node_type.sql_str()],
-            |row| row.get(0),
-        )
-        .optional()?;
-
-    Ok(res)
-}
-
 /// Delete client nodes with a last contact time bigger than `timeout`.
 ///
 /// # Return value
 /// Returns the number of deleted clients.
-pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> Result<usize> {
+pub(crate) fn delete_stale_clients(tx: &Transaction, timeout: Duration) -> Result<usize> {
     let affected = {
         let mut stmt = tx.prepare_cached(sql!(
             "DELETE FROM nodes
@@ -79,12 +57,12 @@ pub(crate) fn delete_stale_clients(tx: &mut Transaction, timeout: Duration) -> R
 
 /// Inserts a node into the database. If node_id is 0, a new ID is chosen automatically.
 pub(crate) fn insert(
-    tx: &mut Transaction,
-    node_id: NodeID,
-    alias: Option<&str>,
+    tx: &Transaction,
+    node_id: NodeId,
+    alias: Option<Alias>,
     node_type: NodeType,
     port: Port,
-) -> Result<(EntityUID, NodeID)> {
+) -> Result<(Uid, NodeId)> {
     let node_id = if node_id == 0 {
         misc::find_new_id(
             tx,
@@ -92,19 +70,21 @@ pub(crate) fn insert(
             "node_id",
             1..=0xFFFF,
         )?
-    } else if get_uid(tx, node_id, node_type)?.is_some() {
-        bail!(TypedError::value_exists("node ID", node_id));
     } else {
+        if let Some(node) = try_resolve_num_id(tx, EntityType::Node, node_type, node_id)? {
+            bail!("{node} already exists");
+        }
+
         node_id
     };
 
     let alias = if let Some(alias) = alias {
-        Cow::Borrowed(alias)
+        alias
     } else {
-        Cow::Owned(format!("node_{}_{}", node_type.sql_str(), node_id))
+        format!("node_{}_{}", node_type.sql_str(), node_id).try_into()?
     };
 
-    let uid = entity::insert(tx, EntityType::Node, alias.as_ref())?;
+    let uid = entity::insert(tx, EntityType::Node, &alias)?;
 
     tx.execute_cached(
         sql!(
@@ -126,7 +106,7 @@ pub(crate) fn insert(
 }
 
 /// Updates a node in the database.
-pub(crate) fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) -> Result<()> {
+pub(crate) fn update(tx: &Transaction, node_uid: Uid, new_port: Port) -> Result<()> {
     let affected = tx.execute_cached(
         sql!("UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2"),
         params![new_port, node_uid],
@@ -142,8 +122,8 @@ pub(crate) fn update(tx: &mut Transaction, node_uid: EntityUID, new_port: Port) 
 /// unreachable, not a target), but since there is currently no way to know from which node these
 /// messages come, the nodes to update are determined using target IDs.
 pub(crate) fn update_last_contact_for_targets(
-    tx: &mut Transaction,
-    target_ids: &[TargetID],
+    tx: &Transaction,
+    target_ids: &[TargetId],
     node_type: NodeTypeServer,
 ) -> Result<usize> {
     Ok(tx.execute_cached(
@@ -161,7 +141,7 @@ pub(crate) fn update_last_contact_for_targets(
 }
 
 /// Delete a node from the database.
-pub(crate) fn delete(tx: &mut Transaction, node_uid: EntityUID) -> Result<()> {
+pub(crate) fn delete(tx: &Transaction, node_uid: Uid) -> Result<()> {
     let affected = tx.execute_cached(
         sql!("DELETE FROM nodes WHERE node_uid = ?1"),
         params![node_uid],
@@ -178,9 +158,30 @@ mod test {
     fn insert_get_delete() {
         with_test_data(|tx| {
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
-            let (uid, _) = insert(tx, 1234, Some("new_node"), NodeType::Meta, 10000).unwrap();
-            insert(tx, 1234, Some("new_node_2"), NodeType::Meta, 10000).unwrap_err();
-            insert(tx, 1235, Some("new_node"), NodeType::Meta, 10000).unwrap_err();
+            let (uid, _) = insert(
+                tx,
+                1234,
+                Some("new_node".try_into().unwrap()),
+                NodeType::Meta,
+                10000,
+            )
+            .unwrap();
+            insert(
+                tx,
+                1234,
+                Some("new_node_2".try_into().unwrap()),
+                NodeType::Meta,
+                10000,
+            )
+            .unwrap_err();
+            insert(
+                tx,
+                1235,
+                Some("new_node".try_into().unwrap()),
+                NodeType::Meta,
+                10000,
+            )
+            .unwrap_err();
             assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
 
             delete(tx, uid).unwrap();

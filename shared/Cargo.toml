@@ -17,6 +17,7 @@ anyhow = { workspace = true }
 bytes = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "~0"
+protobuf = { workspace = true, optional = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
@@ -26,3 +27,6 @@ tokio = { workspace = true, features = [
     "time",
     "rt-multi-thread",
 ] }
+
+[features]
+protobuf = ["dep:protobuf"]

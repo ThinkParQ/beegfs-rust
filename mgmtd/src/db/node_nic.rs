@@ -7,7 +7,7 @@ use std::sync::Arc;
 ///
 /// # Return value
 /// A Vec containing (EntityUID, Vec<SocketAddr>) entries.
-pub(crate) fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<SocketAddr>)>> {
+pub(crate) fn get_all_addrs(tx: &Transaction) -> Result<Vec<(Uid, Vec<SocketAddr>)>> {
     let mut stmt = tx.prepare_cached(sql!(
         "SELECT nn.node_uid, nn.addr, n.port
         FROM node_nics AS nn
@@ -18,7 +18,7 @@ pub(crate) fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<
     let mut rows = stmt.query([])?;
 
     let mut res = vec![];
-    let mut cur: Option<&mut (EntityUID, Vec<SocketAddr>)> = None;
+    let mut cur: Option<&mut (Uid, Vec<SocketAddr>)> = None;
     while let Some(row) = rows.next()? {
         let node_uid = row.get(0)?;
         let addr = SocketAddr::new(row.get::<_, [u8; 4]>(1)?.into(), row.get(2)?);
@@ -39,7 +39,7 @@ pub(crate) fn get_all_addrs(tx: &mut Transaction) -> Result<Vec<(EntityUID, Vec<
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub(crate) struct NodeNic {
-    pub node_uid: EntityUID,
+    pub node_uid: Uid,
     pub addr: Ipv4Addr,
     pub port: Port,
     pub nic_type: NicType,
@@ -59,7 +59,7 @@ impl NodeNic {
 }
 
 /// Retrieves all node nics for a specific node
-pub(crate) fn get_with_node(tx: &mut Transaction, node_uid: EntityUID) -> Result<Arc<[NodeNic]>> {
+pub(crate) fn get_with_node(tx: &Transaction, node_uid: Uid) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
@@ -74,7 +74,7 @@ pub(crate) fn get_with_node(tx: &mut Transaction, node_uid: EntityUID) -> Result
 }
 
 /// Retrieves all node nics for the given node type.
-pub(crate) fn get_with_type(tx: &mut Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
+pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
@@ -98,8 +98,8 @@ pub(crate) struct ReplaceNic<'a> {
 /// Replaces all node nics for the given node by UID.
 // TODO Accept fitting structure, so we don't have to provide unused port anymore
 pub(crate) fn replace<'a>(
-    tx: &mut Transaction,
-    node_uid: EntityUID,
+    tx: &Transaction,
+    node_uid: Uid,
     nics: impl IntoIterator<Item = ReplaceNic<'a>>,
 ) -> Result<()> {
     tx.execute_cached(
@@ -154,14 +154,14 @@ mod test {
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
             assert_eq!(4, nics.iter().filter(|e| e.node_uid == 102001).count());
 
-            super::replace(tx, 102001u64, []).unwrap();
+            super::replace(tx, 102001i64, []).unwrap();
 
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
             assert_eq!(0, nics.iter().filter(|e| e.node_uid == 102001).count());
 
             super::replace(
                 tx,
-                102001u64,
+                102001i64,
                 [ReplaceNic {
                     addr: &Ipv4Addr::new(1, 2, 3, 4),
                     name: "test",

@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::target::TargetCapacities;
-use shared::bee_msg::misc::RefreshCapacityPools;
+use crate::types::ResolveEntityId;
 use shared::bee_msg::target::*;
 use std::time::Duration;
 
@@ -89,7 +89,7 @@ impl Handler for RegisterTarget {
                     db::target::insert_storage(
                         tx,
                         self.target_id,
-                        Some(format!("target_{}", std::str::from_utf8(&self.alias)?).as_str()),
+                        Some(format!("target_{}", std::str::from_utf8(&self.alias)?).try_into()?),
                     )
                 })
                 .await
@@ -118,16 +118,18 @@ impl Handler for MapTargets {
         let res = ctx
             .db
             .op(move |tx| {
-                // Check node ID exists
-                if db::node::get_uid(tx, self.node_id, NodeType::Storage)?.is_none() {
-                    bail!(TypedError::value_not_found("node ID", self.node_id));
+                // Check node Id exists
+                let node = LegacyId {
+                    node_type: NodeType::Storage,
+                    num_id: self.node_id,
                 }
+                .resolve(tx, EntityType::Node)?;
 
-                // Check all target IDs exist
+                // Check all target Ids exist
                 db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
 
                 let updated =
-                    db::target::update_storage_node_mappings(tx, &target_ids, self.node_id)?;
+                    db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
 
                 Ok(updated)
             })
@@ -184,47 +186,6 @@ impl Handler for MapTargetsResp {
     async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Self::Response {
         // This is sent from the nodes as a result of the MapTargets notification after
         // map_targets was called. We just ignore it.
-    }
-}
-
-impl Handler for UnmapTarget {
-    type Response = UnmapTargetResp;
-
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let res = ctx
-            .db
-            .op(move |tx| {
-                // Check given target ID exists
-                db::target::get_uid(tx, self.target_id, NodeTypeServer::Storage)?
-                    .ok_or_else(|| TypedError::value_not_found("target ID", self.target_id))?;
-
-                db::target::delete_storage(tx, self.target_id)
-            })
-            .await;
-
-        match res {
-            Ok(_) => {
-                log::info!("Removed storage target {}", self.target_id,);
-
-                notify_nodes(
-                    ctx,
-                    &[NodeType::Meta],
-                    &RefreshCapacityPools { ack_id: "".into() },
-                )
-                .await;
-
-                UnmapTargetResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(err, "Unmapping storage target {} failed", self.target_id);
-
-                UnmapTargetResp {
-                    result: OpsErr::INTERNAL,
-                }
-            }
-        }
     }
 }
 
@@ -289,7 +250,7 @@ impl Handler for ChangeTargetConsistencyStates {
             .op(move |tx| {
                 let node_type = self.node_type.try_into()?;
 
-                // Check given target IDs exist
+                // Check given target Ids exist
                 db::target::validate_ids(tx, &self.target_ids, node_type)?;
 
                 // Old management updates contact time while handling this message (comes usually in
@@ -356,7 +317,7 @@ impl Handler for SetTargetConsistencyStates {
 
             ctx.db
                 .op(move |tx| {
-                    // Check given target IDs exist
+                    // Check given target Ids exist
                     db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
                     if msg.set_online > 0 {

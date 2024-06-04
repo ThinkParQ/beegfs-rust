@@ -6,7 +6,7 @@
 use crate::context::Context;
 use crate::db;
 use crate::error::TypedError;
-use crate::types::SqliteStr;
+use crate::types::*;
 use anyhow::{bail, Result};
 use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
 use shared::bee_msg::{Msg, OpsErr};
@@ -123,9 +123,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
     dispatch_msg!(
         buddy_group::GetMirrorBuddyGroups => buddy_group::GetMirrorBuddyGroupsResp,
         buddy_group::GetStatesAndBuddyGroups => buddy_group::GetStatesAndBuddyGroupsResp,
-        buddy_group::RemoveBuddyGroup => buddy_group::RemoveBuddyGroupResp,
         buddy_group::SetMetadataMirroring => buddy_group::SetMetadataMirroringResp,
-        buddy_group::SetMirrorBuddyGroup => buddy_group::SetMirrorBuddyGroupResp,
         buddy_group::SetMirrorBuddyGroupResp,
         misc::Ack,
         misc::AuthenticateChannel,
@@ -137,17 +135,13 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         node::Heartbeat => misc::Ack,
         node::HeartbeatRequest => node::Heartbeat,
         node::RegisterNode => node::RegisterNodeResp,
-        node::RemoveNode => node::RemoveNodeResp,
         node::RemoveNodeResp,
         quota::GetDefaultQuota => quota::GetDefaultQuotaResp,
         quota::GetQuotaInfo => quota::GetQuotaInfoResp,
         quota::RequestExceededQuota => quota::RequestExceededQuotaResp,
         quota::SetDefaultQuota => quota::SetDefaultQuotaResp,
         quota::SetQuota => quota::SetQuotaResp,
-        storage_pool::AddStoragePool => storage_pool::AddStoragePoolResp,
         storage_pool::GetStoragePools => storage_pool::GetStoragePoolsResp,
-        storage_pool::ModifyStoragePool => storage_pool::ModifyStoragePoolResp,
-        storage_pool::RemoveStoragePool => storage_pool::RemoveStoragePoolResp,
         target::ChangeTargetConsistencyStates => target::ChangeTargetConsistencyStatesResp,
         target::GetTargetMappings => target::GetTargetMappingsResp,
         target::GetTargetStates => target::GetTargetStatesResp,
@@ -156,7 +150,6 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         target::RegisterTarget => target::RegisterTargetResp,
         target::SetStorageTargetInfo => target::SetStorageTargetInfoResp,
         target::SetTargetConsistencyStates => target::SetTargetConsistencyStatesResp,
-        target::UnmapTarget => target::UnmapTargetResp,
     )
 }
 
