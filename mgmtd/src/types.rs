@@ -1,6 +1,6 @@
 //! Contains types used by the local database and config.
 
-use pb::beegfs::beegfs as pb;
+use protobuf::beegfs as pb;
 use rusqlite::Row;
 use shared::bee_msg::misc::CapacityPool;
 use shared::types::{

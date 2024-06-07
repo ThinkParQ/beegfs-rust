@@ -1,5 +1,5 @@
 use super::*;
-use pb::beegfs::beegfs as pb;
+use protobuf::{beegfs as pb, management as pm};
 
 pub(crate) async fn get(
     ctx: &Context,
@@ -15,10 +15,10 @@ pub(crate) async fn get(
                 ),
                 [],
                 |row| {
-                    Ok(pb::get_storage_pools_response::StoragePool {
+                    Ok(pm::get_storage_pools_response::StoragePool {
                         id: Some(pb::EntityIdSet {
                             uid: row.get(0)?,
-                            legacy_id: Some(LegacyId {
+                            legacy_id: Some(pb::LegacyId {
                                 num_id: row.get(1)?,
                                 node_type: pb::NodeType::Storage as i32,
                                 entity_type: pb::EntityType::StoragePool as i32,
@@ -45,7 +45,7 @@ pub(crate) async fn get(
                         row.get(3)?,
                         pb::EntityIdSet {
                             uid: row.get(0)?,
-                            legacy_id: Some(LegacyId {
+                            legacy_id: Some(pb::LegacyId {
                                 num_id: row.get(1)?,
                                 node_type: pb::NodeType::Storage as i32,
                                 entity_type: pb::EntityType::Target as i32,
@@ -70,7 +70,7 @@ pub(crate) async fn get(
                         row.get(3)?,
                         pb::EntityIdSet {
                             uid: row.get(0)?,
-                            legacy_id: Some(LegacyId {
+                            legacy_id: Some(pb::LegacyId {
                                 num_id: row.get(1)?,
                                 node_type: pb::NodeType::Storage as i32,
                                 entity_type: pb::EntityType::Target as i32,
