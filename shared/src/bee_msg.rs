@@ -15,7 +15,7 @@ pub mod storage_pool;
 pub mod target;
 
 /// The BeeGFS message ID as defined in `NetMsgTypes.h`
-pub type MsgID = u16;
+pub type MsgId = u16;
 
 /// A BeeGFS message
 ///
@@ -23,7 +23,7 @@ pub type MsgID = u16;
 /// based BeeGFS components.
 pub trait Msg: std::fmt::Debug + Clone + Send + Sync + 'static {
     /// Message type as defined in NetMessageTypes.h
-    const ID: MsgID;
+    const ID: MsgId;
 }
 
 /// Matches the `FhgfsOpsErr` value from the BeeGFS C/C++ codebase.

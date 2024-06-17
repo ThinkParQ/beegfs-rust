@@ -1,45 +1,41 @@
 use super::*;
-use crate::db;
-use crate::db::entity::check_alias;
-use crate::types::{EntityType, SqliteStr};
-use anyhow::bail;
 use rusqlite::OptionalExtension;
 
-pub(crate) async fn set_alias(ctx: &Context, req: SetAliasRequest) -> Result<SetAliasResponse> {
+/// Sets the entity alias for any entity
+pub(crate) async fn set_alias(
+    ctx: &Context,
+    req: pm::SetAliasRequest,
+) -> Result<pm::SetAliasResponse> {
+    // Parse proto msg
+    let entity_type: EntityType = req.entity_type().try_into()?;
+    let entity_id: EntityId = required_field(req.entity_id)?.try_into()?;
+    let alias: Alias = req.new_alias.try_into()?;
+
     ctx.db
         .op(move |tx| {
-            check_alias(&req.new_alias)?;
+            let entity = entity_id.resolve(tx, entity_type)?;
 
-            let uid = db::misc::uid_from_proto_entity_id(tx, req.entity_id.unwrap())?;
-
+            // Check that the alias is not in use yet
             let et: Option<EntityType> = tx
                 .query_row_cached(
                     sql!("SELECT entity_type FROM entities WHERE alias = ?1"),
-                    [&req.new_alias],
+                    [alias.as_ref()],
                     |row| EntityType::from_row(row, 0),
                 )
                 .optional()?;
 
             if let Some(et) = et {
-                bail!(
-                    "Alias {} is already in use by a {}",
-                    req.new_alias,
-                    et.sql_str()
-                );
+                bail!("Alias {} is already in use by a {}", alias, et.sql_str());
             }
 
-            let affected = tx.execute_cached(
+            tx.execute_cached(
                 sql!("UPDATE entities SET alias = ?1 WHERE uid = ?2"),
-                params![req.new_alias, uid],
+                params![alias.as_ref(), entity.uid],
             )?;
-
-            if affected != 1 {
-                bail!("Entity with UID {} not found", uid);
-            }
 
             Ok(())
         })
         .await?;
 
-    Ok(SetAliasResponse {})
+    Ok(pm::SetAliasResponse {})
 }

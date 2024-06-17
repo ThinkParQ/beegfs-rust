@@ -14,8 +14,8 @@ publish.workspace = true
 sqlite = { path = "../sqlite" }
 
 [dependencies]
-shared = { path = "../shared"}
-protobuf = { git = "https://github.com/thinkparq/protobuf", tag = "v0.0.7" }
+shared = { path = "../shared", features = ["protobuf"]}
+protobuf = { workspace = true }
 sqlite = { path = "../sqlite" }
 sqlite_check = { path = "../sqlite_check"}
 

@@ -1,8 +1,8 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::types::SqliteStr;
+use crate::types::SqliteExt;
 use protobuf::{beegfs as pb, management as pm};
-use shared::bee_msg::misc::CapacityPool;
+use shared::bee_msg::misc::RefreshCapacityPools;
 use std::time::Duration;
 
 impl CapacityInfo for &pm::get_targets_response::Target {
@@ -15,9 +15,14 @@ impl CapacityInfo for &pm::get_targets_response::Target {
     }
 }
 
-pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTargetsResponse> {
+/// Delivers the list of targets
+pub(crate) async fn get(
+    ctx: &Context,
+    _req: pm::GetTargetsRequest,
+) -> Result<pm::GetTargetsResponse> {
     let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
 
+    // Query all targets which have a node assigned
     let targets_q = sql!(
         "SELECT t.target_uid, t.alias, t.target_id, t.node_type,
             n.node_uid, n.alias, n.node_id,
@@ -32,7 +37,7 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
     );
 
     let targets_f = move |row: &rusqlite::Row| {
-        let node_type = pb::NodeType::from_row(row, 3)? as i32;
+        let node_type = i32::from(pb::NodeType::from(NodeType::from_row(row, 3)?));
 
         Ok(pm::get_targets_response::Target {
             id: Some(pb::EntityIdSet {
@@ -40,7 +45,6 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 legacy_id: Some(pb::LegacyId {
                     num_id: row.get(2)?,
                     node_type,
-                    entity_type: pb::EntityType::Target as i32,
                 }),
                 alias: row.get(1)?,
             }),
@@ -50,17 +54,15 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 legacy_id: Some(pb::LegacyId {
                     num_id: row.get(6)?,
                     node_type,
-                    entity_type: pb::EntityType::Node as i32,
                 }),
                 alias: row.get(5)?,
             }),
-            storage_pool: if let Some(uid) = row.get::<_, Option<EntityUID>>(7)? {
+            storage_pool: if let Some(uid) = row.get::<_, Option<Uid>>(7)? {
                 Some(pb::EntityIdSet {
-                    uid,
+                    uid: Some(uid),
                     legacy_id: Some(pb::LegacyId {
                         num_id: row.get(9)?,
                         node_type,
-                        entity_type: pb::EntityType::StoragePool as i32,
                     }),
                     alias: row.get(8)?,
                 })
@@ -72,7 +74,10 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 Duration::from_secs(row.get(11)?),
                 node_offline_timeout,
             ) as i32,
-            consistency_state: pb::ConsistencyState::from_row(row, 10)? as i32,
+            consistency_state: pb::ConsistencyState::from(TargetConsistencyState::from_row(
+                row, 10,
+            )?)
+            .into(),
             last_contact_s: row.get(11)?,
             free_space_bytes: row.get(12)?,
             free_inodes: row.get(13)?,
@@ -84,7 +89,7 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
 
     let pools_q = sql!("SELECT pool_uid FROM storage_pools");
 
-    let (mut targets, pools): (Vec<pm::get_targets_response::Target>, Vec<EntityUID>) = ctx
+    let (mut targets, pools): (Vec<pm::get_targets_response::Target>, Vec<Uid>) = ctx
         .db
         .op(move |tx| {
             Ok((
@@ -108,13 +113,10 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
         .filter(|t| t.node_type() == pb::NodeType::Meta)
     {
         if t.free_space_bytes.is_some() && t.free_inodes.is_some() {
-            t.cap_pool = match cap_pool_meta_calc
-                .cap_pool(t.free_space_bytes.unwrap(), t.free_inodes.unwrap())
-            {
-                CapacityPool::Normal => pb::CapacityPool::Normal,
-                CapacityPool::Low => pb::CapacityPool::Low,
-                CapacityPool::Emergency => pb::CapacityPool::Emergency,
-            } as i32;
+            t.cap_pool = pb::CapacityPool::from(
+                cap_pool_meta_calc.cap_pool(t.free_space_bytes.unwrap(), t.free_inodes.unwrap()),
+            )
+            .into();
         }
     }
 
@@ -125,28 +127,88 @@ pub(crate) async fn get(ctx: &Context, _req: GetTargetsRequest) -> Result<GetTar
                 .user_config
                 .cap_pool_dynamic_storage_limits
                 .as_ref(),
-            targets
-                .iter()
-                .filter(|t| t.storage_pool.as_ref().is_some_and(|e| e.uid == sp_uid)),
+            targets.iter().filter(|t| {
+                t.storage_pool
+                    .as_ref()
+                    .is_some_and(|e| e.uid == Some(sp_uid))
+            }),
         )?;
 
-        for t in targets
-            .iter_mut()
-            .filter(|t| t.storage_pool.as_ref().is_some_and(|e| e.uid == sp_uid))
-        {
+        for t in targets.iter_mut().filter(|t| {
+            t.storage_pool
+                .as_ref()
+                .is_some_and(|e| e.uid == Some(sp_uid))
+        }) {
             if t.free_space_bytes.is_some() && t.free_inodes.is_some() {
-                t.cap_pool = match cap_pool_storage_calc
-                    .cap_pool(t.free_space_bytes.unwrap(), t.free_inodes.unwrap())
-                {
-                    CapacityPool::Normal => pb::CapacityPool::Normal,
-                    CapacityPool::Low => pb::CapacityPool::Low,
-                    CapacityPool::Emergency => pb::CapacityPool::Emergency,
-                } as i32;
+                t.cap_pool = pb::CapacityPool::from(
+                    cap_pool_storage_calc
+                        .cap_pool(t.free_space_bytes.unwrap(), t.free_inodes.unwrap()),
+                )
+                .into();
             }
         }
     }
 
-    Ok(GetTargetsResponse { targets })
+    Ok(pm::GetTargetsResponse { targets })
+}
+
+/// Deletes a target
+pub(crate) async fn delete(
+    ctx: &Context,
+    req: pm::DeleteTargetRequest,
+) -> Result<pm::DeleteTargetResponse> {
+    let target: EntityId = required_field(req.target)?.try_into()?;
+    let execute: bool = required_field(req.execute)?;
+
+    let target = ctx
+        .db
+        .op_with_conn(move |conn| {
+            let tx = conn.transaction()?;
+
+            let target = target.resolve(&tx, EntityType::Target)?;
+
+            if target.node_type() != &NodeType::Storage {
+                bail!("Only storage targets can be deleted directly");
+            }
+
+            let assigned_groups: usize = tx.query_row_cached(
+                sql!(
+                    "SELECT COUNT(*) FROM all_buddy_groups_v
+                    WHERE p_target_uid = ?1 OR s_target_uid = ?1"
+                ),
+                [target.uid],
+                |row| row.get(0),
+            )?;
+
+            if assigned_groups > 0 {
+                bail!("Target {target} is part of a buddy group");
+            }
+
+            db::target::delete_storage(&tx, target.num_id().try_into()?)?;
+
+            if execute {
+                tx.commit()?;
+            }
+            Ok(target)
+        })
+        .await?;
+
+    if execute {
+        log::info!("Target deleted: {target}");
+
+        notify_nodes(
+            ctx,
+            &[NodeType::Meta],
+            &RefreshCapacityPools { ack_id: "".into() },
+        )
+        .await;
+    }
+
+    let target = Some(target.into());
+
+    log::warn!("{target:?}");
+
+    Ok(pm::DeleteTargetResponse { target })
 }
 
 /// Calculate reachability state

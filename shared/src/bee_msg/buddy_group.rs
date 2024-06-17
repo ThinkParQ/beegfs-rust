@@ -11,7 +11,7 @@ pub struct GetMirrorBuddyGroups {
 }
 
 impl Msg for GetMirrorBuddyGroups {
-    const ID: MsgID = 1047;
+    const ID: MsgId = 1047;
 }
 
 /// Response with requested buddy groups along with their assigned targets.
@@ -20,15 +20,15 @@ impl Msg for GetMirrorBuddyGroups {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetMirrorBuddyGroupsResp {
     #[bee_serde(as = Seq<true, _>)]
-    pub buddy_groups: Vec<BuddyGroupID>,
+    pub buddy_groups: Vec<BuddyGroupId>,
     #[bee_serde(as = Seq<true, _>)]
-    pub primary_targets: Vec<TargetID>,
+    pub primary_targets: Vec<TargetId>,
     #[bee_serde(as = Seq<true, _>)]
-    pub secondary_targets: Vec<TargetID>,
+    pub secondary_targets: Vec<TargetId>,
 }
 
 impl Msg for GetMirrorBuddyGroupsResp {
-    const ID: MsgID = 1048;
+    const ID: MsgId = 1048;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
@@ -39,8 +39,8 @@ pub struct CombinedTargetState {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct BuddyGroup {
-    pub primary_target_id: TargetID,
-    pub secondary_target_id: TargetID,
+    pub primary_target_id: TargetId,
+    pub secondary_target_id: TargetId,
 }
 
 /// Fetches a buddy group ids with their assigned targets and target ids with their states
@@ -53,37 +53,37 @@ pub struct GetStatesAndBuddyGroups {
 }
 
 impl Msg for GetStatesAndBuddyGroups {
-    const ID: MsgID = 1053;
+    const ID: MsgId = 1053;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetStatesAndBuddyGroupsResp {
     #[bee_serde(as = Map<false, _, _>)]
-    pub groups: HashMap<BuddyGroupID, BuddyGroup>,
+    pub groups: HashMap<BuddyGroupId, BuddyGroup>,
     #[bee_serde(as = Map<false, _, _>)]
-    pub states: HashMap<TargetID, CombinedTargetState>,
+    pub states: HashMap<TargetId, CombinedTargetState>,
 }
 
 impl Msg for GetStatesAndBuddyGroupsResp {
-    const ID: MsgID = 1054;
+    const ID: MsgId = 1054;
 }
 
 /// Removes a buddy group from the system.
 ///
 /// Currently only supported for storage buddy groups, despite the field `node_type`.
 ///
-/// Used by old ctl only
+/// Used by old ctl and self
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveBuddyGroup {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
-    pub buddy_group_id: BuddyGroupID,
+    pub group_id: BuddyGroupId,
     pub check_only: u8,
     pub force: u8,
 }
 
 impl Msg for RemoveBuddyGroup {
-    const ID: MsgID = 1060;
+    const ID: MsgId = 1060;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -92,7 +92,7 @@ pub struct RemoveBuddyGroupResp {
 }
 
 impl Msg for RemoveBuddyGroupResp {
-    const ID: MsgID = 1061;
+    const ID: MsgId = 1061;
 }
 
 /// Enables a metadata mirrored system
@@ -102,7 +102,7 @@ impl Msg for RemoveBuddyGroupResp {
 pub struct SetMetadataMirroring {}
 
 impl Msg for SetMetadataMirroring {
-    const ID: MsgID = 2069;
+    const ID: MsgId = 2069;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -111,7 +111,7 @@ pub struct SetMetadataMirroringResp {
 }
 
 impl Msg for SetMetadataMirroringResp {
-    const ID: MsgID = 2070;
+    const ID: MsgId = 2070;
 }
 
 /// Adds a new buddy group or notifies the nodes via UDP that there is a new buddy group
@@ -121,9 +121,9 @@ impl Msg for SetMetadataMirroringResp {
 pub struct SetMirrorBuddyGroup {
     #[bee_serde(as = Int<u32>)]
     pub node_type: NodeType,
-    pub primary_target_id: TargetID,
-    pub secondary_target_id: TargetID,
-    pub buddy_group_id: BuddyGroupID,
+    pub primary_target_id: TargetId,
+    pub secondary_target_id: TargetId,
+    pub group_id: BuddyGroupId,
     /// This probably shall allow a group to be updated
     pub allow_update: u8,
     #[bee_serde(as = CStr<0>)]
@@ -131,23 +131,23 @@ pub struct SetMirrorBuddyGroup {
 }
 
 impl Msg for SetMirrorBuddyGroup {
-    const ID: MsgID = 1045;
+    const ID: MsgId = 1045;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SetMirrorBuddyGroupResp {
     pub result: OpsErr,
-    pub buddy_group_id: BuddyGroupID,
+    pub group_id: BuddyGroupId,
 }
 
 impl Msg for SetMirrorBuddyGroupResp {
-    const ID: MsgID = 1046;
+    const ID: MsgId = 1046;
 }
 
 impl Serializable for SetMirrorBuddyGroupResp {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
         self.result.serialize(ser)?;
-        self.buddy_group_id.serialize(ser)?;
+        self.group_id.serialize(ser)?;
         ser.zeroes(2)?;
         Ok(())
     }
@@ -157,7 +157,7 @@ impl Deserializable for SetMirrorBuddyGroupResp {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
         let r = Self {
             result: OpsErr::deserialize(des)?,
-            buddy_group_id: BuddyGroupID::deserialize(des)?,
+            group_id: BuddyGroupId::deserialize(des)?,
         };
         des.skip(2)?;
         Ok(r)

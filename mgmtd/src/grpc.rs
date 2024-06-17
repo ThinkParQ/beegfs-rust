@@ -1,13 +1,16 @@
 //! gRPC server and handlers
 
+use crate::bee_msg::notify_nodes;
 use crate::context::Context;
-use anyhow::{Context as AContext, Result};
-use protobuf::management::*;
-use rusqlite::params;
+use crate::db;
+use crate::types::{ResolveEntityId, SqliteExt};
+use anyhow::{bail, Context as AContext, Result};
+use protobuf::{beegfs as pb, management as pm};
+use rusqlite::{params, Transaction};
 use shared::error_chain;
 use shared::shutdown::Shutdown;
-use shared::types::EntityUID;
-use sqlite::{ConnectionExt, TransactionExt};
+use shared::types::*;
+use sqlite::{check_affected_rows, ConnectionExt, TransactionExt};
 use sqlite_check::sql;
 use std::net::SocketAddr;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
@@ -16,8 +19,16 @@ use tonic::{Code, Request, Response, Status};
 mod buddy_group;
 mod misc;
 mod node;
-mod storage_pool;
+mod pool;
 mod target;
+
+/// Unwraps an optional proto message field . If `None`, errors out providing the fields name in the
+/// error message.
+///
+/// Meant for unwrapping optional protobuf fields that are actually mandatory.
+pub(crate) fn required_field<T>(f: Option<T>) -> Result<T> {
+    f.ok_or_else(|| ::anyhow::anyhow!("missing required {} field", std::any::type_name::<T>()))
+}
 
 /// Serve gRPC requests on the `grpc_port` extracted from the config
 pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
@@ -43,7 +54,7 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
 
     tokio::spawn(async move {
         builder
-            .add_service(management_server::ManagementServer::new(
+            .add_service(pm::management_server::ManagementServer::new(
                 ManagementService { ctx },
             ))
             // Provide our shutdown handle to automatically shutdown the server gracefully when
@@ -64,11 +75,27 @@ pub(crate) struct ManagementService {
 
 /// gRPC server implementation
 #[tonic::async_trait]
-impl management_server::Management for ManagementService {
+impl pm::management_server::Management for ManagementService {
+    async fn set_alias(
+        &self,
+        req: Request<pm::SetAliasRequest>,
+    ) -> Result<Response<pm::SetAliasResponse>, Status> {
+        let res = misc::set_alias(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Setting alias failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
     async fn get_nodes(
         &self,
-        req: Request<GetNodesRequest>,
-    ) -> Result<Response<GetNodesResponse>, Status> {
+        req: Request<pm::GetNodesRequest>,
+    ) -> Result<Response<pm::GetNodesResponse>, Status> {
         let res = node::get(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -81,10 +108,26 @@ impl management_server::Management for ManagementService {
         }
     }
 
+    async fn delete_node(
+        &self,
+        req: Request<pm::DeleteNodeRequest>,
+    ) -> Result<Response<pm::DeleteNodeResponse>, Status> {
+        let res = node::delete(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Deleting node failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
     async fn get_targets(
         &self,
-        req: Request<GetTargetsRequest>,
-    ) -> Result<Response<GetTargetsResponse>, Status> {
+        req: Request<pm::GetTargetsRequest>,
+    ) -> Result<Response<pm::GetTargetsResponse>, Status> {
         let res = target::get(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -97,10 +140,90 @@ impl management_server::Management for ManagementService {
         }
     }
 
+    async fn delete_target(
+        &self,
+        req: Request<pm::DeleteTargetRequest>,
+    ) -> Result<Response<pm::DeleteTargetResponse>, Status> {
+        let res = target::delete(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Deleting target failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
+    async fn get_pools(
+        &self,
+        req: Request<pm::GetPoolsRequest>,
+    ) -> Result<Response<pm::GetPoolsResponse>, Status> {
+        let res = pool::get(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Getting storage pools failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
+    async fn create_pool(
+        &self,
+        req: Request<pm::CreatePoolRequest>,
+    ) -> Result<Response<pm::CreatePoolResponse>, Status> {
+        let res = pool::create(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Creating storage pool failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
+    async fn assign_pool(
+        &self,
+        req: Request<pm::AssignPoolRequest>,
+    ) -> Result<Response<pm::AssignPoolResponse>, Status> {
+        let res = pool::assign(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Moving targets to storage pool failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
+    async fn delete_pool(
+        &self,
+        req: Request<pm::DeletePoolRequest>,
+    ) -> Result<Response<pm::DeletePoolResponse>, Status> {
+        let res = pool::delete(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Deleting storage pool failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
     async fn get_buddy_groups(
         &self,
-        req: Request<GetBuddyGroupsRequest>,
-    ) -> Result<Response<GetBuddyGroupsResponse>, Status> {
+        req: Request<pm::GetBuddyGroupsRequest>,
+    ) -> Result<Response<pm::GetBuddyGroupsResponse>, Status> {
         let res = buddy_group::get(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -113,32 +236,32 @@ impl management_server::Management for ManagementService {
         }
     }
 
-    async fn get_storage_pools(
+    async fn create_buddy_group(
         &self,
-        req: Request<GetStoragePoolsRequest>,
-    ) -> Result<Response<GetStoragePoolsResponse>, Status> {
-        let res = storage_pool::get(&self.ctx, req.into_inner()).await;
+        req: Request<pm::CreateBuddyGroupRequest>,
+    ) -> Result<Response<pm::CreateBuddyGroupResponse>, Status> {
+        let res = buddy_group::create(&self.ctx, req.into_inner()).await;
 
         match res {
             Ok(res) => Ok(Response::new(res)),
             Err(err) => {
-                let msg = error_chain!(err, "Getting storage pools failed");
+                let msg = error_chain!(err, "Creating storage buddy_group failed");
                 log::error!("{msg}");
                 Err(Status::new(Code::Internal, msg))
             }
         }
     }
 
-    async fn set_alias(
+    async fn delete_buddy_group(
         &self,
-        req: Request<SetAliasRequest>,
-    ) -> Result<Response<SetAliasResponse>, Status> {
-        let res = misc::set_alias(&self.ctx, req.into_inner()).await;
+        req: Request<pm::DeleteBuddyGroupRequest>,
+    ) -> Result<Response<pm::DeleteBuddyGroupResponse>, Status> {
+        let res = buddy_group::delete(&self.ctx, req.into_inner()).await;
 
         match res {
             Ok(res) => Ok(Response::new(res)),
             Err(err) => {
-                let msg = error_chain!(err, "Setting alias failed");
+                let msg = error_chain!(err, "Deleting storage buddy_group failed");
                 log::error!("{msg}");
                 Err(Status::new(Code::Internal, msg))
             }

@@ -10,7 +10,7 @@ use shared::bee_msg::quota::{
 };
 use shared::bee_msg::OpsErr;
 use shared::log_error_chain;
-use shared::types::{NodeType, NodeTypeServer, QuotaID};
+use shared::types::{NodeType, NodeTypeServer, QuotaId};
 use sqlite::ConnectionExt;
 use std::collections::HashSet;
 use std::path::Path;
@@ -70,12 +70,12 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 
     // If configured, add range based user IDs
     if let Some(range) = &ctx.info.user_config.quota_user_ids_range {
-        user_ids.extend(range.clone().map(QuotaID::from));
+        user_ids.extend(range.clone().map(QuotaId::from));
     }
 
     // If configured, add range based group IDs
     if let Some(range) = &ctx.info.user_config.quota_group_ids_range {
-        group_ids.extend(range.clone().map(QuotaID::from));
+        group_ids.extend(range.clone().map(QuotaId::from));
     }
 
     let mut tasks = vec![];
@@ -232,7 +232,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 /// Tries to read quota IDs (users, groups) from a file
 ///
 /// IDs must be in numerical form and separated by any whitespace.
-fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaID>) -> Result<()> {
+fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaId>) -> Result<()> {
     let data = std::fs::read_to_string(path)?;
     for id in data.split_whitespace().map(|e| e.parse()) {
         read_into.insert(id.context("Invalid syntax in quota file {path}")?);

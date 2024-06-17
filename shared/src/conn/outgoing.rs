@@ -6,7 +6,7 @@ use crate::bee_msg::Msg;
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::types::{AuthenticationSecret, EntityUID};
+use crate::types::{AuthenticationSecret, Uid};
 use anyhow::{bail, Context, Result};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -45,7 +45,7 @@ impl Pool {
     /// Sends a [Msg] to a node and receives the response.
     pub async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
-        node_uid: EntityUID,
+        node_uid: Uid,
         msg: &M,
     ) -> Result<R> {
         log::debug!(target: "msg", "REQUEST to {:?}: {:?}", node_uid, msg);
@@ -64,7 +64,7 @@ impl Pool {
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
-    pub async fn send<M: Msg + Serializable>(&self, node_uid: EntityUID, msg: &M) -> Result<()> {
+    pub async fn send<M: Msg + Serializable>(&self, node_uid: Uid, msg: &M) -> Result<()> {
         log::debug!(target: "msg", "SEND to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();
@@ -91,7 +91,7 @@ impl Pool {
     /// 3. Pop an open stream from the store, waiting until one gets available.
     async fn comm_stream(
         &self,
-        node_uid: EntityUID,
+        node_uid: Uid,
         buf: &mut MsgBuf,
         expect_response: bool,
     ) -> Result<()> {
@@ -187,7 +187,7 @@ impl Pool {
 
     pub async fn broadcast_datagram<M: Msg + Serializable>(
         &self,
-        peers: impl IntoIterator<Item = EntityUID>,
+        peers: impl IntoIterator<Item = Uid>,
         msg: &M,
     ) -> Result<()> {
         let mut buf = self.store.pop_buf().unwrap_or_default();
@@ -208,7 +208,7 @@ impl Pool {
         Ok(())
     }
 
-    pub fn replace_node_addrs(&self, node_uid: EntityUID, new_addrs: impl Into<Arc<[SocketAddr]>>) {
+    pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
         self.store.replace_node_addrs(node_uid, new_addrs)
     }
 }

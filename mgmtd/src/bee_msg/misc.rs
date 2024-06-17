@@ -2,7 +2,7 @@ use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
-use shared::types::StoragePoolID;
+use shared::types::PoolId;
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 
@@ -10,7 +10,7 @@ impl Handler for Ack {
     type Response = ();
 
     async fn handle(self, _ctx: &Context, req: &mut impl Request) -> Self::Response {
-        log::debug!("Ignoring Ack from {:?}: ID: {:?}", req.addr(), self.ack_id);
+        log::debug!("Ignoring Ack from {:?}: Id: {:?}", req.addr(), self.ack_id);
         todo!()
     }
 }
@@ -71,7 +71,7 @@ impl Handler for RefreshCapacityPools {
 
 struct TargetOrBuddyGroup {
     id: u16,
-    pool_id: Option<StoragePoolID>,
+    pool_id: Option<PoolId>,
     free_space: u64,
     free_inodes: u64,
 }
@@ -87,7 +87,7 @@ impl CapacityInfo for &TargetOrBuddyGroup {
 }
 
 fn load_targets_by_type(
-    tx: &mut Transaction,
+    tx: &Transaction,
     node_type: NodeTypeServer,
 ) -> Result<Vec<TargetOrBuddyGroup>> {
     let targets = tx.query_map_collect(
@@ -111,12 +111,12 @@ fn load_targets_by_type(
 }
 
 fn load_buddy_groups_by_type(
-    tx: &mut Transaction,
+    tx: &Transaction,
     node_type: NodeTypeServer,
 ) -> Result<Vec<TargetOrBuddyGroup>> {
     let groups = tx.query_map_collect(
         sql!(
-            "SELECT buddy_group_id, pool_id,
+            "SELECT group_id, pool_id,
                 MIN(p_t.free_space, s_t.free_space),
                 MIN(p_t.free_inodes, s_t.free_inodes)
             FROM all_buddy_groups_v AS g
@@ -148,7 +148,7 @@ impl Handler for GetNodeCapacityPools {
             // We return raw u16 here as ID because BeeGFS expects a u16 that can be
             // either a NodeNUmID, TargetNumID or BuddyGroupID
 
-            let result: HashMap<StoragePoolID, Vec<Vec<u16>>> = match self.query_type {
+            let result: HashMap<PoolId, Vec<Vec<u16>>> = match self.query_type {
                 CapacityPoolQueryType::Meta => {
                     let targets = ctx
                         .db
@@ -175,7 +175,7 @@ impl Handler for GetNodeCapacityPools {
                         .op(|tx| {
                             let targets = load_targets_by_type(tx, NodeTypeServer::Storage)?;
 
-                            let pools: Vec<StoragePoolID> = tx.query_map_collect(
+                            let pools: Vec<PoolId> = tx.query_map_collect(
                                 sql!("SELECT pool_id FROM storage_pools"),
                                 [],
                                 |row| row.get(0),
@@ -185,7 +185,7 @@ impl Handler for GetNodeCapacityPools {
                         })
                         .await?;
 
-                    let mut res: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
+                    let mut res: HashMap<PoolId, Vec<Vec<u16>>> = HashMap::new();
                     for sp in pools {
                         let f_targets = targets.iter().filter(|e| e.pool_id == Some(sp));
 
@@ -236,7 +236,7 @@ impl Handler for GetNodeCapacityPools {
                         .op(|tx| {
                             let groups = load_buddy_groups_by_type(tx, NodeTypeServer::Storage)?;
 
-                            let pools: Vec<StoragePoolID> = tx.query_map_collect(
+                            let pools: Vec<PoolId> = tx.query_map_collect(
                                 sql!("SELECT pool_id FROM storage_pools"),
                                 [],
                                 |row| row.get(0),
@@ -246,7 +246,7 @@ impl Handler for GetNodeCapacityPools {
                         })
                         .await?;
 
-                    let mut cap_pools: HashMap<StoragePoolID, Vec<Vec<u16>>> = HashMap::new();
+                    let mut cap_pools: HashMap<PoolId, Vec<Vec<u16>>> = HashMap::new();
                     for sp in pools {
                         let f_groups = groups.iter().filter(|e| e.pool_id == Some(sp));
 

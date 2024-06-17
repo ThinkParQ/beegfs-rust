@@ -7,16 +7,16 @@ use super::*;
 pub struct GetTargetMappings {}
 
 impl Msg for GetTargetMappings {
-    const ID: MsgID = 1025;
+    const ID: MsgId = 1025;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GetTargetMappingsResp {
-    pub mapping: HashMap<TargetID, NodeID>,
+    pub mapping: HashMap<TargetId, NodeId>,
 }
 
 impl Msg for GetTargetMappingsResp {
-    const ID: MsgID = 1026;
+    const ID: MsgId = 1026;
 }
 
 impl Serializable for GetTargetMappingsResp {
@@ -40,7 +40,7 @@ pub struct GetTargetStates {
 }
 
 impl Msg for GetTargetStates {
-    const ID: MsgID = 1049;
+    const ID: MsgId = 1049;
 }
 
 /// Contains three Vecs containing the requested mapping
@@ -49,7 +49,7 @@ impl Msg for GetTargetStates {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetTargetStatesResp {
     #[bee_serde(as = Seq<true, _>)]
-    pub targets: Vec<TargetID>,
+    pub targets: Vec<TargetId>,
     #[bee_serde(as = Seq<true, _>)]
     pub reachability_states: Vec<TargetReachabilityState>,
     #[bee_serde(as = Seq<true, _>)]
@@ -57,7 +57,7 @@ pub struct GetTargetStatesResp {
 }
 
 impl Msg for GetTargetStatesResp {
-    const ID: MsgID = 1050;
+    const ID: MsgId = 1050;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -95,20 +95,20 @@ impl Deserializable for TargetReachabilityState {
 pub struct RegisterTarget {
     #[bee_serde(as = CStr<0>)]
     pub alias: Vec<u8>,
-    pub target_id: TargetID,
+    pub target_id: TargetId,
 }
 
 impl Msg for RegisterTarget {
-    const ID: MsgID = 1041;
+    const ID: MsgId = 1041;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterTargetResp {
-    pub id: TargetID,
+    pub id: TargetId,
 }
 
 impl Msg for RegisterTargetResp {
-    const ID: MsgID = 1042;
+    const ID: MsgId = 1042;
 }
 
 /// Maps targets to owning nodes
@@ -117,47 +117,26 @@ impl Msg for RegisterTargetResp {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct MapTargets {
     #[bee_serde(as = Map<false, _, _>)]
-    pub target_ids: HashMap<TargetID, StoragePoolID>,
+    pub target_ids: HashMap<TargetId, PoolId>,
     #[bee_serde(as = Int<u32>)]
-    pub node_id: NodeID,
+    pub node_id: NodeId,
     #[bee_serde(as = CStr<0>)]
     pub ack_id: Vec<u8>,
 }
 
 impl Msg for MapTargets {
-    const ID: MsgID = 1023;
+    const ID: MsgId = 1023;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct MapTargetsResp {
     /// Maps a target ID to the mapping result
     #[bee_serde(as = Map<false, _, _>)]
-    pub results: HashMap<TargetID, OpsErr>,
+    pub results: HashMap<TargetId, OpsErr>,
 }
 
 impl Msg for MapTargetsResp {
-    const ID: MsgID = 1024;
-}
-
-/// Unmap a storage target.
-///
-/// Used by old ctl only
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct UnmapTarget {
-    pub target_id: TargetID,
-}
-
-impl Msg for UnmapTarget {
-    const ID: MsgID = 1027;
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct UnmapTargetResp {
-    pub result: OpsErr,
-}
-
-impl Msg for UnmapTargetResp {
-    const ID: MsgID = 1028;
+    const ID: MsgId = 1024;
 }
 
 /// Set consistency states for a list of targets of the given node type.
@@ -171,7 +150,7 @@ pub struct ChangeTargetConsistencyStates {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
     #[bee_serde(as = Seq<true, _>)]
-    pub target_ids: Vec<TargetID>,
+    pub target_ids: Vec<TargetId>,
     #[bee_serde(as = Seq<true, _>)]
     pub old_states: Vec<TargetConsistencyState>,
     #[bee_serde(as = Seq<true, _>)]
@@ -181,7 +160,7 @@ pub struct ChangeTargetConsistencyStates {
 }
 
 impl Msg for ChangeTargetConsistencyStates {
-    const ID: MsgID = 1057;
+    const ID: MsgId = 1057;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -190,7 +169,7 @@ pub struct ChangeTargetConsistencyStatesResp {
 }
 
 impl Msg for ChangeTargetConsistencyStatesResp {
-    const ID: MsgID = 1058;
+    const ID: MsgId = 1058;
 }
 
 /// Set consistency states for a list of targets of the given node type.
@@ -204,7 +183,7 @@ pub struct SetTargetConsistencyStates {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
     #[bee_serde(as = Seq<true, _>)]
-    pub target_ids: Vec<TargetID>,
+    pub target_ids: Vec<TargetId>,
     #[bee_serde(as = Seq<true, _>)]
     pub states: Vec<TargetConsistencyState>,
     #[bee_serde(as = CStr<4>)]
@@ -213,7 +192,7 @@ pub struct SetTargetConsistencyStates {
 }
 
 impl Msg for SetTargetConsistencyStates {
-    const ID: MsgID = 1055;
+    const ID: MsgId = 1055;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -222,7 +201,7 @@ pub struct SetTargetConsistencyStatesResp {
 }
 
 impl Msg for SetTargetConsistencyStatesResp {
-    const ID: MsgID = 1056;
+    const ID: MsgId = 1056;
 }
 
 /// Sets usage info for a target.
@@ -239,7 +218,7 @@ pub struct SetStorageTargetInfo {
 }
 
 impl Msg for SetStorageTargetInfo {
-    const ID: MsgID = 2099;
+    const ID: MsgId = 2099;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -248,12 +227,12 @@ pub struct SetStorageTargetInfoResp {
 }
 
 impl Msg for SetStorageTargetInfoResp {
-    const ID: MsgID = 2100;
+    const ID: MsgId = 2100;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct TargetInfo {
-    pub target_id: TargetID,
+    pub target_id: TargetId,
     #[bee_serde(as = CStr<4>)]
     pub path: Vec<u8>,
     #[bee_serde(as = Int<i64>)]
@@ -278,5 +257,5 @@ pub struct RefreshTargetStates {
 }
 
 impl Msg for RefreshTargetStates {
-    const ID: MsgID = 1051;
+    const ID: MsgId = 1051;
 }

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use rusqlite::config::DbConfig;
-use rusqlite::{OpenFlags, Transaction};
+use rusqlite::{Connection, OpenFlags, Transaction};
 use std::path::Path;
 
 /// Sets connection parameters on an SQLite connection.
@@ -44,27 +44,68 @@ pub fn open_in_memory() -> Result<rusqlite::Connection> {
 /// Adds useful methods to an async rusqlite connection
 pub trait ConnectionExt {
     /// Automatically wraps the provided closure in a transaction that is committed on successful
-    /// completion or rolled back in case of an Error.
+    /// completion or rolled back in case of an Error. Accepts anyhow::Result as Result and handles
+    /// conversion between it and internally expected tokio_rusqlite::Result.
     ///
     /// Database access is provided using a single thread, so blocking or heavy computation must be
     /// avoided inside.
-    fn op<T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>, R: Send + 'static>(
+    fn op<T: Send + 'static + FnOnce(&Transaction) -> Result<R>, R: Send + 'static>(
+        &self,
+        op: T,
+    ) -> impl std::future::Future<Output = Result<R>> + Send;
+
+    /// Takes the provided closure and executes db operations on it.
+    /// Accepts anyhow::Result as Result and handles conversion between it and internally expected
+    /// tokio_rusqlite::Result.
+    ///
+    /// Same as `op()`, but without the automatic transaction. Should only be used if manual
+    /// transaction control is required, e.g. committing or rolling back based on external input.
+    ///
+    /// Database access is provided using a single thread, so blocking or heavy computation must be
+    /// avoided inside.
+    fn op_with_conn<T: Send + 'static + FnOnce(&mut Connection) -> Result<R>, R: Send + 'static>(
         &self,
         op: T,
     ) -> impl std::future::Future<Output = Result<R>> + Send;
 }
 
 impl ConnectionExt for tokio_rusqlite::Connection {
-    async fn op<T: Send + 'static + FnOnce(&mut Transaction) -> Result<R>, R: Send + 'static>(
+    async fn op<T: Send + 'static + FnOnce(&Transaction) -> Result<R>, R: Send + 'static>(
         &self,
         op: T,
     ) -> Result<R> {
         let res = self
             .call(move |conn| {
-                let mut tx = conn.transaction()?;
-                let res = op(&mut tx).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
+                let tx = conn.transaction()?;
+                let res = op(&tx).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
                 tx.commit()?;
 
+                Ok(res)
+            })
+            .await;
+
+        match res {
+            Ok(res) => Ok(res),
+            Err(err) => {
+                if let tokio_rusqlite::Error::Other(other) = err {
+                    return Err(anyhow!(other));
+                }
+
+                Err(err.into())
+            }
+        }
+    }
+
+    async fn op_with_conn<
+        T: Send + 'static + FnOnce(&mut Connection) -> Result<R>,
+        R: Send + 'static,
+    >(
+        &self,
+        op: T,
+    ) -> Result<R> {
+        let res = self
+            .call(move |conn| {
+                let res = op(conn).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
                 Ok(res)
             })
             .await;

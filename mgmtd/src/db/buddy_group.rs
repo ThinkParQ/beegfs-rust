@@ -2,28 +2,27 @@
 
 use super::*;
 use itertools::Itertools;
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::time::Duration;
 
 /// Represents a buddy group entry.
 #[derive(Clone, Debug)]
 pub(crate) struct BuddyGroup {
-    pub id: BuddyGroupID,
-    pub primary_target_id: TargetID,
-    pub secondary_target_id: TargetID,
+    pub id: BuddyGroupId,
+    pub primary_target_id: TargetId,
+    pub secondary_target_id: TargetId,
     #[allow(unused)]
-    pub pool_id: Option<StoragePoolID>,
+    pub pool_id: Option<PoolId>,
 }
 
 /// Retrieve a list of nodes filtered by node type.
 pub(crate) fn get_with_type(
-    tx: &mut Transaction,
+    tx: &Transaction,
     node_type: NodeTypeServer,
 ) -> Result<Vec<BuddyGroup>> {
     Ok(tx.query_map_collect(
         sql!(
-            "SELECT buddy_group_id, p_target_id, s_target_id, pool_id
+            "SELECT group_id, p_target_id, s_target_id, pool_id
             FROM all_buddy_groups_v
             WHERE node_type = ?1;"
         ),
@@ -39,59 +38,35 @@ pub(crate) fn get_with_type(
     )?)
 }
 
-/// Retrieve the global UID for the given buddy group ID and type.
-///
-/// # Return value
-/// Returns `None` if the entry doesn't exist.
-pub(crate) fn get_uid(
-    tx: &mut Transaction,
-    buddy_group_id: BuddyGroupID,
-    node_type: NodeTypeServer,
-) -> Result<Option<EntityUID>> {
-    let res: Option<EntityUID> = tx
-        .query_row_cached(
-            sql!(
-                "SELECT buddy_group_uid FROM all_buddy_groups_v
-                WHERE buddy_group_id = ?1 AND node_type = ?2"
-            ),
-            params![buddy_group_id, node_type.sql_str()],
-            |row| row.get(0),
-        )
-        .optional()?;
-
-    Ok(res)
-}
-
 /// Ensures that the list of given buddy groups actually exists and returns an appropriate error if
 /// not.
 pub(crate) fn validate_ids(
-    tx: &mut Transaction,
-    buddy_group_ids: &[BuddyGroupID],
+    tx: &Transaction,
+    group_ids: &[BuddyGroupId],
     node_type: NodeTypeServer,
 ) -> Result<()> {
     let stmt = match node_type {
         NodeTypeServer::Meta => {
-            sql!("SELECT COUNT(*) FROM meta_buddy_groups WHERE buddy_group_id IN rarray(?1)")
+            sql!("SELECT COUNT(*) FROM meta_buddy_groups WHERE group_id IN rarray(?1)")
         }
         NodeTypeServer::Storage => {
-            sql!("SELECT COUNT(*) FROM storage_buddy_groups WHERE buddy_group_id IN rarray(?1)")
+            sql!("SELECT COUNT(*) FROM storage_buddy_groups WHERE group_id IN rarray(?1)")
         }
     };
 
-    let count: usize = tx.query_row_cached(
-        stmt,
-        [&rarray_param(buddy_group_ids.iter().copied())],
-        |row| row.get(0),
-    )?;
+    let count: usize =
+        tx.query_row_cached(stmt, [&rarray_param(group_ids.iter().copied())], |row| {
+            row.get(0)
+        })?;
 
-    match count.cmp(&buddy_group_ids.len()) {
+    match count.cmp(&group_ids.len()) {
         Ordering::Less => Err(anyhow!(TypedError::value_not_found(
-            "buddy group ID",
-            buddy_group_ids.iter().join(", "),
+            "numeric buddy group id",
+            group_ids.iter().join(", "),
         ))),
         Ordering::Greater => Err(anyhow!(
-            "Buddy group IDs have multiple matches: {} provided, {} selected",
-            buddy_group_ids.len(),
+            "Buddy group ids have multiple matches: {} provided, {} selected",
+            group_ids.len(),
             count
         )),
         Ordering::Equal => Ok(()),
@@ -100,33 +75,40 @@ pub(crate) fn validate_ids(
 
 /// Inserts a new buddy group.
 ///
-/// Providing 0 for `buddy_group_id` chooses the ID automatically.
+/// Providing 0 for `group_id` chooses the ID automatically.
 ///
 /// # Return value
 /// Returns the ID of the new buddy group.
 pub(crate) fn insert(
-    tx: &mut Transaction,
-    buddy_group_id: BuddyGroupID,
-    alias: Option<&str>,
+    tx: &Transaction,
+    group_id: BuddyGroupId,
+    alias: &Alias,
     node_type: NodeTypeServer,
-    primary_target_id: TargetID,
-    secondary_target_id: TargetID,
-) -> Result<(EntityUID, BuddyGroupID)> {
-    let buddy_group_id = if buddy_group_id == 0 {
+    p_target_id: TargetId,
+    s_target_id: TargetId,
+) -> Result<(Uid, BuddyGroupId)> {
+    let group_id = if group_id == 0 {
         misc::find_new_id(
             tx,
             &format!("{}_buddy_groups", node_type.sql_str()),
-            "buddy_group_id",
+            "group_id",
             1..=0xFFFF,
         )?
-    } else if get_uid(tx, buddy_group_id, node_type)?.is_some() {
-        bail!(TypedError::value_exists("buddy group ID", buddy_group_id));
+    } else if try_resolve_num_id(
+        tx,
+        EntityType::BuddyGroup,
+        node_type.into(),
+        group_id.into(),
+    )?
+    .is_some()
+    {
+        bail!(TypedError::value_exists("numeric buddy group id", group_id));
     } else {
-        buddy_group_id
+        group_id
     };
 
     // Check targets exist
-    target::validate_ids(tx, &[primary_target_id, secondary_target_id], node_type)?;
+    target::validate_ids(tx, &[p_target_id, s_target_id], node_type)?;
 
     // Check that both given target IDs are not assigned to any buddy group
     if tx.query_row(
@@ -135,32 +117,36 @@ pub(crate) fn insert(
              WHERE node_type = ?1
              AND (p_target_id IN (?2, ?3) OR s_target_id IN (?2, ?3))"
         ),
-        params![node_type.sql_str(), primary_target_id, secondary_target_id],
+        params![node_type.sql_str(), p_target_id, s_target_id],
         |row| row.get::<_, i64>(0),
     )? > 0
     {
         bail!(
-            "One or both of the given target IDs {primary_target_id} and {secondary_target_id} \
+            "One or both of the given numeric target ids {p_target_id} and {s_target_id} \
              are already part of a buddy group"
         );
     }
 
-    let alias = if let Some(alias) = alias {
-        Cow::Borrowed(alias)
-    } else {
-        Cow::Owned(format!(
-            "buddy_group_{}_{}",
-            node_type.sql_str(),
-            buddy_group_id
-        ))
-    };
+    // Check that both targets are part of the same storage pool
+    if node_type == NodeTypeServer::Storage {
+        let mut check = tx.prepare(sql!(
+            "SELECT pool_id FROM storage_targets WHERE target_id = ?1"
+        ))?;
+
+        let p_pool_id: PoolId = check.query_row([p_target_id], |row| row.get(0))?;
+        let s_pool_id: PoolId = check.query_row([s_target_id], |row| row.get(0))?;
+
+        if p_pool_id != s_pool_id {
+            bail!("Primary and secondary target are not assigned to the same storage pool");
+        }
+    }
 
     // Insert entity
-    let new_uid = entity::insert(tx, EntityType::BuddyGroup, alias.as_ref())?;
+    let new_uid = entity::insert(tx, EntityType::BuddyGroup, alias)?;
 
     // Insert generic buddy group
     tx.execute(
-        sql!("INSERT INTO buddy_groups (buddy_group_uid, node_type) VALUES (?1, ?2)"),
+        sql!("INSERT INTO buddy_groups (group_uid, node_type) VALUES (?1, ?2)"),
         params![new_uid, node_type.sql_str()],
     )?;
 
@@ -170,60 +156,42 @@ pub(crate) fn insert(
             NodeTypeServer::Meta => {
                 sql!(
                     "INSERT INTO meta_buddy_groups
-                    (buddy_group_id, buddy_group_uid, p_target_id, s_target_id)
+                    (group_id, group_uid, p_target_id, s_target_id)
                     VALUES (?1, ?2, ?3, ?4)"
                 )
             }
             NodeTypeServer::Storage => {
                 sql!(
                     "INSERT INTO storage_buddy_groups
-                    (buddy_group_id, buddy_group_uid, p_target_id, s_target_id, pool_id)
+                    (group_id, group_uid, p_target_id, s_target_id, pool_id)
                     VALUES (?1, ?2, ?3, ?4,
                         (SELECT pool_id FROM storage_targets WHERE target_id = ?3)
                     )"
                 )
             }
         },
-        params![
-            buddy_group_id,
-            new_uid,
-            primary_target_id,
-            secondary_target_id
-        ],
+        params![group_id, new_uid, p_target_id, s_target_id],
     )?;
 
-    Ok((new_uid, buddy_group_id))
+    Ok((new_uid, group_id))
 }
 
 /// Changes the storage pool of the given buddy group IDs to a new one.
 pub(crate) fn update_storage_pools(
-    tx: &mut Transaction,
-    new_pool_id: StoragePoolID,
-    buddy_group_ids: &[BuddyGroupID],
+    tx: &Transaction,
+    new_pool_id: PoolId,
+    group_ids: &[BuddyGroupId],
 ) -> Result<()> {
-    if storage_pool::get_uid(tx, new_pool_id)?.is_none() {
-        bail!(TypedError::value_not_found("pool ID", new_pool_id));
-    }
+    let _ = resolve_num_id(tx, EntityType::Pool, NodeType::Storage, new_pool_id.into())?;
 
-    validate_ids(tx, buddy_group_ids, NodeTypeServer::Storage)?;
+    validate_ids(tx, group_ids, NodeTypeServer::Storage)?;
 
     tx.execute_cached(
-        sql!("UPDATE storage_buddy_groups SET pool_id = ?1 WHERE buddy_group_id IN rarray(?2)"),
-        params![new_pool_id, rarray_param(buddy_group_ids.iter().copied())],
+        sql!("UPDATE storage_buddy_groups SET pool_id = ?1 WHERE group_id IN rarray(?2)"),
+        params![new_pool_id, rarray_param(group_ids.iter().copied())],
     )?;
 
     Ok(())
-}
-
-/// Reset all storage buddy groups belonging to the given storage pool to the default pool.
-pub(crate) fn reset_storage_pool(
-    tx: &mut Transaction,
-    pool_id: StoragePoolID,
-) -> rusqlite::Result<usize> {
-    tx.execute_cached(
-        sql!("UPDATE storage_buddy_groups SET pool_id = 1 WHERE pool_id = ?"),
-        [pool_id],
-    )
 }
 
 /// Checks all buddy groups state and swaps primary and secondary if necessary ("switchover").
@@ -242,12 +210,12 @@ pub(crate) fn reset_storage_pool(
 /// Returns a Vec containing tuples with the ID and the node type of buddy groups which have been
 /// swapped.
 pub(crate) fn check_and_swap_buddies(
-    tx: &mut Transaction,
+    tx: &Transaction,
     timeout: Duration,
-) -> Result<Vec<(BuddyGroupID, NodeTypeServer)>> {
+) -> Result<Vec<(BuddyGroupId, NodeTypeServer)>> {
     let affected_groups = tx.query_map_collect(
         sql!(
-            "SELECT g.buddy_group_id, g.node_type FROM all_buddy_groups_v AS g
+            "SELECT g.group_id, g.node_type FROM all_buddy_groups_v AS g
             INNER JOIN all_targets_v AS p_t ON p_t.target_uid = p_target_uid
             INNER JOIN nodes AS p_n ON p_n.node_uid = p_t.node_uid
             INNER JOIN all_targets_v AS s_t ON s_t.target_uid = s_target_uid
@@ -270,12 +238,12 @@ pub(crate) fn check_and_swap_buddies(
                 NodeTypeServer::Meta => sql!(
                     "UPDATE meta_buddy_groups
                     SET p_target_id = s_target_id, s_target_id = p_target_id
-                    WHERE buddy_group_id = ?1"
+                    WHERE group_id = ?1"
                 ),
                 NodeTypeServer::Storage => sql!(
                     "UPDATE storage_buddy_groups
                     SET p_target_id = s_target_id, s_target_id = p_target_id
-                    WHERE buddy_group_id = ?1"
+                    WHERE group_id = ?1"
                 ),
             },
             [id],
@@ -292,10 +260,7 @@ pub(crate) fn check_and_swap_buddies(
 /// # Return value
 /// Returns the UIDs of the primary and the secondary node which own the primary and secondary
 /// target of the given group.
-pub(crate) fn prepare_storage_deletion(
-    tx: &mut Transaction,
-    id: BuddyGroupID,
-) -> Result<(EntityUID, EntityUID)> {
+pub(crate) fn prepare_storage_deletion(tx: &Transaction, id: BuddyGroupId) -> Result<(Uid, Uid)> {
     if tx.query_row(sql!("SELECT COUNT(*) FROM client_nodes"), [], |row| {
         row.get::<_, i64>(0)
     })? > 0
@@ -311,7 +276,7 @@ pub(crate) fn prepare_storage_deletion(
             INNER JOIN storage_nodes AS p_sn ON p_sn.node_id = p_st.node_id
             INNER JOIN storage_targets AS s_st ON s_st.target_id = g.s_target_id
             INNER JOIN storage_nodes AS s_sn ON s_sn.node_id = s_st.node_id
-            WHERE buddy_group_id = ?1;"
+            WHERE group_id = ?1;"
         ),
         [id],
         |row| Ok((row.get(0)?, row.get(1)?)),
@@ -324,10 +289,10 @@ pub(crate) fn prepare_storage_deletion(
 ///
 /// This expects that the nodes owning the affected targets have already been notified and the
 /// groups deleted.
-pub(crate) fn delete_storage(tx: &mut Transaction, buddy_group_id: BuddyGroupID) -> Result<()> {
+pub(crate) fn delete_storage(tx: &Transaction, group_id: BuddyGroupId) -> Result<()> {
     let affected = tx.execute(
-        sql!("DELETE FROM storage_buddy_groups WHERE buddy_group_id = ?1"),
-        [buddy_group_id],
+        sql!("DELETE FROM storage_buddy_groups WHERE group_id = ?1"),
+        [group_id],
     )?;
 
     check_affected_rows(affected, [1])
@@ -341,8 +306,24 @@ mod test {
     #[test]
     fn insert_and_get_with_type() {
         with_test_data(|tx| {
-            super::insert(tx, 1234, None, NodeTypeServer::Meta, 3, 4).unwrap();
-            super::insert(tx, 1, None, NodeTypeServer::Storage, 3, 7).unwrap_err();
+            super::insert(
+                tx,
+                1234,
+                &"g1".try_into().unwrap(),
+                NodeTypeServer::Meta,
+                3,
+                4,
+            )
+            .unwrap();
+            super::insert(
+                tx,
+                1,
+                &"g2".try_into().unwrap(),
+                NodeTypeServer::Storage,
+                3,
+                7,
+            )
+            .unwrap_err();
 
             let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
             let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
@@ -370,7 +351,7 @@ mod test {
     }
 
     /// Makes sure targets of buddy groups 1 (meta and storage) have been swapped
-    fn ensure_swapped_buddies(tx: &mut Transaction) {
+    fn ensure_swapped_buddies(tx: &Transaction) {
         let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
         let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
@@ -381,7 +362,7 @@ mod test {
     }
 
     /// Makes sure targets of buddy groups 1 (meta and storage) have not been swapped
-    fn ensure_no_swapped_buddies(tx: &mut Transaction) {
+    fn ensure_no_swapped_buddies(tx: &Transaction) {
         let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
         let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
@@ -519,10 +500,7 @@ mod test {
 
             let res = super::prepare_storage_deletion(tx, 1).unwrap();
 
-            assert_eq!(
-                (EntityUID::from(102001u64), EntityUID::from(102002u64)),
-                res
-            );
+            assert_eq!((Uid::from(102001i64), Uid::from(102002i64)), res);
         })
     }
 

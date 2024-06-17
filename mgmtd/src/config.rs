@@ -6,7 +6,7 @@ use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::Deserialize;
 use shared::parser::integer_with_time_unit;
-use shared::types::{Port, QuotaID};
+use shared::types::{Port, QuotaId};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -44,10 +44,10 @@ pub struct Config {
     pub quota_enable: bool,
     pub quota_update_interval: Duration,
 
-    pub quota_user_system_ids_min: Option<QuotaID>,
+    pub quota_user_system_ids_min: Option<QuotaId>,
     pub quota_user_ids_file: Option<PathBuf>,
     pub quota_user_ids_range: Option<RangeInclusive<u32>>,
-    pub quota_group_system_ids_min: Option<QuotaID>,
+    pub quota_group_system_ids_min: Option<QuotaId>,
     pub quota_group_ids_file: Option<PathBuf>,
     pub quota_group_ids_range: Option<RangeInclusive<u32>>,
 
@@ -270,11 +270,11 @@ struct ConfigFileArgs {
     quota_enable: Option<bool>,
     #[serde(with = "integer_with_time_unit::optional")]
     quota_update_interval: Option<Duration>,
-    quota_user_system_ids_min: Option<QuotaID>,
+    quota_user_system_ids_min: Option<QuotaId>,
     quota_user_ids_file: Option<PathBuf>,
     quota_user_ids_range_start: Option<u32>,
     quota_user_ids_range_end: Option<u32>,
-    quota_group_system_ids_min: Option<QuotaID>,
+    quota_group_system_ids_min: Option<QuotaId>,
     quota_group_ids_file: Option<PathBuf>,
     quota_group_ids_range_start: Option<u32>,
     quota_group_ids_range_end: Option<u32>,

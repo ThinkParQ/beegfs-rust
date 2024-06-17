@@ -4,8 +4,8 @@
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use shared::bee_msg::misc::CapacityPool;
 use shared::parser::integer_with_generic_unit;
+use shared::types::CapacityPool;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CapPoolLimits {

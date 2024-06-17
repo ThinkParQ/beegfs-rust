@@ -12,7 +12,7 @@ pub struct GetNodes {
 }
 
 impl Msg for GetNodes {
-    const ID: MsgID = 1017;
+    const ID: MsgId = 1017;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -27,7 +27,7 @@ pub struct GetNodesResp {
 }
 
 impl Msg for GetNodesResp {
-    const ID: MsgID = 1018;
+    const ID: MsgId = 1018;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
@@ -37,7 +37,7 @@ pub struct Node {
     #[bee_serde(as = Seq<false, _>)]
     pub nic_list: Vec<Nic>,
     #[bee_serde(as = Int<u32>)]
-    pub num_id: NodeID,
+    pub num_id: NodeId,
     pub port: Port,
     pub _unused_tcp_port: Port,
     #[bee_serde(as = Int<u8>)]
@@ -101,7 +101,7 @@ impl Deserializable for Nic {
 pub struct HeartbeatRequest {}
 
 impl Msg for HeartbeatRequest {
-    const ID: MsgID = 1019;
+    const ID: MsgId = 1019;
 }
 
 /// Updates a node with the given information.
@@ -120,7 +120,7 @@ pub struct Heartbeat {
     #[bee_serde(as = CStr<4>)]
     pub ack_id: Vec<u8>,
     #[bee_serde(as = Int<u32>)]
-    pub node_num_id: NodeID,
+    pub node_num_id: NodeId,
     // The root info is only relevant when sent from meta nodes. There it must contain the meta
     // root nodes ID, but on other nodes it is just irrelevant.
     // Can be a Node ID or a BuddyGroup ID
@@ -135,7 +135,7 @@ pub struct Heartbeat {
 }
 
 impl Msg for Heartbeat {
-    const ID: MsgID = 1020;
+    const ID: MsgId = 1020;
 }
 
 /// Registers a new node with the given information.
@@ -156,7 +156,7 @@ pub struct RegisterNode {
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
-    pub node_id: NodeID,
+    pub node_id: NodeId,
     pub root_num_id: u32,
     pub is_root_mirrored: u8,
     pub port: Port,
@@ -166,34 +166,34 @@ pub struct RegisterNode {
 }
 
 impl Msg for RegisterNode {
-    const ID: MsgID = 1039;
+    const ID: MsgId = 1039;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterNodeResp {
     #[bee_serde(as = Int<u32>)]
-    pub node_num_id: NodeID,
+    pub node_num_id: NodeId,
 }
 
 impl Msg for RegisterNodeResp {
-    const ID: MsgID = 1040;
+    const ID: MsgId = 1040;
 }
 
 /// Remove a node from the system
 ///
-/// Used by old ctl only
+/// Used by old ctl, self
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveNode {
     #[bee_serde(as = Int<i16>)]
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
-    pub node_id: NodeID,
+    pub node_id: NodeId,
     #[bee_serde(as = CStr<0>)]
     pub ack_id: Vec<u8>,
 }
 
 impl Msg for RemoveNode {
-    const ID: MsgID = 1013;
+    const ID: MsgId = 1013;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -202,5 +202,5 @@ pub struct RemoveNodeResp {
 }
 
 impl Msg for RemoveNodeResp {
-    const ID: MsgID = 1014;
+    const ID: MsgId = 1014;
 }

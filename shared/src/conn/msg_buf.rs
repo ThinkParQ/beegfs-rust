@@ -19,7 +19,7 @@
 //! make sure the buffer is used the appropriate way.
 use super::stream::Stream;
 use crate::bee_msg::header::Header;
-use crate::bee_msg::{Msg, MsgID};
+use crate::bee_msg::{Msg, MsgId};
 use crate::bee_serde::{Deserializable, Deserializer, Serializable, Serializer};
 use anyhow::{bail, Context, Result};
 use bytes::BytesMut;
@@ -174,7 +174,7 @@ impl MsgBuf {
     /// # Panic
     /// The function will panic if the buffer has not been filled with data before (e.g. by
     /// reading from stream or receiving from a socket)
-    pub fn msg_id(&self) -> MsgID {
+    pub fn msg_id(&self) -> MsgId {
         self.header.msg_id
     }
 }

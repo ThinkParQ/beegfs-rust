@@ -1,14 +1,17 @@
 use super::*;
-use crate::types::SqliteStr;
+use crate::types::SqliteExt;
 use protobuf::{beegfs as pb, management as pm};
-use shared::types::{NicType, NodeID};
+use shared::bee_msg::node::RemoveNode;
+use shared::types::{NicType, NodeId};
 use std::net::Ipv4Addr;
 
-pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesResponse> {
+/// Delivers a list of nodes
+pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
     let (mut nodes, nics, meta_root_node) = ctx
         .db
         .op(move |tx| {
-            let nics: Vec<(EntityUID, pm::get_nodes_response::node::Nic)> = if req.include_nics {
+            // Fetching the nic list is optional as it causes additional load
+            let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {
                 tx.query_map_collect(
                     sql!(
                         "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
@@ -34,6 +37,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                 vec![]
             };
 
+            // Fetch the node list
             let nodes: Vec<pm::get_nodes_response::Node> = tx.query_map_collect(
                 sql!(
                     "SELECT node_uid, node_id, node_type, alias, port
@@ -41,14 +45,13 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                 ),
                 [],
                 |row| {
-                    let node_type = pb::NodeType::from_row(row, 2)? as i32;
+                    let node_type = i32::from(pb::NodeType::from(NodeType::from_row(row, 2)?));
 
                     let node = pb::EntityIdSet {
                         uid: row.get(0)?,
                         legacy_id: Some(pb::LegacyId {
                             num_id: row.get(1)?,
                             node_type,
-                            entity_type: pb::EntityType::Node as i32,
                         }),
                         alias: row.get(3)?,
                     };
@@ -62,7 +65,8 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                 },
             )?;
 
-            let meta_root_node: (EntityUID, String, NodeID) = tx.query_row(
+            // Figure out the meta root node
+            let (uid, alias, num_id): (Uid, Alias, NodeId) = tx.query_row(
                 sql!(
                     "SELECT
                         COALESCE(mn.node_uid, mn2.node_uid, 0),
@@ -72,14 +76,28 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
                     LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
                     LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
                     LEFT JOIN entities AS e ON e.uid = mn.node_uid
-                    LEFT JOIN meta_buddy_groups AS mg ON mg.buddy_group_id = ri.buddy_group_id
+                    LEFT JOIN meta_buddy_groups AS mg ON mg.group_id = ri.group_id
                     LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
                     LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
                     LEFT JOIN entities AS e2 ON e.uid = mn2.node_uid"
                 ),
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| Ok((row.get(0)?, Alias::from_row(row, 1)?, row.get(2)?)),
             )?;
+
+            // Meta root node might be unset which is indicated by the query result uid == 0
+            let meta_root_node = if uid != 0 {
+                Some(EntityIdSet {
+                    uid,
+                    alias,
+                    legacy_id: LegacyId {
+                        node_type: NodeType::Meta,
+                        num_id,
+                    },
+                })
+            } else {
+                None
+            };
 
             Ok((nodes, nics, meta_root_node))
         })
@@ -89,7 +107,7 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
         for node in &mut nodes {
             node.nics = nics
                 .iter()
-                .filter(|(uid, _)| node.id.as_ref().is_some_and(|e| e.uid == *uid))
+                .filter(|(uid, _)| node.id.as_ref().is_some_and(|e| e.uid == Some(*uid)))
                 .cloned()
                 .map(|(_, mut nic)| {
                     nic.addr = format!("{}:{}", nic.addr, node.port);
@@ -99,20 +117,106 @@ pub(crate) async fn get(ctx: &Context, req: GetNodesRequest) -> Result<GetNodesR
         }
     }
 
-    Ok(GetNodesResponse {
+    Ok(pm::GetNodesResponse {
         nodes,
-        meta_root_node: if meta_root_node.0 != 0 {
-            Some(pb::EntityIdSet {
-                uid: meta_root_node.0,
-                legacy_id: Some(pb::LegacyId {
-                    num_id: meta_root_node.2,
-                    node_type: pb::NodeType::Meta as i32,
-                    entity_type: pb::EntityType::Node as i32,
-                }),
-                alias: meta_root_node.1,
-            })
-        } else {
-            None
-        },
+        meta_root_node: meta_root_node.map(|e| e.into()),
+    })
+}
+
+/// Deletes a node. If it is a meta node, deletes its target first.
+pub(crate) async fn delete(
+    ctx: &Context,
+    req: pm::DeleteNodeRequest,
+) -> Result<pm::DeleteNodeResponse> {
+    let node: EntityId = required_field(req.node)?.try_into()?;
+    let execute: bool = required_field(req.execute)?;
+
+    let node = ctx
+        .db
+        .op_with_conn(move |conn| {
+            let tx = conn.transaction()?;
+
+            let node = node.resolve(&tx, EntityType::Node)?;
+
+            if node.uid == MGMTD_UID {
+                bail!("Management node can not be deleted");
+            }
+
+            // Meta nodes have an auto-assigned target which needs to be deleted first.
+            if node.node_type() == &NodeType::Meta {
+                let assigned_groups: usize = tx.query_row_cached(
+                    sql!(
+                        "SELECT COUNT(*) FROM meta_buddy_groups
+                        WHERE p_target_id = ?1 OR s_target_id = ?1"
+                    ),
+                    [node.num_id()],
+                    |row| row.get(0),
+                )?;
+
+                if assigned_groups > 0 {
+                    bail!("The target belonging to meta node {node} is part of a buddy group");
+                }
+
+                let target_has_root_inode: usize = tx.query_row(
+                    sql!("SELECT COUNT(*) FROM root_inode WHERE target_id = ?1"),
+                    [node.num_id()],
+                    |row| row.get(0),
+                )?;
+
+                if target_has_root_inode > 0 {
+                    bail!("The target belonging to meta node {node} has the root inode");
+                }
+
+                // There should be exactly one meta target per meta node
+                let affected = tx.execute(
+                    sql!("DELETE FROM meta_targets WHERE node_id = ?1"),
+                    [node.num_id()],
+                )?;
+
+                if affected != 1 {
+                    bail!("Expected to delete 1 meta target but deleted {affected}");
+                }
+            } else {
+                let assigned_targets: usize = tx.query_row_cached(
+                    sql!("SELECT COUNT(*) FROM all_targets_v WHERE node_uid = ?1"),
+                    [node.uid],
+                    |row| row.get(0),
+                )?;
+
+                if assigned_targets > 0 {
+                    bail!("Node {node} still has targets assigned");
+                }
+            }
+
+            db::node::delete(&tx, node.uid)?;
+
+            if execute {
+                tx.commit()?;
+            }
+            Ok(node)
+        })
+        .await?;
+
+    if execute {
+        log::info!("Node deleted: {node}");
+
+        notify_nodes(
+            ctx,
+            match node.node_type() {
+                NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+                NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                _ => &[],
+            },
+            &RemoveNode {
+                node_type: *node.node_type(),
+                node_id: node.num_id(),
+                ack_id: "".into(),
+            },
+        )
+        .await;
+    }
+
+    Ok(pm::DeleteNodeResponse {
+        node: Some(node.into()),
     })
 }

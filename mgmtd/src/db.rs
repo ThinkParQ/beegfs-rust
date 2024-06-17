@@ -41,7 +41,7 @@ mod test {
 
     /// Sets ups a fresh database instance in memory and fills, with the test data set and provides
     /// a transaction handle.
-    pub(crate) fn with_test_data(op: impl FnOnce(&mut Transaction)) {
+    pub(crate) fn with_test_data(op: impl FnOnce(&Transaction)) {
         let mut conn = sqlite::open_in_memory().unwrap();
         sqlite::migrate_schema(&mut conn, MIGRATIONS).unwrap();
 
@@ -55,7 +55,7 @@ mod test {
     /// Sets up a transaction for the given [rusqlite::Connection] and executes the provided code.
     ///
     /// Meant for tests and does not return results.
-    pub(crate) fn transaction(conn: &mut Connection, op: impl FnOnce(&mut Transaction)) {
+    pub(crate) fn transaction(conn: &mut Connection, op: impl FnOnce(&Transaction)) {
         let mut tx = conn.transaction().unwrap();
         op(&mut tx);
         tx.commit().unwrap();

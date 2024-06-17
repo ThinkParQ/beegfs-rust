@@ -15,7 +15,7 @@ pub struct GenericResponse {
 }
 
 impl Msg for GenericResponse {
-    const ID: MsgID = 4009;
+    const ID: MsgId = 4009;
 }
 
 /// Expected response when a UDP message has been received.
@@ -29,7 +29,7 @@ pub struct Ack {
 }
 
 impl Msg for Ack {
-    const ID: MsgID = 4003;
+    const ID: MsgId = 4003;
 }
 
 /// Authenticate the communication channel (e.g. the TCP connection on which this message comes in).
@@ -39,7 +39,7 @@ pub struct AuthenticateChannel {
 }
 
 impl Msg for AuthenticateChannel {
-    const ID: MsgID = 4007;
+    const ID: MsgId = 4007;
 }
 
 /// Tells the existence of a node
@@ -50,11 +50,11 @@ pub struct PeerInfo {
     #[bee_serde(as = Int<u32>)]
     pub node_type: NodeType,
     #[bee_serde(as = Int<u32>)]
-    pub node_id: NodeID,
+    pub node_id: NodeId,
 }
 
 impl Msg for PeerInfo {
-    const ID: MsgID = 4011;
+    const ID: MsgId = 4011;
 }
 
 /// Sets the type of the worker that handles this connection channel.
@@ -66,7 +66,7 @@ pub struct SetChannelDirect {
 }
 
 impl Msg for SetChannelDirect {
-    const ID: MsgID = 4001;
+    const ID: MsgId = 4001;
 }
 
 /// Indicates anodes to fetch fresh capacity info from management (sent via UDP).
@@ -80,18 +80,8 @@ pub struct RefreshCapacityPools {
 }
 
 impl Msg for RefreshCapacityPools {
-    const ID: MsgID = 1035;
+    const ID: MsgId = 1035;
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum CapacityPool {
-    Normal,
-    Low,
-    Emergency,
-}
-
-// Defines which pool maps to which index in the repsonse below
-impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
 
 /// Fetches node capacity pools of the given type for all targets / groups.
 ///
@@ -103,7 +93,7 @@ pub struct GetNodeCapacityPools {
 }
 
 impl Msg for GetNodeCapacityPools {
-    const ID: MsgID = 1021;
+    const ID: MsgId = 1021;
 }
 
 /// Response containing node capacity bool mapping
@@ -112,11 +102,11 @@ pub struct GetNodeCapacityPoolsResp {
     /// Target or group IDs grouped by storage pool and cap pool.
     ///
     /// The outer Vec has index 0, 1, 2 containing lists with IDs belonging to that pool.
-    pub pools: HashMap<StoragePoolID, Vec<Vec<u16>>>,
+    pub pools: HashMap<PoolId, Vec<Vec<u16>>>,
 }
 
 impl Msg for GetNodeCapacityPoolsResp {
-    const ID: MsgID = 1022;
+    const ID: MsgId = 1022;
 }
 
 // Custom BeeSerde impl because nested sequences / maps are not supported by the macro

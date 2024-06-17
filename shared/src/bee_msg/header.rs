@@ -17,8 +17,8 @@ pub struct Header {
     /// Fixed value
     pub msg_prefix: u64,
     /// Uniquely identifies the message type as defined in the C++ codebase in NetMessageTypes.h
-    pub msg_id: MsgID,
-    pub msg_target_id: TargetID,
+    pub msg_id: MsgId,
+    pub msg_target_id: TargetId,
     pub msg_user_id: u32,
     pub msg_seq: u64,
     pub msg_seq_done: u64,
@@ -32,7 +32,7 @@ impl Header {
     /// Creates a new BeeGFS message header
     ///
     /// `msg_feature_flags` has to be set depending on the message.
-    pub fn new(body_len: usize, msg_id: MsgID, msg_feature_flags: u16) -> Self {
+    pub fn new(body_len: usize, msg_id: MsgId, msg_feature_flags: u16) -> Self {
         Self {
             msg_len: (body_len + Self::LEN) as u32,
             msg_feature_flags,

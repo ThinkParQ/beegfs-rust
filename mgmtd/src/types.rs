@@ -1,14 +1,13 @@
 //! Contains types used by the local database and config.
 
-use protobuf::beegfs as pb;
 use rusqlite::Row;
-use shared::bee_msg::misc::CapacityPool;
-use shared::types::{
-    NicType, NodeType, NodeTypeServer, QuotaIDType, QuotaType, TargetConsistencyState,
-};
+use shared::types::*;
+
+mod entity;
+pub(crate) use entity::*;
 
 /// Defines methods to convert a type to or from a string representation used in the sqlite database
-pub(crate) trait SqliteStr {
+pub(crate) trait SqliteExt {
     fn sql_str(&self) -> &str;
     fn from_sql_str(s: &str) -> rusqlite::Result<Self>
     where
@@ -23,13 +22,13 @@ pub(crate) trait SqliteStr {
 }
 
 /// Implements SqliteStr for an enum
-macro_rules! impl_enum_sqlite_str {
-    ($type:ty, $($variant:ident => $text:tt),+ $(,)?) => {
-        impl SqliteStr for $type {
+macro_rules! impl_enum_sqlite {
+    ($type:ty, $($variant:path=> $text:literal),+ $(,)?) => {
+        impl SqliteExt for $type {
             fn sql_str(&self) -> &str {
                 match self {
                     $(
-                        Self::$variant => $text,
+                        $variant => $text,
                     )+
                 }
             }
@@ -40,7 +39,7 @@ macro_rules! impl_enum_sqlite_str {
             {
                 match s {
                     $(
-                        $text => Ok(<$type>::$variant),
+                        $text => Ok($variant),
                     )+
                     _ => Err(::rusqlite::Error::from(::rusqlite::types::FromSqlError::InvalidType)),
                 }
@@ -49,103 +48,56 @@ macro_rules! impl_enum_sqlite_str {
     };
 }
 
-pub(crate) const UNSPECIFIED: &str = "<unspecified>";
-
-pub(crate) const NODE_TYPE_META: &str = "meta";
-pub(crate) const NODE_TYPE_STORAGE: &str = "storage";
-pub(crate) const NODE_TYPE_CLIENT: &str = "client";
-pub(crate) const NODE_TYPE_MANAGEMENT: &str = "management";
-
-impl_enum_sqlite_str!(NodeType,
-    Meta => NODE_TYPE_META,
-    Storage => NODE_TYPE_STORAGE,
-    Client => NODE_TYPE_CLIENT,
-    Management => NODE_TYPE_MANAGEMENT,
-);
-impl_enum_sqlite_str!(pb::NodeType,
-    Unspecified => UNSPECIFIED,
-    Meta => NODE_TYPE_META,
-    Storage => NODE_TYPE_STORAGE,
-    Client => NODE_TYPE_CLIENT,
-    Management => NODE_TYPE_MANAGEMENT,
-);
-impl_enum_sqlite_str!(NodeTypeServer,
-    Meta => NODE_TYPE_META,
-    Storage => NODE_TYPE_STORAGE,
-);
-
-pub(crate) const NIC_TYPE_ETHERNET: &str = "ethernet";
-pub(crate) const NIC_TYPE_RDMA: &str = "rdma";
-
-impl_enum_sqlite_str!(NicType,
-    Ethernet => NIC_TYPE_ETHERNET,
-    Rdma => NIC_TYPE_RDMA
-);
-impl_enum_sqlite_str!(pb::NicType,
-    Unspecified => UNSPECIFIED,
-    Ethernet => NIC_TYPE_ETHERNET,
-    Rdma => NIC_TYPE_RDMA
-);
-
-pub(crate) const CAPACITY_POOL_NORMAL: &str = "normal";
-pub(crate) const CAPACITY_POOL_LOW: &str = "low";
-pub(crate) const CAPACITY_POOL_EMERGENCY: &str = "emergency";
-
-impl_enum_sqlite_str!(CapacityPool,
-    Normal => CAPACITY_POOL_NORMAL,
-    Low => CAPACITY_POOL_LOW,
-    Emergency => CAPACITY_POOL_EMERGENCY
-);
-impl_enum_sqlite_str!(pb::CapacityPool,
-    Unspecified => UNSPECIFIED,
-    Normal => CAPACITY_POOL_NORMAL,
-    Low => CAPACITY_POOL_LOW,
-    Emergency => CAPACITY_POOL_EMERGENCY
-);
-
-pub(crate) const CONSISTENCY_STATE_GOOD: &str = "good";
-pub(crate) const CONSISTENCY_STATE_NEEDS_RESYNC: &str = "needs_resync";
-pub(crate) const CONSISTENCY_STATE_BAD: &str = "bad";
-
-impl_enum_sqlite_str!(TargetConsistencyState,
-    Good => CONSISTENCY_STATE_GOOD,
-    NeedsResync => CONSISTENCY_STATE_NEEDS_RESYNC,
-    Bad => CONSISTENCY_STATE_BAD
-);
-impl_enum_sqlite_str!(pb::ConsistencyState,
-    Unspecified => UNSPECIFIED,
-    Good => CONSISTENCY_STATE_GOOD,
-    NeedsResync => CONSISTENCY_STATE_NEEDS_RESYNC,
-    Bad => CONSISTENCY_STATE_BAD
-);
-
-pub(crate) const QUOTA_ID_TYPE_USER: &str = "user";
-pub(crate) const QUOTA_ID_TYPE_GROUP: &str = "group";
-
-impl_enum_sqlite_str!(QuotaIDType,
-    User => QUOTA_ID_TYPE_USER,
-    Group => QUOTA_ID_TYPE_GROUP
-);
-
-pub(crate) const QUOTA_TYPE_SPACE: &str = "space";
-pub(crate) const QUOTA_TYPE_INODES: &str = "inodes";
-
-impl_enum_sqlite_str!(QuotaType,
-    Space => QUOTA_TYPE_SPACE,
-    Inodes => QUOTA_TYPE_INODES
-);
-
-#[derive(Clone, Debug)]
-pub(crate) enum EntityType {
-    Node,
-    Target,
-    BuddyGroup,
-    StoragePool,
+impl_enum_sqlite! {EntityType,
+    EntityType::Node => "node",
+    EntityType::Target => "target",
+    EntityType::Pool => "pool",
+    EntityType::BuddyGroup => "buddy_group"
 }
 
-impl_enum_sqlite_str!(EntityType,
-    Node => "node",
-    Target => "target",
-    BuddyGroup => "buddy_group",
-    StoragePool => "storage_pool",
-);
+impl_enum_sqlite! {NodeType,
+    NodeType::Meta => "meta",
+    NodeType::Storage => "storage",
+    NodeType::Client => "client",
+    NodeType::Management => "management"
+}
+
+impl_enum_sqlite! {NodeTypeServer,
+    NodeTypeServer::Meta => "meta",
+    NodeTypeServer::Storage => "storage",
+}
+
+impl_enum_sqlite! {NicType,
+    NicType::Ethernet => "ethernet",
+    NicType::Rdma => "rdma",
+}
+
+impl_enum_sqlite! {TargetConsistencyState,
+    TargetConsistencyState::Good => "good",
+    TargetConsistencyState::NeedsResync => "needs_resync",
+    TargetConsistencyState::Bad => "bad",
+}
+
+impl_enum_sqlite! {QuotaIdType,
+    QuotaIdType::User => "user",
+    QuotaIdType::Group => "group",
+}
+
+impl_enum_sqlite! {QuotaType,
+    QuotaType::Space => "space",
+    QuotaType::Inodes => "inodes",
+}
+
+impl SqliteExt for Alias {
+    fn sql_str(&self) -> &str {
+        self.as_ref()
+    }
+
+    fn from_sql_str(s: &str) -> rusqlite::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(s.try_into()
+            .map_err(|_| rusqlite::types::FromSqlError::InvalidType)?)
+    }
+}

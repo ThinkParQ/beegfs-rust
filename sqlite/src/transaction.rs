@@ -7,14 +7,13 @@ use std::rc::Rc;
 ///
 /// See the implementation for description.
 pub trait TransactionExt {
-    fn execute_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<usize>;
-    fn query_row_cached<T, P, F>(&mut self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    fn execute_cached(&self, sql: &str, params: impl Params) -> rusqlite::Result<usize>;
+    fn query_row_cached<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
     where
         P: Params,
         F: FnOnce(&Row<'_>) -> rusqlite::Result<T>;
-
     fn query_map_collect<R, C>(
-        &mut self,
+        &self,
         sql: &str,
         params: impl Params,
         f: impl FnMut(&Row) -> rusqlite::Result<R>,
@@ -28,7 +27,7 @@ impl TransactionExt for Transaction<'_> {
     /// Executes and caches a non-SELECT statement.
     ///
     /// Convenience function for combination of  `.prepare_cached()` and `.execute()`.
-    fn execute_cached(&mut self, sql: &str, params: impl Params) -> rusqlite::Result<usize> {
+    fn execute_cached(&self, sql: &str, params: impl Params) -> rusqlite::Result<usize> {
         let mut stmt = self.prepare_cached(sql)?;
         let affected = stmt.execute(params)?;
 
@@ -38,7 +37,7 @@ impl TransactionExt for Transaction<'_> {
     /// Executes and caches a SELECT statement returning one row.
     ///
     /// Convenience function for combination of  `.prepare_cached()` and `.query_row()`.
-    fn query_row_cached<T, P, F>(&mut self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    fn query_row_cached<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
     where
         P: Params,
         F: FnOnce(&Row<'_>) -> rusqlite::Result<T>,
@@ -50,7 +49,7 @@ impl TransactionExt for Transaction<'_> {
     /// Executes and caches a SELECT statement returning multiple rows, maps them using the
     /// given function and collects them into a collection.
     fn query_map_collect<R, C>(
-        &mut self,
+        &self,
         sql: &str,
         params: impl Params,
         f: impl FnMut(&Row) -> rusqlite::Result<R>,

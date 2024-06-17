@@ -19,11 +19,10 @@ use std::path::Path;
 /// nodes nic lists. The old BeeGFS should be completely shut down before upgrading and all targets
 /// must be in GOOD state.
 pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()> {
-    let mut tx = conn.transaction()?;
+    let tx = conn.transaction()?;
 
     // Check DB is new
-    let max_uid: EntityUID =
-        tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
+    let max_uid: Uid = tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
     if max_uid > 2 {
         bail!("Database is not new");
     }
@@ -37,35 +36,35 @@ pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()
     // Read from files, write to database. Order is important.
 
     // Storage
-    storage_nodes(&mut tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
+    storage_nodes(&tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
     storage_targets(
-        &mut tx,
+        &tx,
         &base_path.join("targets"),
         &base_path.join("targetNumIDs"),
     )
     .context("storage targets (target + targetNumIDs)")?;
     buddy_groups(
-        &mut tx,
+        &tx,
         &base_path.join("storagebuddygroups"),
         NodeTypeServer::Storage,
     )
     .context("storage buddy groups (storagebuddygroups)")?;
-    storage_pools(&mut tx, &base_path.join("storagePools")).context("storagePools")?;
+    storage_pools(&tx, &base_path.join("storagePools")).context("storagePools")?;
 
     // Meta
     let (root_id, root_mirrored) =
-        meta_nodes(&mut tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
+        meta_nodes(&tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
     buddy_groups(
-        &mut tx,
+        &tx,
         &base_path.join("metabuddygroups"),
         NodeTypeServer::Meta,
     )
     .context("meta buddy groups (metabuddygroups)")?;
-    set_meta_root(&mut tx, root_id, root_mirrored).context("meta root")?;
+    set_meta_root(&tx, root_id, root_mirrored).context("meta root")?;
 
     // Quota
     if std::path::Path::try_exists(&base_path.join("quota"))? {
-        quota(&mut tx, &base_path.join("quota"))?;
+        quota(&tx, &base_path.join("quota"))?;
     }
 
     tx.commit()?;
@@ -96,7 +95,7 @@ fn check_target_states(f: &Path) -> Result<()> {
     let mut des = Deserializer::new(&s, 0);
     let states = des.map(
         false,
-        |des| TargetID::deserialize(des),
+        |des| TargetId::deserialize(des),
         |des| {
             let res = CombinedTargetState::deserialize(des)?;
             // Ignore the last change time, we don't need it
@@ -122,16 +121,16 @@ fn check_target_states(f: &Path) -> Result<()> {
 
 /// Imports meta nodes / targets. Intentionally ignores nics as they are refreshed on first contact
 /// anyway.
-fn meta_nodes(tx: &mut Transaction, f: &Path) -> Result<(NodeID, bool)> {
+fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
     let (root_id, root_mirrored, nodes) = read_nodes(f)?;
 
     for n in nodes {
         node::insert(tx, n.num_id, None, NodeType::Meta, n.port)?;
 
         // A meta target has to be explicitly created with the same ID as the node.
-        let Ok(target_id) = TargetID::try_from(n.num_id) else {
+        let Ok(target_id) = TargetId::try_from(n.num_id) else {
             bail!(
-                "{} is not a valid meta node/target ID (must be between 1 and 65535)",
+                "{} is not a valid numeric meta node/target id (must be between 1 and 65535)",
                 n.num_id
             );
         };
@@ -139,7 +138,7 @@ fn meta_nodes(tx: &mut Transaction, f: &Path) -> Result<(NodeID, bool)> {
     }
 
     if root_id == 0 {
-        bail!("meta root ID can not be 0");
+        bail!("numeric meta root id can not be 0");
     }
 
     // root ID is set later after buddy groups have been imported
@@ -147,7 +146,7 @@ fn meta_nodes(tx: &mut Transaction, f: &Path) -> Result<(NodeID, bool)> {
 }
 
 // Imports storage nodes
-fn storage_nodes(tx: &mut Transaction, f: &Path) -> Result<()> {
+fn storage_nodes(tx: &Transaction, f: &Path) -> Result<()> {
     let (_, _, nodes) = read_nodes(f)?;
 
     for n in nodes {
@@ -158,7 +157,7 @@ fn storage_nodes(tx: &mut Transaction, f: &Path) -> Result<()> {
 }
 
 // Deserialize nodes from file
-fn read_nodes(f: &Path) -> Result<(NodeID, bool, Vec<shared::bee_msg::node::Node>)> {
+fn read_nodes(f: &Path) -> Result<(NodeId, bool, Vec<shared::bee_msg::node::Node>)> {
     let s = std::fs::read(f)?;
 
     let mut des = Deserializer::new(&s, 0);
@@ -176,7 +175,7 @@ fn read_nodes(f: &Path) -> Result<(NodeID, bool, Vec<shared::bee_msg::node::Node
 }
 
 // Imports buddy groups
-fn buddy_groups(tx: &mut Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
+fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
     let s = std::fs::read_to_string(f)?;
 
     for l in s.lines() {
@@ -185,13 +184,20 @@ fn buddy_groups(tx: &mut Transaction, f: &Path, nt: NodeTypeServer) -> Result<()
             .split_once('=')
             .ok_or_else(|| anyhow!("invalid line '{l}'"))?;
 
-        let g: BuddyGroupID = g.parse()?;
+        let g: BuddyGroupId = g.parse()?;
         let (p_id, s_id) = ts
             .trim()
             .split_once(',')
             .ok_or_else(|| anyhow!("invalid line '{l}'"))?;
 
-        buddy_group::insert(tx, g, None, nt, p_id.parse()?, s_id.parse()?)?;
+        buddy_group::insert(
+            tx,
+            g,
+            &format!("buddy_group_{}_{}", nt.sql_str(), g).try_into()?,
+            nt,
+            p_id.parse()?,
+            s_id.parse()?,
+        )?;
     }
 
     Ok(())
@@ -199,7 +205,7 @@ fn buddy_groups(tx: &mut Transaction, f: &Path, nt: NodeTypeServer) -> Result<()
 
 /// Imports storage targets
 fn storage_targets(
-    tx: &mut Transaction,
+    tx: &Transaction,
     targets_path: &Path,
     target_num_ids_path: &Path,
 ) -> Result<()> {
@@ -216,8 +222,8 @@ fn storage_targets(
                 .split_once('=')
                 .ok_or_else(|| anyhow!("invalid line '{}'", l.0))?;
 
-        let node_id: NodeID = node.parse()?;
-        let target_id: TargetID = target.parse()?;
+        let node_id: NodeId = node.parse()?;
+        let target_id: TargetId = target.parse()?;
 
         target::insert_storage(tx, target_id, None)?;
         target::update_storage_node_mappings(tx, &[target_id], node_id)?;
@@ -227,7 +233,7 @@ fn storage_targets(
 }
 
 /// Imports storage pools
-fn storage_pools(tx: &mut Transaction, f: &Path) -> Result<()> {
+fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
     let s = std::fs::read(f)?;
 
     let mut des = Deserializer::new(&s, 0);
@@ -240,9 +246,9 @@ fn storage_pools(tx: &mut Transaction, f: &Path) -> Result<()> {
             continue;
         }
 
-        let alias = std::str::from_utf8(&pool.alias)?;
+        let alias: Alias = std::str::from_utf8(&pool.alias)?.try_into()?;
 
-        storage_pool::insert(tx, pool.id, alias)?;
+        storage_pool::insert(tx, pool.id, &alias)?;
         target::update_storage_pools(tx, pool.id, &pool.targets)?;
         buddy_group::update_storage_pools(tx, pool.id, &pool.buddy_groups)?;
     }
@@ -252,16 +258,16 @@ fn storage_pools(tx: &mut Transaction, f: &Path) -> Result<()> {
 }
 
 /// Sets the root inode info according to the given info
-fn set_meta_root(tx: &mut Transaction, root_id: NodeID, root_mirrored: bool) -> Result<()> {
+fn set_meta_root(tx: &Transaction, root_id: NodeId, root_mirrored: bool) -> Result<()> {
     // overwrite root inode with the correct setting
     if root_mirrored {
         tx.execute(
-            sql!("UPDATE root_inode SET target_id = NULL, buddy_group_id = ?1"),
+            sql!("UPDATE root_inode SET target_id = NULL, group_id = ?1"),
             [root_id],
         )?;
     } else {
         tx.execute(
-            sql!("UPDATE root_inode SET buddy_group_id = NULL, target_id = ?1"),
+            sql!("UPDATE root_inode SET group_id = NULL, target_id = ?1"),
             [root_id],
         )?;
     }
@@ -270,7 +276,7 @@ fn set_meta_root(tx: &mut Transaction, root_id: NodeID, root_mirrored: bool) -> 
 }
 
 /// Imports quota settings
-fn quota(tx: &mut Transaction, quota_path: &Path) -> Result<()> {
+fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
     // Quota settings are stored per storage pool in a subdirectory named like the pool ID
     for e in std::fs::read_dir(quota_path)? {
         let e = e?;
@@ -279,7 +285,7 @@ fn quota(tx: &mut Transaction, quota_path: &Path) -> Result<()> {
             continue;
         }
 
-        let pool_id: StoragePoolID = e
+        let pool_id: PoolId = e
             .file_name()
             .into_string()
             .map_err(|s| anyhow!("{s:?} is not a valid storage pool directory"))?
@@ -298,7 +304,7 @@ fn quota(tx: &mut Transaction, quota_path: &Path) -> Result<()> {
             tx,
             &e.path().join("quotaUserLimits.store"),
             pool_id,
-            QuotaIDType::User,
+            QuotaIdType::User,
         )
         .with_context(|| format!("quota user limits ({}/quotaUserLimits.store)", pool_id))?;
 
@@ -306,7 +312,7 @@ fn quota(tx: &mut Transaction, quota_path: &Path) -> Result<()> {
             tx,
             &e.path().join("quotaGroupLimits.store"),
             pool_id,
-            QuotaIDType::Group,
+            QuotaIdType::Group,
         )
         .with_context(|| format!("quota group limits ({}/quotaGroupLimits.store)", pool_id))?;
 
@@ -318,7 +324,7 @@ fn quota(tx: &mut Transaction, quota_path: &Path) -> Result<()> {
 }
 
 /// Imports the default quota limits
-fn quota_default_limits(tx: &mut Transaction, f: &Path, pool_id: StoragePoolID) -> Result<()> {
+fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<()> {
     let s = std::fs::read(f)?;
 
     let mut des = Deserializer::new(&s, 0);
@@ -328,28 +334,28 @@ fn quota_default_limits(tx: &mut Transaction, f: &Path, pool_id: StoragePoolID) 
     quota_default_limit::upsert(
         tx,
         pool_id,
-        QuotaIDType::User,
+        QuotaIdType::User,
         QuotaType::Inodes,
         limits.user_inode_limit,
     )?;
     quota_default_limit::upsert(
         tx,
         pool_id,
-        QuotaIDType::User,
+        QuotaIdType::User,
         QuotaType::Space,
         limits.user_space_limit,
     )?;
     quota_default_limit::upsert(
         tx,
         pool_id,
-        QuotaIDType::Group,
+        QuotaIdType::Group,
         QuotaType::Inodes,
         limits.group_inode_limit,
     )?;
     quota_default_limit::upsert(
         tx,
         pool_id,
-        QuotaIDType::Group,
+        QuotaIdType::Group,
         QuotaType::Space,
         limits.group_space_limit,
     )?;
@@ -359,10 +365,10 @@ fn quota_default_limits(tx: &mut Transaction, f: &Path, pool_id: StoragePoolID) 
 
 /// Imports the specific (per user/group) quota limits
 fn quota_limits(
-    tx: &mut Transaction,
+    tx: &Transaction,
     f: &Path,
-    pool_id: StoragePoolID,
-    quota_id_type: QuotaIDType,
+    pool_id: PoolId,
+    quota_id_type: QuotaIdType,
 ) -> Result<()> {
     let s = std::fs::read(f)?;
 

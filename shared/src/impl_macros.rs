@@ -64,3 +64,53 @@ macro_rules! impl_from_and_into {
         }
     };
 }
+
+macro_rules! impl_enum_user_str {
+    ($type:ty, $($variant:path => $text:literal),+ $(,)?) => {
+        impl $type {
+            pub fn user_str(&self) -> &str {
+                match self {
+                    $(
+                        $variant => $text,
+                    )+
+                }
+            }
+        }
+
+        impl std::fmt::Display for $type {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.user_str())
+            }
+        }
+    };
+}
+
+#[cfg(feature = "protobuf")]
+macro_rules! impl_enum_protobuf_traits {
+    ($type:ty => $proto_type:ty, unspecified => $proto_unspec_variant:path, $($variant:path => $proto_variant:path),+ $(,)?) => {
+        impl TryFrom<$proto_type> for $type {
+            type Error = ::anyhow::Error;
+
+            fn try_from(value: $proto_type) -> std::result::Result<Self, Self::Error> {
+                let nt = match value {
+                    $proto_unspec_variant => ::anyhow::bail!("$type is unspecified"),
+                    $(
+                        $proto_variant => $variant,
+                    )+
+                };
+
+                Ok(nt)
+            }
+        }
+
+        impl From<$type> for $proto_type {
+            fn from(value: $type) -> Self {
+                match value {
+                    $(
+                        $variant => $proto_variant,
+                    )+
+                }
+            }
+        }
+    };
+}

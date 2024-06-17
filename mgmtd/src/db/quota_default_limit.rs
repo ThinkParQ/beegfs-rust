@@ -15,12 +15,8 @@ pub(crate) struct DefaultLimits {
 }
 
 /// Retrieves the default limits for the given storage pool ID.
-pub(crate) fn get_with_pool_id(
-    tx: &mut Transaction,
-    pool_id: StoragePoolID,
-) -> Result<DefaultLimits> {
-    storage_pool::get_uid(tx, pool_id)?
-        .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
+pub(crate) fn get_with_pool_id(tx: &Transaction, pool_id: PoolId) -> Result<DefaultLimits> {
+    let _ = resolve_num_id(tx, EntityType::Pool, NodeType::Storage, pool_id.into())?;
 
     let limits = tx
         .query_row_cached(
@@ -56,9 +52,9 @@ pub(crate) fn get_with_pool_id(
 ///
 /// Affects one of the four limits ((user, group) x (space, inode)).
 pub(crate) fn upsert(
-    tx: &mut Transaction,
-    pool_id: StoragePoolID,
-    id_type: QuotaIDType,
+    tx: &Transaction,
+    pool_id: PoolId,
+    id_type: QuotaIdType,
     quota_type: QuotaType,
     value: u64,
 ) -> Result<()> {
@@ -80,13 +76,12 @@ pub(crate) fn upsert(
 ///
 /// Affects one of the four limits ((user, group) x (space, inode)).
 pub(crate) fn delete(
-    tx: &mut Transaction,
-    pool_id: StoragePoolID,
-    id_type: QuotaIDType,
+    tx: &Transaction,
+    pool_id: PoolId,
+    id_type: QuotaIdType,
     quota_type: QuotaType,
 ) -> Result<()> {
-    storage_pool::get_uid(tx, pool_id)?
-        .ok_or_else(|| TypedError::value_not_found("storage pool ID", pool_id))?;
+    let _ = resolve_num_id(tx, EntityType::Pool, NodeType::Storage, pool_id.into())?;
 
     tx.execute_cached(
         sql!(
@@ -120,8 +115,8 @@ mod test {
             assert_eq!(None, defaults.group_space_limit);
             assert_eq!(None, defaults.group_inodes_limit);
 
-            super::delete(tx, 1, QuotaIDType::User, QuotaType::Space).unwrap();
-            super::upsert(tx, 1, QuotaIDType::User, QuotaType::Inodes, 2000).unwrap();
+            super::delete(tx, 1, QuotaIdType::User, QuotaType::Space).unwrap();
+            super::upsert(tx, 1, QuotaIdType::User, QuotaType::Inodes, 2000).unwrap();
 
             let defaults = super::get_with_pool_id(tx, 1).unwrap();
 

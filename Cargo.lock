@@ -1046,6 +1046,7 @@ dependencies = [
  "hsieh",
  "log",
  "pnet_datalink",
+ "protobuf",
  "regex",
  "serde",
  "thiserror",

@@ -3,7 +3,7 @@ use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
-use shared::types::{NodeID, TargetID, MGMTD_ID, MGMTD_UID};
+use shared::types::{NodeId, TargetId, MGMTD_ID, MGMTD_UID};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -54,7 +54,7 @@ impl Handler for GetNodes {
                 root_num_id: match res.2 {
                     MetaRoot::Unknown => 0,
                     MetaRoot::Normal(node_id, _) => node_id,
-                    MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
+                    MetaRoot::Mirrored(group_id) => group_id.into(),
                 },
                 is_root_mirrored: match res.2 {
                     MetaRoot::Unknown => 0,
@@ -111,7 +111,7 @@ impl Handler for HeartbeatRequest {
             .op(|tx| {
                 Ok((
                     db::entity::get_alias(tx, MGMTD_UID)?
-                        .ok_or_else(|| TypedError::value_not_found("UID", MGMTD_UID))?,
+                        .ok_or_else(|| TypedError::value_not_found("management uid", MGMTD_UID))?,
                     db::node_nic::get_with_node(tx, MGMTD_UID)?,
                 ))
             })
@@ -163,7 +163,7 @@ impl Handler for RegisterNode {
 }
 
 /// Processes incoming node information. Registers new nodes if config allows it
-async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
+async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeId {
     let msg2 = msg.clone();
     let info = ctx.info;
 
@@ -171,21 +171,19 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
         let db_res = ctx
             .db
             .op(move |tx| {
-                let node_type = msg.node_type;
-
-                let node_uid = if msg.node_id == 0 {
+                let node = if msg.node_id == 0 {
                     // No node ID given => new node
                     None
                 } else {
                     // If Some is returned, the node with node_id already exists
-                    db::node::get_uid(tx, msg.node_id, node_type)?
+                    try_resolve_num_id(tx, EntityType::Node, msg.node_type, msg.node_id)?
                 };
 
-                let (node_id, node_uid) = if let Some(node_uid) = node_uid {
+                let (node_id, node_uid) = if let Some(node) = node {
                     // Existing node, update data
-                    db::node::update(tx, node_uid, msg.port)?;
+                    db::node::update(tx, node.uid, msg.port)?;
 
-                    (msg.node_id, node_uid)
+                    (node.num_id(), node.uid)
                 } else {
                     // New node, do additional checks and insert data
 
@@ -196,15 +194,15 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
 
                     // Insert new node entry
                     let (node_uid, node_id) =
-                        db::node::insert(tx, msg.node_id, None, node_type, msg.port)?;
+                        db::node::insert(tx, msg.node_id, None, msg.node_type, msg.port)?;
 
                     // if this is a meta node, auto-add a corresponding meta target after the node.
-                    if node_type == NodeType::Meta {
+                    if msg.node_type == NodeType::Meta {
                         // Convert the NodeID to a TargetID. Due to the difference in bitsize, meta
                         // node IDs are not allowed to be bigger than u16
-                        let Ok(target_id) = TargetID::try_from(node_id) else {
+                        let Ok(target_id) = TargetId::try_from(node_id) else {
                             bail!(
-                                "{node_id} is not a valid meta node ID\
+                                "{node_id} is not a valid numeric meta node id\
                                 (must be between 1 and 65535)"
                             );
                         };
@@ -229,7 +227,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                 Ok((
                     node_uid,
                     node_id,
-                    match node_type {
+                    match msg.node_type {
                         // In case this is a meta node, the requester expects info about the meta
                         // root
                         NodeType::Meta => db::misc::get_meta_root(tx)?,
@@ -255,7 +253,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
     match res {
         Ok((_node_uid, node_id, meta_root)) => {
             log::info!(
-                "Processed {:?} node info from with ID {} (Requested: {})",
+                "Processed {:?} node info with numeric node id {} (Requested: {})",
                 msg2.node_type,
                 node_id,
                 msg2.node_id,
@@ -282,7 +280,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
                     root_num_id: match meta_root {
                         MetaRoot::Unknown => 0,
                         MetaRoot::Normal(node_id, _) => node_id,
-                        MetaRoot::Mirrored(buddy_group_id) => buddy_group_id.into(),
+                        MetaRoot::Mirrored(group_id) => group_id.into(),
                     },
                     is_root_mirrored: match meta_root {
                         MetaRoot::Unknown | MetaRoot::Normal(_, _) => 0,
@@ -301,68 +299,12 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeID {
         Err(err) => {
             log_error_chain!(
                 err,
-                "Processing {:?} node info for ID {} failed",
+                "Processing {:?} node info for numeric node id {} failed",
                 msg.node_type,
                 msg.node_id,
             );
 
             0
-        }
-    }
-}
-
-impl Handler for RemoveNode {
-    type Response = RemoveNodeResp;
-
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let res = ctx
-            .db
-            .op(move |tx| {
-                let node_uid = db::node::get_uid(tx, self.node_id, self.node_type)?
-                    .ok_or_else(|| TypedError::value_not_found("node ID", self.node_id))?;
-
-                db::node::delete(tx, node_uid)?;
-
-                Ok(())
-            })
-            .await;
-
-        match res {
-            Ok(_) => {
-                log::info!("Removed {:?} node with ID {}", self.node_type, self.node_id,);
-
-                notify_nodes(
-                    ctx,
-                    match self.node_type {
-                        shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
-                        shared::types::NodeType::Storage => {
-                            &[NodeType::Meta, NodeType::Storage, NodeType::Client]
-                        }
-                        _ => &[],
-                    },
-                    &RemoveNode {
-                        ack_id: "".into(),
-                        ..self
-                    },
-                )
-                .await;
-
-                RemoveNodeResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(
-                    err,
-                    "Removing {:?} node with ID {} failed",
-                    self.node_type,
-                    self.node_id
-                );
-
-                RemoveNodeResp {
-                    result: OpsErr::INTERNAL,
-                }
-            }
         }
     }
 }

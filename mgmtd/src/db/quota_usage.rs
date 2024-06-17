@@ -2,9 +2,9 @@
 use super::*;
 
 /// A pool ID or target ID
-pub(crate) enum PoolOrTargetID {
-    PoolID(StoragePoolID),
-    TargetID(TargetID),
+pub(crate) enum PoolOrTargetId {
+    PoolID(PoolId),
+    TargetID(TargetId),
 }
 
 /// Calculates IDs that exceed their quota limits for one of the four limit types.
@@ -12,15 +12,15 @@ pub(crate) enum PoolOrTargetID {
 /// Since the request message can
 /// contain a pool ID or a target ID, both are accepted here as well.
 pub(crate) fn exceeded_quota_ids(
-    tx: &mut Transaction,
-    pool_or_target_id: PoolOrTargetID,
-    id_type: QuotaIDType,
+    tx: &Transaction,
+    pool_or_target_id: PoolOrTargetId,
+    id_type: QuotaIdType,
     quota_type: QuotaType,
-) -> Result<Vec<QuotaID>> {
+) -> Result<Vec<QuotaId>> {
     // Quota is calculated per pool, so if a target ID is given, use its assigned pools ID.
     let pool_id = match pool_or_target_id {
-        PoolOrTargetID::PoolID(pool_id) => pool_id,
-        PoolOrTargetID::TargetID(target_id) => tx.query_row_cached(
+        PoolOrTargetId::PoolID(pool_id) => pool_id,
+        PoolOrTargetId::TargetID(target_id) => tx.query_row_cached(
             sql!("SELECT pool_id FROM storage_targets WHERE target_id = ?1"),
             [target_id],
             |row| row.get(0),
@@ -47,17 +47,17 @@ pub(crate) fn exceeded_quota_ids(
 /// Contains additional information on which limit has been exceeded and on which storage pool.
 #[derive(Clone, Debug)]
 pub(crate) struct ExceededQuotaEntry {
-    pub quota_id: QuotaID,
-    pub id_type: QuotaIDType,
+    pub quota_id: QuotaId,
+    pub id_type: QuotaIdType,
     pub quota_type: QuotaType,
-    pub pool_id: StoragePoolID,
+    pub pool_id: PoolId,
 }
 
 /// Calculates IDs that exceed any of their quota limits.
 ///
 /// Since an ID can exceed more than one of the four limits and also on multiple storage pools, it
 /// can be returned more than once (with the respective information stored in [ExceededQuotaEntry]).
-pub(crate) fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<ExceededQuotaEntry>> {
+pub(crate) fn all_exceeded_quota_ids(tx: &Transaction) -> Result<Vec<ExceededQuotaEntry>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
@@ -72,7 +72,7 @@ pub(crate) fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<Exceede
         |row| {
             Ok(ExceededQuotaEntry {
                 quota_id: row.get(0)?,
-                id_type: QuotaIDType::from_row(row, 1)?,
+                id_type: QuotaIdType::from_row(row, 1)?,
                 quota_type: QuotaType::from_row(row, 2)?,
                 pool_id: row.get(3)?,
             })
@@ -83,16 +83,16 @@ pub(crate) fn all_exceeded_quota_ids(tx: &mut Transaction) -> Result<Vec<Exceede
 /// A quota usage entry containing space and inode usage for a user or group/
 #[derive(Clone, Debug)]
 pub(crate) struct QuotaData {
-    pub quota_id: QuotaID,
-    pub id_type: QuotaIDType,
+    pub quota_id: QuotaId,
+    pub id_type: QuotaIdType,
     pub space: u64,
     pub inodes: u64,
 }
 
 /// Inserts or updates quota usage entries for a storage target.
 pub(crate) fn update(
-    tx: &mut Transaction,
-    target_id: TargetID,
+    tx: &Transaction,
+    target_id: TargetId,
     data: impl IntoIterator<Item = QuotaData>,
 ) -> Result<()> {
     let mut insert_stmt = tx.prepare_cached(sql!(
@@ -157,19 +157,19 @@ mod test {
                 [
                     QuotaData {
                         quota_id: 1000,
-                        id_type: QuotaIDType::User,
+                        id_type: QuotaIdType::User,
                         space: 2000,
                         inodes: 0,
                     },
                     QuotaData {
                         quota_id: 1001,
-                        id_type: QuotaIDType::User,
+                        id_type: QuotaIdType::User,
                         space: 2000,
                         inodes: 2000,
                     },
                     QuotaData {
                         quota_id: 1002,
-                        id_type: QuotaIDType::User,
+                        id_type: QuotaIdType::User,
                         space: 0,
                         inodes: 2000,
                     },
@@ -181,8 +181,8 @@ mod test {
                 2,
                 exceeded_quota_ids(
                     tx,
-                    PoolOrTargetID::PoolID(1),
-                    QuotaIDType::User,
+                    PoolOrTargetId::PoolID(1),
+                    QuotaIdType::User,
                     QuotaType::Space,
                 )
                 .unwrap()
@@ -193,8 +193,8 @@ mod test {
                 2,
                 exceeded_quota_ids(
                     tx,
-                    PoolOrTargetID::PoolID(1),
-                    QuotaIDType::User,
+                    PoolOrTargetId::PoolID(1),
+                    QuotaIdType::User,
                     QuotaType::Inodes,
                 )
                 .unwrap()
@@ -208,7 +208,7 @@ mod test {
                 1,
                 [QuotaData {
                     quota_id: 1001,
-                    id_type: QuotaIDType::User,
+                    id_type: QuotaIdType::User,
                     space: 0,
                     inodes: 500,
                 }],
