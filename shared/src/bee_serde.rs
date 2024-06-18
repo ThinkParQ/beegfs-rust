@@ -17,6 +17,38 @@ pub trait Deserializable {
         Self: Sized;
 }
 
+/// Provides conversion functionality to and from BeeSerde serializable types.
+///
+/// Mainly meant for enums that need to be converted in to a raw integer type, which also might
+/// differ between messages. The generic parameter allows implementing it for multiple types.
+pub trait BeeSerdeConversion<S>: Sized {
+    fn into_bee_serde(self) -> S;
+    fn try_from_bee_serde(value: S) -> Result<Self>;
+}
+
+/// Interface for serialization helpers to be used with the `bee_serde` derive macro
+///
+/// Serialization helpers are meant to control the `bee_serde` macro in case a value in the
+/// message struct shall be serialized as a different type or in case it doesn't have its own
+/// [BeeSerde] implementation. Also necessary for maps and sequences since the serializer can't
+/// know on its own whether to include collection size or not (it's totally message dependent).
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Debug, BeeSerde)]
+/// pub struct ExampleMsg {
+///     // Serializer doesn't know by itself whether or not C/C++ BeeGFS serializer expects sequence
+///     // size included or not - in this case it is not
+///     #[bee_serde(as = Seq<false, _>)]
+///     int_sequence: Vec<u32>,
+/// }
+/// ```
+pub trait BeeSerdeHelper<In> {
+    fn serialize_as(data: &In, ser: &mut Serializer<'_>) -> Result<()>;
+    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<In>;
+}
+
 /// Serializes one BeeGFS message into a provided buffer
 pub struct Serializer<'a> {
     /// The target buffer
@@ -369,48 +401,24 @@ impl<'a> Deserializer<'a> {
     }
 }
 
-/// Interface for serialization helpers to be used with the `bee_serde` derive macro
-///
-/// Serialization helpers are meant to control the `bee_serde` macro in case a value in the
-/// message struct shall be serialized as a different type or in case it doesn't have its own
-/// [BeeSerde] implementation. Also necessary for maps and sequences since the serializer can't
-/// know on its own whether to include collection size or not (it's totally message dependent).
-///
-/// # Example
-///
-/// ```ignore
-/// #[derive(Debug, BeeSerde)]
-/// pub struct ExampleMsg {
-///     // Serializer doesn't know by itself whether or not C/C++ BeeGFS serializer expects sequence
-///     // size included or not - in this case it is not
-///     #[bee_serde(as = Seq<false, _>)]
-///     int_sequence: Vec<u32>,
-/// }
-/// ```
-pub trait BeeSerdeAs<Input> {
-    fn serialize_as(data: &Input, ser: &mut Serializer<'_>) -> Result<()>;
-    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<Input>;
-}
-
 /// Serialize an arbitrary type as Integer
 ///
 /// Note: Can potentially be used for non-integers, but is not practical due to the [Copy]
 /// requirement
-pub struct Int<Output>(PhantomData<Output>);
+pub struct Int<Out>(PhantomData<Out>);
 
-impl<Input, Target> BeeSerdeAs<Input> for Int<Target>
+impl<In, Out> BeeSerdeHelper<In> for Int<Out>
 where
-    Input: TryInto<Target> + Copy,
-    Target: TryInto<Input> + Serializable + Deserializable,
-    anyhow::Error: From<<Input as TryInto<Target>>::Error> + From<Target::Error>,
+    In: BeeSerdeConversion<Out> + Copy,
+    Out: Serializable + Deserializable,
 {
-    fn serialize_as(data: &Input, ser: &mut Serializer<'_>) -> Result<()> {
-        let o: Target = (*data).try_into()?;
+    fn serialize_as(data: &In, ser: &mut Serializer<'_>) -> Result<()> {
+        let o: Out = (*data).into_bee_serde();
         o.serialize(ser)
     }
 
-    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<Input> {
-        Ok(Target::deserialize(des)?.try_into()?)
+    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<In> {
+        In::try_from_bee_serde(Out::deserialize(des)?)
     }
 }
 
@@ -420,7 +428,7 @@ where
 /// `T` must implement [BeeSerde].
 pub struct Seq<const INCLUDE_SIZE: bool, T>(PhantomData<T>);
 
-impl<const INCLUDE_SIZE: bool, T: Serializable + Deserializable> BeeSerdeAs<Vec<T>>
+impl<const INCLUDE_SIZE: bool, T: Serializable + Deserializable> BeeSerdeHelper<Vec<T>>
     for Seq<INCLUDE_SIZE, T>
 {
     fn serialize_as(data: &Vec<T>, ser: &mut Serializer<'_>) -> Result<()> {
@@ -442,7 +450,7 @@ impl<
         const INCLUDE_SIZE: bool,
         K: Serializable + Deserializable + Eq + Hash,
         V: Serializable + Deserializable,
-    > BeeSerdeAs<HashMap<K, V>> for Map<INCLUDE_SIZE, K, V>
+    > BeeSerdeHelper<HashMap<K, V>> for Map<INCLUDE_SIZE, K, V>
 {
     fn serialize_as(data: &HashMap<K, V>, ser: &mut Serializer<'_>) -> Result<()> {
         ser.map(
@@ -467,7 +475,7 @@ impl<
 /// `ALIGN_TO` controls the `align_to` parameter of `cstr(...)`.
 pub struct CStr<const ALIGN_TO: usize>;
 
-impl<const ALIGN_TO: usize, Input> BeeSerdeAs<Input> for CStr<ALIGN_TO>
+impl<const ALIGN_TO: usize, Input> BeeSerdeHelper<Input> for CStr<ALIGN_TO>
 where
     Input: AsRef<[u8]>,
     Vec<u8>: TryInto<Input>,

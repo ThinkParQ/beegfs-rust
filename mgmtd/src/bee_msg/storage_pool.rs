@@ -130,32 +130,31 @@ impl Handler for GetStoragePools {
 
                     // Only collect targets belonging to the current pool
                     for target in f_targets {
-                        let cap_pool_i = usize::from(
-                            cp_targets_calc.cap_pool(target.free_space, target.free_inodes),
-                        );
+                        let cp = cp_targets_calc
+                            .cap_pool(target.free_space, target.free_inodes)
+                            .bee_msg_vec_index();
 
                         let target_id: TargetId = target.id;
                         let node_id = target.node_id.expect("targets have a node id");
 
                         target_map.insert(target_id, node_id);
-                        target_cap_pools[cap_pool_i].push(target.id);
+                        target_cap_pools[cp].push(target.id);
 
-                        if let Some(node_group) =
-                            grouped_target_cap_pools[cap_pool_i].get_mut(&node_id)
-                        {
+                        if let Some(node_group) = grouped_target_cap_pools[cp].get_mut(&node_id) {
                             node_group.push(target_id);
                         } else {
-                            grouped_target_cap_pools[cap_pool_i].insert(node_id, vec![target_id]);
+                            grouped_target_cap_pools[cp].insert(node_id, vec![target_id]);
                         }
                     }
 
                     // Only collect buddy groups belonging to the current pool
                     for group in f_buddy_groups {
                         buddy_group_vec.push(group.id);
-                        buddy_group_cap_pools[usize::from(
-                            cp_buddy_groups_calc.cap_pool(group.free_space, group.free_inodes),
-                        )]
-                        .push(group.id);
+
+                        let cp = cp_buddy_groups_calc
+                            .cap_pool(group.free_space, group.free_inodes)
+                            .bee_msg_vec_index();
+                        buddy_group_cap_pools[cp].push(group.id);
                     }
 
                     Ok(StoragePool {

@@ -163,7 +163,10 @@ impl Handler for GetNodeCapacityPools {
 
                     let mut res = vec![Vec::<u16>::new(), vec![], vec![]];
                     for t in targets {
-                        res[usize::from(cp_calc.cap_pool(t.free_space, t.free_inodes))].push(t.id);
+                        let cp = cp_calc
+                            .cap_pool(t.free_space, t.free_inodes)
+                            .bee_msg_vec_index();
+                        res[cp].push(t.id);
                     }
 
                     [(0, res)].into()
@@ -200,9 +203,10 @@ impl Handler for GetNodeCapacityPools {
 
                         res.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
                         for t in f_targets {
-                            res.get_mut(&sp).unwrap()
-                                [usize::from(cp_calc.cap_pool(t.free_space, t.free_inodes))]
-                            .push(t.id);
+                            let cp = cp_calc
+                                .cap_pool(t.free_space, t.free_inodes)
+                                .bee_msg_vec_index();
+                            res.get_mut(&sp).unwrap()[cp].push(t.id);
                         }
                     }
 
@@ -224,7 +228,10 @@ impl Handler for GetNodeCapacityPools {
                     let mut res = vec![Vec::<u16>::new(), vec![], vec![]];
 
                     for e in groups {
-                        res[usize::from(cp_calc.cap_pool(e.free_space, e.free_inodes))].push(e.id);
+                        let cp = cp_calc
+                            .cap_pool(e.free_space, e.free_inodes)
+                            .bee_msg_vec_index();
+                        res[cp].push(e.id);
                     }
 
                     [(0, res)].into()
@@ -261,9 +268,10 @@ impl Handler for GetNodeCapacityPools {
 
                         cap_pools.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
                         for t in f_groups {
-                            cap_pools.get_mut(&sp).unwrap()
-                                [usize::from(cp_calc.cap_pool(t.free_space, t.free_inodes))]
-                            .push(t.id);
+                            let cp = cp_calc
+                                .cap_pool(t.free_space, t.free_inodes)
+                                .bee_msg_vec_index();
+                            cap_pools.get_mut(&sp).unwrap()[cp].push(t.id);
                         }
                     }
 

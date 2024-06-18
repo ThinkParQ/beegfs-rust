@@ -39,7 +39,7 @@ pub enum NodeType {
     Management,
 }
 
-impl_enum_to_int!(NodeType,
+impl_enum_bee_msg_traits!(NodeType,
     Meta => 1,
     Storage => 2,
     Client => 3,
@@ -128,7 +128,7 @@ pub enum NicType {
     Rdma,
 }
 
-impl_enum_to_int!(NicType, Ethernet => 0, Rdma => 1);
+impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 1);
 
 impl_enum_user_str! {NicType,
     NicType::Ethernet => "meta",
@@ -150,7 +150,17 @@ pub enum CapacityPool {
 }
 
 // Defines which pool maps to which index in the response below
-impl_enum_to_int!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
+impl_enum_bee_msg_traits!(CapacityPool, Normal => 0, Low => 1, Emergency => 2);
+
+impl CapacityPool {
+    pub fn bee_msg_vec_index(&self) -> usize {
+        match self {
+            CapacityPool::Normal => 0,
+            CapacityPool::Low => 1,
+            CapacityPool::Emergency => 2,
+        }
+    }
+}
 
 impl_enum_user_str! {CapacityPool,
     CapacityPool::Normal => "normal",
@@ -175,7 +185,7 @@ pub enum TargetConsistencyState {
     Bad,
 }
 
-impl_enum_to_int!(TargetConsistencyState,
+impl_enum_bee_msg_traits!(TargetConsistencyState,
     Good => 0,
     NeedsResync => 1,
     Bad => 2
@@ -197,13 +207,13 @@ impl_enum_protobuf_traits! {TargetConsistencyState => pb::ConsistencyState,
 
 impl Serializable for TargetConsistencyState {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        ser.u8((*self).into())
+        ser.u8((*self).into_bee_serde())
     }
 }
 
 impl Deserializable for TargetConsistencyState {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        des.u8()?.try_into()
+        Self::try_from_bee_serde(des.u8()?)
     }
 }
 
@@ -217,7 +227,7 @@ pub enum QuotaIdType {
     Group,
 }
 
-impl_enum_to_int!(QuotaIdType,
+impl_enum_bee_msg_traits!(QuotaIdType,
     User => 1,
     Group => 2
 );
@@ -235,7 +245,7 @@ pub enum QuotaType {
     Inodes,
 }
 
-impl_enum_to_int!(QuotaType,
+impl_enum_bee_msg_traits!(QuotaType,
     Space => 1,
     Inodes => 2
 );

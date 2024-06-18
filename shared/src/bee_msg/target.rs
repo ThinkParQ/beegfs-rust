@@ -68,7 +68,7 @@ pub enum TargetReachabilityState {
     Offline,
 }
 
-impl_enum_to_int!(TargetReachabilityState,
+impl_enum_bee_msg_traits!(TargetReachabilityState,
     Online => 0,
     ProbablyOffline => 1,
     Offline => 2
@@ -76,13 +76,13 @@ impl_enum_to_int!(TargetReachabilityState,
 
 impl Serializable for TargetReachabilityState {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        ser.u8((*self).into())
+        ser.u8((*self).into_bee_serde())
     }
 }
 
 impl Deserializable for TargetReachabilityState {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        des.u8()?.try_into()
+        Self::try_from_bee_serde(des.u8()?)
     }
 }
 
@@ -118,7 +118,6 @@ impl Msg for RegisterTargetResp {
 pub struct MapTargets {
     #[bee_serde(as = Map<false, _, _>)]
     pub target_ids: HashMap<TargetId, PoolId>,
-    #[bee_serde(as = Int<u32>)]
     pub node_id: NodeId,
     #[bee_serde(as = CStr<0>)]
     pub ack_id: Vec<u8>,
@@ -235,14 +234,10 @@ pub struct TargetInfo {
     pub target_id: TargetId,
     #[bee_serde(as = CStr<4>)]
     pub path: Vec<u8>,
-    #[bee_serde(as = Int<i64>)]
-    pub total_space: u64,
-    #[bee_serde(as = Int<i64>)]
-    pub free_space: u64,
-    #[bee_serde(as = Int<i64>)]
-    pub total_inodes: u64,
-    #[bee_serde(as = Int<i64>)]
-    pub free_inodes: u64,
+    pub total_space: i64,
+    pub free_space: i64,
+    pub total_inodes: i64,
+    pub free_inodes: i64,
     pub consistency_state: TargetConsistencyState,
 }
 
