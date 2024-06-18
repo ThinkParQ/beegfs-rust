@@ -265,7 +265,7 @@ pub(crate) struct TargetCapacities {
 /// Vector of tuples containing the target ID and the pre-update capacity info.
 pub(crate) fn get_and_update_capacities(
     tx: &Transaction,
-    items: impl IntoIterator<Item = (TargetId, TargetCapacities)>,
+    items: impl IntoIterator<Item = Result<(TargetId, TargetCapacities)>>,
     node_type: NodeTypeServer,
 ) -> Result<Vec<(TargetId, TargetCapacities)>> {
     let mut select = tx.prepare_cached(sql!(
@@ -285,6 +285,8 @@ pub(crate) fn get_and_update_capacities(
     let mut old_values = vec![];
 
     for i in items {
+        let i = i?;
+
         old_values.push(select.query_row(params![i.0, node_type.sql_str()], |row| {
             Ok((
                 i.0,

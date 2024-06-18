@@ -118,8 +118,8 @@ impl Msg for GetQuotaInfo {
 // Custom BeeSerde impl because (de-)serialization actions depend on msg data
 impl Serializable for GetQuotaInfo {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        ser.i32(self.query_type.into())?;
-        ser.i32(self.id_type.into())?;
+        ser.i32(self.query_type.into_bee_serde())?;
+        ser.i32(self.id_type.into_bee_serde())?;
 
         if self.query_type == QuotaQueryType::Range {
             ser.u32(self.id_range_start)?;
@@ -130,7 +130,7 @@ impl Serializable for GetQuotaInfo {
             ser.u32(self.id_range_start)?;
         }
 
-        ser.u32(self.transfer_method.into())?;
+        ser.u32(self.transfer_method.into_bee_serde())?;
         self.target_id.serialize(ser)?;
         self.pool_id.serialize(ser)?;
         Ok(())
@@ -139,11 +139,11 @@ impl Serializable for GetQuotaInfo {
 
 impl Deserializable for GetQuotaInfo {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        let query_type: QuotaQueryType = des.i32()?.try_into()?;
+        let query_type: QuotaQueryType = BeeSerdeConversion::try_from_bee_serde(des.i32()?)?;
 
         Ok(Self {
             query_type,
-            id_type: des.i32()?.try_into()?,
+            id_type: BeeSerdeConversion::try_from_bee_serde(des.i32()?)?,
             id_range_start: match query_type {
                 QuotaQueryType::Range | QuotaQueryType::Single => des.u32()?,
                 _ => 0,
@@ -156,7 +156,7 @@ impl Deserializable for GetQuotaInfo {
                 QuotaQueryType::List => des.seq(true, |des| des.u32())?,
                 _ => vec![],
             },
-            transfer_method: des.u32()?.try_into()?,
+            transfer_method: BeeSerdeConversion::try_from_bee_serde(des.u32()?)?,
             target_id: TargetId::deserialize(des)?,
             pool_id: PoolId::deserialize(des)?,
         })
@@ -262,7 +262,7 @@ pub enum GetQuotaInfoTransferMethod {
     SingleTarget = 2,
 }
 
-impl_enum_to_int!(GetQuotaInfoTransferMethod,
+impl_enum_bee_msg_traits!(GetQuotaInfoTransferMethod,
     AllTargetsOneRequest => 0,
     AllTargetsOneRequestPerTarget => 1,
     SingleTarget => 2
@@ -277,7 +277,7 @@ pub enum QuotaInodeSupport {
     NoBlockDevices,
 }
 
-impl_enum_to_int!(QuotaInodeSupport,
+impl_enum_bee_msg_traits!(QuotaInodeSupport,
     Unknown => 0,
     AllBlockDevices => 1,
     SomeBlockDevices => 2,
@@ -294,7 +294,7 @@ pub enum QuotaQueryType {
     All,
 }
 
-impl_enum_to_int!(QuotaQueryType,
+impl_enum_bee_msg_traits!(QuotaQueryType,
     None => 0,
     Single => 1,
     Range => 2,

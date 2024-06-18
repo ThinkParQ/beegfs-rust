@@ -36,7 +36,6 @@ pub struct Node {
     pub alias: Vec<u8>,
     #[bee_serde(as = Seq<false, _>)]
     pub nic_list: Vec<Nic>,
-    #[bee_serde(as = Int<u32>)]
     pub num_id: NodeId,
     pub port: Port,
     pub _unused_tcp_port: Port,
@@ -71,7 +70,7 @@ impl Serializable for Nic {
         ser.bytes(self.name.as_ref())?;
         ser.zeroes(16 - self.name.len())?;
 
-        ser.u8(self.nic_type.into())?;
+        ser.u8(self.nic_type.into_bee_serde())?;
         ser.zeroes(3)?;
         Ok(())
     }
@@ -82,7 +81,7 @@ impl Deserializable for Nic {
         let mut s = Self {
             addr: des.u32()?.to_le_bytes().into(),
             name: des.bytes(16)?,
-            nic_type: des.u8()?.try_into()?,
+            nic_type: NicType::try_from_bee_serde(des.u8()?)?,
         };
 
         des.skip(3)?;
@@ -119,7 +118,6 @@ pub struct Heartbeat {
     pub node_alias: Vec<u8>,
     #[bee_serde(as = CStr<4>)]
     pub ack_id: Vec<u8>,
-    #[bee_serde(as = Int<u32>)]
     pub node_num_id: NodeId,
     // The root info is only relevant when sent from meta nodes. There it must contain the meta
     // root nodes ID, but on other nodes it is just irrelevant.
@@ -155,7 +153,6 @@ pub struct RegisterNode {
     pub nics: Vec<Nic>,
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
-    #[bee_serde(as = Int<u32>)]
     pub node_id: NodeId,
     pub root_num_id: u32,
     pub is_root_mirrored: u8,
@@ -171,7 +168,6 @@ impl Msg for RegisterNode {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterNodeResp {
-    #[bee_serde(as = Int<u32>)]
     pub node_num_id: NodeId,
 }
 
@@ -186,7 +182,6 @@ impl Msg for RegisterNodeResp {
 pub struct RemoveNode {
     #[bee_serde(as = Int<i16>)]
     pub node_type: NodeType,
-    #[bee_serde(as = Int<u32>)]
     pub node_id: NodeId,
     #[bee_serde(as = CStr<0>)]
     pub ack_id: Vec<u8>,

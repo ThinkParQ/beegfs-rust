@@ -49,7 +49,6 @@ impl Msg for AuthenticateChannel {
 pub struct PeerInfo {
     #[bee_serde(as = Int<u32>)]
     pub node_type: NodeType,
-    #[bee_serde(as = Int<u32>)]
     pub node_id: NodeId,
 }
 
@@ -134,4 +133,4 @@ pub enum CapacityPoolQueryType {
     StorageMirrored,
 }
 
-impl_enum_to_int!(CapacityPoolQueryType, Meta => 0, Storage => 1, MetaMirrored => 2, StorageMirrored => 3);
+impl_enum_bee_msg_traits!(CapacityPoolQueryType, Meta => 0, Storage => 1, MetaMirrored => 2, StorageMirrored => 3);
