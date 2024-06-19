@@ -97,6 +97,7 @@ impl From<NodeTypeServer> for NodeType {
     }
 }
 
+#[cfg(feature = "protobuf")]
 impl TryFrom<pb::NodeType> for NodeTypeServer {
     type Error = anyhow::Error;
 
@@ -111,6 +112,7 @@ impl TryFrom<pb::NodeType> for NodeTypeServer {
         }
     }
 }
+#[cfg(feature = "protobuf")]
 impl From<NodeTypeServer> for pb::NodeType {
     fn from(value: NodeTypeServer) -> Self {
         match value {
@@ -259,9 +261,9 @@ impl_enum_user_str! {QuotaType,
 ///
 /// Sent by the `AuthenticateChannel` message to authenticate a connection.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct AuthenticationSecret(i64);
+pub struct AuthSecret(i64);
 
-impl AuthenticationSecret {
+impl AuthSecret {
     pub fn from_bytes(str: impl AsRef<[u8]>) -> Self {
         let (high, low) = str.as_ref().split_at(str.as_ref().len() / 2);
         let high = hsieh::hash(high) as i64;
@@ -270,5 +272,18 @@ impl AuthenticationSecret {
         let hash = (high << 32) | low;
 
         Self(hash)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_auth_secret() {
+        let expect = ((hsieh::hash(b"hhhhh") as u64) << 32) | hsieh::hash(b"lllll") as u64;
+        assert_eq!(expect as i64, AuthSecret::from_bytes(b"hhhhhlllll").0);
+        let expect = ((hsieh::hash(b"hhhh") as u64) << 32) | hsieh::hash(b"lllll") as u64;
+        assert_eq!(expect as i64, AuthSecret::from_bytes(b"hhhhlllll").0);
     }
 }

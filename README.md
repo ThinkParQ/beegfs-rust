@@ -43,13 +43,15 @@ Management requires a TLS certificate and its private key for encrypted gRPC com
 * A X.509 certificate file at `/etc/beegfs/mgmtd.pem`. Can be set by `--tls-cert-file`.
 * A private key file at `/etc/beegfs/mgmtd.key`. Can be set by `--tls-key-file`.
 
-Alternatively, disable TLS using `--grpc-tls-enable=false`.
-
-To quickly create a (throwaway) certificate:
+The following command quickly creates a self signed certificate:
 
 ```shell
-openssl req -x509 -days 9999 -keyout mgmtd.key -out mgmtd.cert -nodes
+openssl req -x509 -days 9999 -keyout mgmtd-key.pem -out mgmtd-cert.pem -nodes -subj "/" -addext "subjectAltName = IP:127.0.0.1,DNS:localhost"
 ```
+
+The generated certificate is valid from the local machine and can be used by clients (e.g. ctl) to connect and verify the connection. If you want to connect from other hosts, you'll have to add/replace SANs with the respective host names.
+
+Alternatively, disable TLS using `--grpc-tls-enable=false`.
 
 ## Provide BeeMsg authentication file
 
@@ -70,13 +72,13 @@ cargo run -p mgmtd -- --init --db-file=/tmp/mgmtd.sqlite
 Run the binary according to the preparations above. For example, for disabling BeeMsg authentication and using the generated TLS certificate for gRPC:
 
 ```shell
-cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=false --tls-cert-file=./mgmtd.cert --tls-key-file=./mgmtd.key
+cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=false --tls-cert-file=./mgmtd-cert.pem --tls-key-file=./mgmtd-key.pem
 ```
 
 This logs to systemd. For playing around and debugging, it is advisable to log to stdout instead. To do that, provide the `--log-target=std` flag. For that purpose, the management uses [env_logger](https://docs.rs/env_logger/latest/env_logger/). It can be configured by setting the `RUST_LOG` environment variable. For example, to log everything down to debug level:
 
 ```shell
-RUST_LOG=debug cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=false --tls-cert-file=./mgmtd.cert --tls-key-file=./mgmtd.key --log-target=std
+RUST_LOG=debug cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=false --tls-cert-file=./mgmtd-cert.pem --tls-key-file=./mgmtd-key.pem --log-target=std
 ```
 
 env_logger can be configured relatively fine grained using `RUST_LOG`, look up its documentation for more details.

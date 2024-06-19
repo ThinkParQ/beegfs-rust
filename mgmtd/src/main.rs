@@ -2,7 +2,7 @@ use anyhow::Context;
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
 use mgmtd::{start, StaticInfo};
-use shared::types::AuthenticationSecret;
+use shared::types::AuthSecret;
 use shared::{journald_logger, shutdown};
 use std::backtrace::Backtrace;
 use std::panic;
@@ -60,7 +60,7 @@ fn inner_main() -> anyhow::Result<()> {
                 user_config.auth_file
             )
         })?;
-        Some(AuthenticationSecret::from_bytes(secret))
+        Some(AuthSecret::from_bytes(secret))
     } else {
         None
     };
