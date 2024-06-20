@@ -1,8 +1,6 @@
 use super::*;
-use protobuf::{beegfs as pb, management as pm};
 use shared::bee_msg::buddy_group::{RemoveBuddyGroup, RemoveBuddyGroupResp, SetMirrorBuddyGroup};
 use shared::bee_msg::OpsErr;
-use shared::types::{BuddyGroupId, NodeType, NodeTypeServer};
 
 /// Delivers the list of buddy groups
 pub(crate) async fn get(

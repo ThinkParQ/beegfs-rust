@@ -1,9 +1,6 @@
 use super::*;
 use crate::types::SqliteExt;
-use protobuf::{beegfs as pb, management as pm};
-use rusqlite::OptionalExtension;
 use shared::bee_msg::node::RemoveNode;
-use shared::types::NicType;
 use std::net::Ipv4Addr;
 
 /// Delivers a list of nodes

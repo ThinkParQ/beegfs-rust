@@ -1,5 +1,4 @@
 use super::*;
-use rusqlite::OptionalExtension;
 
 /// Sets the entity alias for any entity
 pub(crate) async fn set_alias(
