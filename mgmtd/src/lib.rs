@@ -17,7 +17,7 @@ use anyhow::Result;
 use db::node_nic::ReplaceNic;
 use shared::conn::{incoming, Pool};
 use shared::shutdown::Shutdown;
-use shared::types::{AuthenticationSecret, NicType, MGMTD_UID};
+use shared::types::{AuthSecret, NicType, MGMTD_UID};
 use shared::NetworkAddr;
 use sqlite::ConnectionExt;
 use std::net::SocketAddr;
@@ -28,7 +28,7 @@ use tokio::net::UdpSocket;
 #[derive(Debug)]
 pub struct StaticInfo {
     pub user_config: Config,
-    pub auth_secret: Option<AuthenticationSecret>,
+    pub auth_secret: Option<AuthSecret>,
     pub network_addrs: Vec<NetworkAddr>,
 }
 

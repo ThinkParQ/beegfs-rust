@@ -1,8 +1,9 @@
 use super::*;
 use crate::types::SqliteExt;
 use protobuf::{beegfs as pb, management as pm};
+use rusqlite::OptionalExtension;
 use shared::bee_msg::node::RemoveNode;
-use shared::types::{NicType, NodeId};
+use shared::types::NicType;
 use std::net::Ipv4Addr;
 
 /// Delivers a list of nodes
@@ -39,10 +40,7 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
 
             // Fetch the node list
             let nodes: Vec<pm::get_nodes_response::Node> = tx.query_map_collect(
-                sql!(
-                    "SELECT node_uid, node_id, node_type, alias, port
-                    FROM all_nodes_v"
-                ),
+                sql!("SELECT node_uid, node_id, node_type, alias, port FROM all_nodes_v"),
                 [],
                 |row| {
                     let node_type = i32::from(pb::NodeType::from(NodeType::from_row(row, 2)?));
@@ -66,12 +64,13 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
             )?;
 
             // Figure out the meta root node
-            let (uid, alias, num_id): (Uid, Alias, NodeId) = tx.query_row(
-                sql!(
-                    "SELECT
-                        COALESCE(mn.node_uid, mn2.node_uid, 0),
-                        COALESCE(e.alias, e2.alias, ''),
-                        COALESCE(mn.node_id, mn2.node_id, 0)
+            let meta_root_node = if let Some((uid, alias, num_id)) = tx
+                .query_row(
+                    sql!(
+                        "SELECT
+                        COALESCE(mn.node_uid, mn2.node_uid),
+                        COALESCE(e.alias, e2.alias),
+                        COALESCE(mn.node_id, mn2.node_id)
                     FROM root_inode as ri
                     LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
                     LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
@@ -80,13 +79,12 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
                     LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
                     LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
                     LEFT JOIN entities AS e2 ON e.uid = mn2.node_uid"
-                ),
-                [],
-                |row| Ok((row.get(0)?, Alias::from_row(row, 1)?, row.get(2)?)),
-            )?;
-
-            // Meta root node might be unset which is indicated by the query result uid == 0
-            let meta_root_node = if uid != 0 {
+                    ),
+                    [],
+                    |row| Ok((row.get(0)?, Alias::from_row(row, 1)?, row.get(2)?)),
+                )
+                .optional()?
+            {
                 Some(EntityIdSet {
                     uid,
                     alias,

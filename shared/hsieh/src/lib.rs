@@ -82,7 +82,9 @@ mod test {
     #[test]
     fn hash() {
         assert_eq!(super::hash(b"TestData"), 1397659898);
-        assert_eq!(super::hash(b"Lorem Ipsum!"), 1190584371);
+        assert_eq!(super::hash(b"Remainder.1"), 3337480349);
+        assert_eq!(super::hash(b"Remainder2"), 46220357);
+        assert_eq!(super::hash(b"Remainde3"), 1297884310);
         assert_eq!(super::hash(b""), 0);
     }
 }

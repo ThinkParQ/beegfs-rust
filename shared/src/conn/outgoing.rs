@@ -6,7 +6,7 @@ use crate::bee_msg::Msg;
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::types::{AuthenticationSecret, Uid};
+use crate::types::{AuthSecret, Uid};
 use anyhow::{bail, Context, Result};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -25,7 +25,7 @@ use tokio::net::UdpSocket;
 pub struct Pool {
     store: Store,
     udp_socket: Arc<UdpSocket>,
-    auth_secret: Option<AuthenticationSecret>,
+    auth_secret: Option<AuthSecret>,
 }
 
 impl Pool {
@@ -33,7 +33,7 @@ impl Pool {
     pub fn new(
         udp_socket: Arc<UdpSocket>,
         connection_limit: usize,
-        auth_secret: Option<AuthenticationSecret>,
+        auth_secret: Option<AuthSecret>,
     ) -> Self {
         Self {
             store: Store::new(connection_limit),
@@ -219,7 +219,7 @@ impl Pool {
 pub async fn request_by_addr<M: Msg + Serializable, R: Msg + Deserializable>(
     dest: &SocketAddr,
     msg: &M,
-    auth_secret: Option<AuthenticationSecret>,
+    auth_secret: Option<AuthSecret>,
 ) -> Result<R> {
     let mut stream = Stream::connect_tcp(dest).await?;
     let mut buf = MsgBuf::default();
@@ -243,7 +243,7 @@ pub async fn request_by_addr<M: Msg + Serializable, R: Msg + Deserializable>(
 pub async fn send_by_addr<M: Msg + Serializable>(
     dest: &SocketAddr,
     msg: &M,
-    auth_secret: Option<AuthenticationSecret>,
+    auth_secret: Option<AuthSecret>,
 ) -> Result<()> {
     let mut stream = Stream::connect_tcp(dest).await?;
     let mut buf = MsgBuf::default();
