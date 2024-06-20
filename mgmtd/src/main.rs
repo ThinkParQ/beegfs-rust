@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, Result};
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
 use mgmtd::{start, StaticInfo};
@@ -21,7 +21,7 @@ fn main() -> Result<(), i32> {
 /// Management main function.
 ///
 /// The binary related setup is made here, before execution is passed to the actual app.
-fn inner_main() -> anyhow::Result<()> {
+fn inner_main() -> Result<()> {
     let (user_config, info_log) = mgmtd::config::load_and_parse()?;
 
     // Initialize logging
@@ -122,7 +122,7 @@ fn inner_main() -> anyhow::Result<()> {
 }
 
 /// Create and initialize a new database and / or import data from old v7 management
-fn setup_db(db_file: impl AsRef<Path>, init: bool, v7_path: Option<&Path>) -> anyhow::Result<()> {
+fn setup_db(db_file: impl AsRef<Path>, init: bool, v7_path: Option<&Path>) -> Result<()> {
     let db_file = db_file.as_ref();
 
     // Create database file
@@ -137,8 +137,13 @@ fn setup_db(db_file: impl AsRef<Path>, init: bool, v7_path: Option<&Path>) -> an
 
     // Fill database
     if init {
-        let version = sqlite::migrate_schema(&mut conn, db::MIGRATIONS)
+        let tx = conn.transaction()?;
+
+        let version = sqlite::migrate_schema(&tx, db::MIGRATIONS)
             .context("Creating database schema failed")?;
+        db::initial_entries(&tx).context("Creating initial database entries failed")?;
+
+        tx.commit()?;
         println!("Created and migrated new database to version {version}");
     }
 
@@ -151,15 +156,17 @@ fn setup_db(db_file: impl AsRef<Path>, init: bool, v7_path: Option<&Path>) -> an
     Ok(())
 }
 
-fn upgrade_db(db_file: &Path) -> anyhow::Result<()> {
+fn upgrade_db(db_file: &Path) -> Result<()> {
     let mut conn = sqlite::open(db_file)?;
 
     let backup_file = sqlite::backup_db(&mut conn)?;
     println!("Old database backed up to {backup_file:?}");
 
-    let version = sqlite::migrate_schema(&mut conn, db::MIGRATIONS)
+    let tx = conn.transaction()?;
+    let version = sqlite::migrate_schema(&tx, db::MIGRATIONS)
         .with_context(|| "Upgrading database schema failed")?;
-    println!("Upgraded database to version {version}");
+    tx.commit()?;
 
+    println!("Upgraded database to version {version}");
     Ok(())
 }

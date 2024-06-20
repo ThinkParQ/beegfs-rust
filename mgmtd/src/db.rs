@@ -7,6 +7,7 @@
 //! Rust and interfaces to obtain the data.
 
 pub(crate) mod buddy_group;
+pub(crate) mod config;
 pub(crate) mod entity;
 mod import_v7;
 pub(crate) mod misc;
@@ -18,6 +19,7 @@ pub(crate) mod quota_usage;
 pub(crate) mod storage_pool;
 pub(crate) mod target;
 
+use self::config::Config;
 use crate::error::TypedError;
 use crate::types::*;
 use anyhow::{anyhow, bail, Result};
@@ -26,6 +28,7 @@ use rusqlite::{params, OptionalExtension, Row, Transaction};
 use shared::types::*;
 use sqlite::*;
 use sqlite_check::sql;
+use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 use test::with_test_data;
 
@@ -34,8 +37,20 @@ use test::with_test_data;
 pub const MIGRATIONS: &[sqlite::Migration] =
     include!(concat!(env!("OUT_DIR"), "/migrations.slice"));
 
+/// Inserts initial entries into a new database. Remember to commit the transaction after calling
+/// this function.
+pub fn initial_entries(tx: &Transaction) -> Result<()> {
+    // Set the more or less "unique" file system id
+    config::set(
+        tx,
+        Config::FilesystemId,
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros(),
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use rusqlite::{Connection, Transaction};
 
@@ -43,11 +58,13 @@ mod test {
     /// a transaction handle.
     pub(crate) fn with_test_data(op: impl FnOnce(&Transaction)) {
         let mut conn = sqlite::open_in_memory().unwrap();
-        sqlite::migrate_schema(&mut conn, MIGRATIONS).unwrap();
 
+        let tx = conn.transaction().unwrap();
+        sqlite::migrate_schema(&tx, MIGRATIONS).unwrap();
         // Setup test data
-        conn.execute_batch(include_str!("db/schema/test_data.sql"))
+        tx.execute_batch(include_str!("db/schema/test_data.sql"))
             .unwrap();
+        tx.commit().unwrap();
 
         transaction(&mut conn, op)
     }
