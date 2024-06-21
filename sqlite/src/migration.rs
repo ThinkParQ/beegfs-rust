@@ -171,12 +171,13 @@ pub async fn check_schema_async(
 
 /// Migrates a database to the latest version using the given migration list.
 ///
-/// This function is meant to be called at runtime to upgrade the database.
-pub fn migrate_schema(conn: &mut rusqlite::Connection, migrations: &[Migration]) -> Result<u32> {
+/// This function is meant to be called at runtime to upgrade the database. Remember to commit
+/// the transaction after calling this function.
+pub fn migrate_schema(tx: &rusqlite::Transaction, migrations: &[Migration]) -> Result<u32> {
     let (base, latest) = check_migration_versions(migrations.iter().map(|m| m.version))?;
 
     // The databases version is stored in this special sqlite header variable
-    let mut version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let mut version: u32 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
     if version == latest {
         bail!("Database schema is up to date with version {version}");
@@ -185,8 +186,6 @@ pub fn migrate_schema(conn: &mut rusqlite::Connection, migrations: &[Migration])
             "Database schema version {version} is outside of the valid range ({base} to {latest})",
         )
     };
-
-    let tx = conn.transaction()?;
 
     // Since the base migration is the starting point for new databases, a new database version can
     // be handled like the version before the current base
@@ -202,8 +201,6 @@ pub fn migrate_schema(conn: &mut rusqlite::Connection, migrations: &[Migration])
 
     // update the database version to the latest schema version
     tx.pragma_update(None, "user_version", latest)?;
-
-    tx.commit()?;
 
     Ok(latest)
 }
@@ -248,18 +245,19 @@ mod test {
     #[test]
     fn migrate_schema() {
         let mut conn = crate::connection::open_in_memory().unwrap();
+        let tx = conn.transaction().unwrap();
 
         let mut migrations = vec![Migration {
             version: 1,
             sql: "CREATE TABLE t1 (id INTEGER)",
         }];
-        super::migrate_schema(&mut conn, &migrations).unwrap();
+        super::migrate_schema(&tx, &migrations).unwrap();
 
         migrations.push(Migration {
             version: 2,
             sql: "CREATE TABLE t2 (id INTEGER)",
         });
-        super::migrate_schema(&mut conn, &migrations).unwrap();
+        super::migrate_schema(&tx, &migrations).unwrap();
 
         migrations.push(Migration {
             version: 3,
@@ -269,22 +267,22 @@ mod test {
             version: 4,
             sql: "CREATE TABLE t4 (id INTEGER)",
         });
-        super::migrate_schema(&mut conn, &migrations).unwrap();
+        super::migrate_schema(&tx, &migrations).unwrap();
 
         let mut migrations = migrations.split_off(3);
         migrations.push(Migration {
             version: 5,
             sql: "DROP TABLE t1",
         });
-        super::migrate_schema(&mut conn, &migrations).unwrap();
+        super::migrate_schema(&tx, &migrations).unwrap();
 
-        let version = conn
+        let version = tx
             .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
             .unwrap();
 
         assert_eq!(5, version);
 
-        let tables = conn
+        let tables = tx
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_schema WHERE type == 'table' AND name LIKE 't%'",
                 [],
@@ -295,7 +293,7 @@ mod test {
         assert_eq!(3, tables);
 
         // Failure on up-to-date db
-        super::migrate_schema(&mut conn, &migrations).unwrap_err();
+        super::migrate_schema(&tx, &migrations).unwrap_err();
 
         // Failure on non-contiguous migration sequence
         migrations.push(Migration {
@@ -306,7 +304,7 @@ mod test {
             version: 6,
             sql: "CREATE TABLE t6 (id INTEGER)",
         });
-        super::migrate_schema(&mut conn, &migrations).unwrap_err();
+        super::migrate_schema(&tx, &migrations).unwrap_err();
     }
 
     #[test]

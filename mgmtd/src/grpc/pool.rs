@@ -1,6 +1,5 @@
 use super::*;
 use shared::bee_msg::storage_pool::RefreshStoragePools;
-use shared::types::{NodeType, PoolId};
 
 /// Delivers the list of pools
 pub(crate) async fn get(ctx: &Context, _req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {

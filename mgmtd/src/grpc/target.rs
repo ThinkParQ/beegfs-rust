@@ -1,7 +1,5 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
-use crate::types::SqliteExt;
-use protobuf::{beegfs as pb, management as pm};
 use shared::bee_msg::misc::RefreshCapacityPools;
 use std::time::Duration;
 

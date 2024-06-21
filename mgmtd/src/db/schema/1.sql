@@ -1,3 +1,8 @@
+CREATE TABLE config (
+    key TEXT PRIMARY KEY,
+    value ANY NOT NULL
+) STRICT;
+
 CREATE TABLE entities (
     uid INTEGER PRIMARY KEY AUTOINCREMENT
         CHECK(uid > 0),

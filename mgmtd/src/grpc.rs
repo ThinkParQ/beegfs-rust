@@ -6,7 +6,7 @@ use crate::db;
 use crate::types::{ResolveEntityId, SqliteExt};
 use anyhow::{bail, Context as AContext, Result};
 use protobuf::{beegfs as pb, management as pm};
-use rusqlite::{params, Transaction};
+use rusqlite::{params, OptionalExtension, Transaction};
 use shared::error_chain;
 use shared::shutdown::Shutdown;
 use shared::types::*;
