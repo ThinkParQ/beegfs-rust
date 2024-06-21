@@ -7,6 +7,7 @@ mod context;
 pub mod db;
 mod error;
 mod grpc;
+pub mod license;
 mod quota;
 mod timer;
 mod types;
@@ -15,6 +16,7 @@ use crate::config::Config;
 use crate::context::Context;
 use anyhow::Result;
 use db::node_nic::ReplaceNic;
+use license::LicenseVerifier;
 use shared::conn::{incoming, Pool};
 use shared::shutdown::Shutdown;
 use shared::types::{AuthSecret, NicType, MGMTD_UID};
@@ -42,7 +44,7 @@ pub struct StaticInfo {
 /// Returns after all setup work is done and all tasks are started. The caller is responsible for
 /// keeping the shutdown control handle and send a shutdown request when the program shall
 /// be terminated.
-pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
+pub async fn start(info: StaticInfo, lic: LicenseVerifier, shutdown: Shutdown) -> Result<()> {
     // Initialization
 
     // Static configuration which doesn't change at runtime
@@ -96,7 +98,7 @@ pub async fn start(info: StaticInfo, shutdown: Shutdown) -> Result<()> {
         .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
 
     // Combines all handles for sharing between tasks
-    let ctx = Context::new(conn_pool, db, info);
+    let ctx = Context::new(conn_pool, db, lic, info);
 
     // Listen for incoming TCP connections
     incoming::listen_tcp(

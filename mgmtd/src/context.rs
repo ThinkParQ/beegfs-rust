@@ -1,6 +1,7 @@
 //! Interfaces and implementations for in-app interaction between tasks or threads.
 
 use crate::bee_msg::dispatch_request;
+use crate::license::LicenseVerifier;
 use crate::StaticInfo;
 use anyhow::Result;
 use shared::conn::msg_dispatch::*;
@@ -25,6 +26,7 @@ pub(crate) struct Context {
 pub(crate) struct InnerContext {
     pub conn: Pool,
     pub db: tokio_rusqlite::Connection,
+    pub lic: LicenseVerifier,
     pub info: &'static StaticInfo,
 }
 
@@ -35,10 +37,16 @@ impl Context {
     pub(crate) fn new(
         conn: Pool,
         db: tokio_rusqlite::Connection,
+        lic: LicenseVerifier,
         info: &'static StaticInfo,
     ) -> Self {
         Self {
-            inner: Arc::new(InnerContext { conn, db, info }),
+            inner: Arc::new(InnerContext {
+                conn,
+                db,
+                lic,
+                info,
+            }),
         }
     }
 }
