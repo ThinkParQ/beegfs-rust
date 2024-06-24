@@ -660,6 +660,7 @@ dependencies = [
  "tokio-rusqlite",
  "toml",
  "tonic",
+ "uuid",
 ]
 
 [[package]]
@@ -1396,6 +1397,15 @@ name = "utf8parse"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
+
+[[package]]
+name = "uuid"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ea73390fe27785838dcbf75b91b1d84799e28f1ce71e6f372a5dc2200c80de5"
+dependencies = [
+ "getrandom",
+]
 
 [[package]]
 name = "vcpkg"

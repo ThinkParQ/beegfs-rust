@@ -27,3 +27,4 @@ thiserror = "~1"
 tokio = { version = "~1", features = ["rt", "sync", "macros"] }
 tokio-rusqlite = "0.5.0"
 tonic = { version = "~0", features = ["tls"] }
+uuid = { version = "~1", features = ["v4"] }

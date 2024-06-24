@@ -4,24 +4,31 @@ use sqlite::{check_affected_rows, TransactionExt};
 use sqlite_check::sql;
 use std::str::FromStr;
 
-/// The list of potential config entries
+/// The list of config entries.
+///
+/// Note: Remove the `allow()`` below when adding other variants than `Fs*`
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Config {
-    FilesystemId,
+    FsUuid,
+    FsInitDateSecs,
+    /// Note: Remove the `allow(unused)` when actually using this entry (currently it's only used
+    /// for the test as it's the only entry not marked as immutable)
     #[allow(unused)]
-    FilesystemName,
+    FsName,
 }
 
 // Config entries that should not be changed after initially set. Note that this only controls the
 // functions below, the database entries could still be changed by manual query
-const IMMUTABLE: &[Config] = &[Config::FilesystemId];
+const IMMUTABLE: &[Config] = &[Config::FsUuid, Config::FsInitDateSecs];
 
 impl Config {
     /// The string representation of the config key as it is written to the db
     fn str(&self) -> &'static str {
         match self {
-            Config::FilesystemId => "filesystem_id",
-            Config::FilesystemName => "filesystem_name",
+            Config::FsUuid => "fs_uuid",
+            Config::FsInitDateSecs => "fs_init_date_secs",
+            Config::FsName => "fs_name",
         }
     }
 }
@@ -96,37 +103,28 @@ mod test {
     #[test]
     fn set_get_delete() {
         with_test_data(|tx| {
-            assert!(IMMUTABLE.contains(&Config::FilesystemId));
+            assert!(IMMUTABLE.contains(&Config::FsUuid));
 
-            set(tx, Config::FilesystemId, 1000).unwrap();
+            set(tx, Config::FsUuid, 1000).unwrap();
 
             // Change of immutable FileSystemId should be denied
-            set(tx, Config::FilesystemId, 2000).unwrap_err();
+            set(tx, Config::FsUuid, 2000).unwrap_err();
 
-            assert_eq!(
-                Option::<String>::None,
-                get(tx, Config::FilesystemName).unwrap()
-            );
+            assert_eq!(Option::<String>::None, get(tx, Config::FsName).unwrap());
 
-            set(tx, Config::FilesystemName, "lustre").unwrap();
-            set(tx, Config::FilesystemName, "beegfs").unwrap();
+            set(tx, Config::FsName, "lustre").unwrap();
+            set(tx, Config::FsName, "beegfs").unwrap();
 
-            assert_eq!(Some(1000), get(tx, Config::FilesystemId).unwrap());
-            assert_eq!(
-                Some("beegfs".to_string()),
-                get(tx, Config::FilesystemName).unwrap()
-            );
+            assert_eq!(Some(1000), get(tx, Config::FsUuid).unwrap());
+            assert_eq!(Some("beegfs".to_string()), get(tx, Config::FsName).unwrap());
 
-            delete(tx, Config::FilesystemName).unwrap();
+            delete(tx, Config::FsName).unwrap();
 
             // Deletion of immutable FileSystemId should be denied
-            delete(tx, Config::FilesystemId).unwrap_err();
+            delete(tx, Config::FsUuid).unwrap_err();
 
             // Check it's gone
-            assert_eq!(
-                Option::<String>::None,
-                get(tx, Config::FilesystemName).unwrap()
-            );
+            assert_eq!(Option::<String>::None, get(tx, Config::FsName).unwrap());
         });
     }
 }

@@ -31,6 +31,7 @@ use sqlite_check::sql;
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(test)]
 use test::with_test_data;
+use uuid::Uuid;
 
 /// Include the generated migration list. First element is the migration number, second is the
 /// SQL text to execute. The elements are guaranteed to be contiguous, but may start later than 1.
@@ -40,11 +41,11 @@ pub const MIGRATIONS: &[sqlite::Migration] =
 /// Inserts initial entries into a new database. Remember to commit the transaction after calling
 /// this function.
 pub fn initial_entries(tx: &Transaction) -> Result<()> {
-    // Set the more or less "unique" file system id
+    config::set(tx, Config::FsUuid, Uuid::new_v4().to_string())?;
     config::set(
         tx,
-        Config::FilesystemId,
-        SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros(),
+        Config::FsInitDateSecs,
+        SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
     )?;
     Ok(())
 }
