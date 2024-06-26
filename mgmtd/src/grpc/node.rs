@@ -75,7 +75,7 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
                     LEFT JOIN meta_buddy_groups AS mg ON mg.group_id = ri.group_id
                     LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
                     LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
-                    LEFT JOIN entities AS e2 ON e.uid = mn2.node_uid"
+                    LEFT JOIN entities AS e2 ON e2.uid = mn2.node_uid"
                     ),
                     [],
                     |row| Ok((row.get(0)?, Alias::from_row(row, 1)?, row.get(2)?)),
