@@ -17,13 +17,13 @@
 # grpc_port = 8010
 
 # Enables TLS for gRPC communication
-# grpc_tls_enable = true
+# tls_enable = true
 
 # The PEM encoded .X509 certificate file that provides the identity of the gRPC server
-# tls_cert_file = /etc/beegfs/mgmtd.pem
+# tls_cert_file = /etc/beegfs/cert.pem
 
 # The private key file belonging to the above certificate
-# tls_key_file = /etc/beegfs/mgmtd.key
+# tls_key_file = /etc/beegfs/key.pem
 
 # Network interfaces reported to other nodes. 
 # interfaces = ["eth0", "eth1"]
@@ -35,7 +35,7 @@
 # auth_enable = true
 
 # Location of the file containing the authentication secret
-# auth_file = "/etc/beegfs/mgmtd.auth"
+# auth_file = "/etc/beegfs/conn.auth"
 
 # Location of the SQLite database file
 # db_file = "/var/lib/beegfs/mgmtd.sqlite"
