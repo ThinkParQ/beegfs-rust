@@ -7,7 +7,7 @@ use crate::context::Context;
 use crate::db;
 use crate::error::TypedError;
 use crate::types::*;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context as AContext, Result};
 use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
 use shared::bee_msg::{Msg, OpsErr};
 use shared::bee_serde::Serializable;
@@ -89,7 +89,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         // Handle messages with a response
         (@HANDLE $msg_type:path, $resp_msg_type:path) => {
             // Deserialize into the specified BeeGFS message
-            let des: $msg_type = req.deserialize_msg()?;
+            let des: $msg_type = req.deserialize_msg().with_context(|| format!("{} from {:?}", stringify!($msg_type), req.addr()))?;
             log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
 
             // Call the specified handler and receive the response
@@ -104,7 +104,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         // Handle messages without a response
         (@HANDLE $msg_type:path,) => {
             // Deserialize into the specified BeeGFS message
-            let des: $msg_type = req.deserialize_msg()?;
+            let des: $msg_type = req.deserialize_msg().with_context(|| format!("{} from {:?}", stringify!($msg_type), req.addr()))?;
             log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
 
             // No response
@@ -135,6 +135,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> an
         node::Heartbeat => misc::Ack,
         node::HeartbeatRequest => node::Heartbeat,
         node::RegisterNode => node::RegisterNodeResp,
+        node::RemoveNode => node::RemoveNodeResp,
         node::RemoveNodeResp,
         quota::GetDefaultQuota => quota::GetDefaultQuotaResp,
         quota::GetQuotaInfo => quota::GetQuotaInfoResp,

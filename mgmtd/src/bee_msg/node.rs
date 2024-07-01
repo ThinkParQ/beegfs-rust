@@ -309,6 +309,72 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeId {
     }
 }
 
+impl Handler for RemoveNode {
+    type Response = RemoveNodeResp;
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+        let res = ctx
+            .db
+            .op(move |tx| {
+                if self.node_type != NodeType::Client {
+                    bail!(
+                        "This BeeMsg handler can only delete client nodes. \
+For server nodes, the grpc handler must be used."
+                    );
+                }
+
+                let node = LegacyId {
+                    node_type: self.node_type,
+                    num_id: self.node_id,
+                }
+                .resolve(tx, EntityType::Node)?;
+
+                db::node::delete(tx, node.uid)?;
+
+                Ok(node)
+            })
+            .await;
+
+        match res {
+            Ok(node) => {
+                log::info!("Node deleted: {}", node);
+
+                notify_nodes(
+                    ctx,
+                    match self.node_type {
+                        shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+                        shared::types::NodeType::Storage => {
+                            &[NodeType::Meta, NodeType::Storage, NodeType::Client]
+                        }
+                        _ => &[],
+                    },
+                    &RemoveNode {
+                        ack_id: "".into(),
+                        ..self
+                    },
+                )
+                .await;
+
+                RemoveNodeResp {
+                    result: OpsErr::SUCCESS,
+                }
+            }
+            Err(err) => {
+                log_error_chain!(
+                    err,
+                    "Deleting {:?} node with ID {} failed",
+                    self.node_type,
+                    self.node_id
+                );
+
+                RemoveNodeResp {
+                    result: OpsErr::INTERNAL,
+                }
+            }
+        }
+    }
+}
+
 impl Handler for RemoveNodeResp {
     type Response = ();
 

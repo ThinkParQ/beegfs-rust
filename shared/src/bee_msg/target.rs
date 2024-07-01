@@ -176,7 +176,7 @@ impl Msg for ChangeTargetConsistencyStatesResp {
 /// Some nodes receive this via UDP, therefore the msg has an AckID field. Similar to
 /// [ChangeTargetConsistencyStates].
 ///
-/// Used by meta, storage
+/// Used by old ctl, meta, storage
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct SetTargetConsistencyStates {
     #[bee_serde(as = Int<i32>)]

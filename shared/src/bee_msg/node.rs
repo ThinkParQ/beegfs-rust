@@ -177,7 +177,7 @@ impl Msg for RegisterNodeResp {
 
 /// Remove a node from the system
 ///
-/// Used by old ctl, self
+/// Used by old ctl, client, self
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RemoveNode {
     #[bee_serde(as = Int<i16>)]
