@@ -1,31 +1,63 @@
 use super::*;
+use rusqlite::Row;
 use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Delivers the list of pools
-pub(crate) async fn get(ctx: &Context, _req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {
+pub(crate) async fn get(ctx: &Context, req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {
     let (mut pools, targets, buddy_groups) = ctx
         .db
-        .op(|tx| {
-            let pools: Vec<_> = tx.query_map_collect(
-                sql!(
-                    "SELECT p.pool_uid, p.pool_id, e.alias FROM storage_pools AS p
-                    INNER JOIN entities AS e ON e.uid = p.pool_uid"
-                ),
-                [],
-                |row| {
-                    Ok(pm::get_pools_response::StoragePool {
-                        id: Some(pb::EntityIdSet {
-                            uid: row.get(0)?,
-                            legacy_id: Some(pb::LegacyId {
-                                num_id: row.get(1)?,
-                                node_type: pb::NodeType::Storage as i32,
-                            }),
-                            alias: row.get(2)?,
+        .op(move |tx| {
+            let make_sp = |row: &Row| -> rusqlite::Result<pm::get_pools_response::StoragePool> {
+                Ok(pm::get_pools_response::StoragePool {
+                    id: Some(pb::EntityIdSet {
+                        uid: row.get(0)?,
+                        legacy_id: Some(pb::LegacyId {
+                            num_id: row.get(1)?,
+                            node_type: pb::NodeType::Storage.into(),
                         }),
-                        ..Default::default()
-                    })
-                },
-            )?;
+                        alias: row.get(2)?,
+                    }),
+                    ..Default::default()
+                })
+            };
+
+            let pools: Vec<_> = if req.with_quota_limits {
+                tx.query_map_collect(
+                    sql!(
+                        "SELECT p.pool_uid, p.pool_id, e.alias,
+                            qus.value, qui.value, qgs.value, qgi.value
+                        FROM storage_pools AS p
+                        INNER JOIN entities AS e ON e.uid = p.pool_uid
+                        LEFT JOIN quota_default_limits AS qus ON qus.pool_id = p.pool_id
+                            AND qus.id_type = 1 AND qus.quota_type = 1
+                        LEFT JOIN quota_default_limits AS qui ON qui.pool_id = p.pool_id
+                            AND qui.id_type = 1 AND qui.quota_type = 2
+                        LEFT JOIN quota_default_limits AS qgs ON qgs.pool_id = p.pool_id
+                            AND qgs.id_type = 2 AND qgs.quota_type = 1
+                        LEFT JOIN quota_default_limits AS qgi ON qgi.pool_id = p.pool_id
+                            AND qgi.id_type = 2 AND qgi.quota_type = 2 "
+                    ),
+                    [],
+                    |row| {
+                        let mut sp = make_sp(row)?;
+                        sp.user_space_limit = row.get::<_, Option<i64>>(3)?.or(Some(-1));
+                        sp.user_inode_limit = row.get::<_, Option<i64>>(4)?.or(Some(-1));
+                        sp.group_space_limit = row.get::<_, Option<i64>>(5)?.or(Some(-1));
+                        sp.group_inode_limit = row.get::<_, Option<i64>>(6)?.or(Some(-1));
+                        Ok(sp)
+                    },
+                )?
+            } else {
+                tx.query_map_collect(
+                    sql!(
+                        "SELECT p.pool_uid, p.pool_id, e.alias
+                        FROM storage_pools AS p
+                        INNER JOIN entities AS e ON e.uid = p.pool_uid"
+                    ),
+                    [],
+                    make_sp,
+                )?
+            };
 
             let targets: Vec<(Uid, _)> = tx.query_map_collect(
                 sql!(

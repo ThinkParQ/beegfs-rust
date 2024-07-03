@@ -239,6 +239,13 @@ impl_enum_user_str! {QuotaIdType,
     QuotaIdType::Group => "group",
 }
 
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {QuotaIdType=> pb::QuotaIdType,
+    unspecified => pb::QuotaIdType::Unspecified,
+    QuotaIdType::User => pb::QuotaIdType::User,
+    QuotaIdType::Group => pb::QuotaIdType::Group,
+}
+
 /// Type of a quota entry as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaType {
@@ -255,6 +262,13 @@ impl_enum_bee_msg_traits!(QuotaType,
 impl_enum_user_str! {QuotaType,
     QuotaType::Space => "space",
     QuotaType::Inode => "inode",
+}
+
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
+    unspecified => pb::QuotaType::Unspecified,
+    QuotaType::Space=> pb::QuotaType::Space,
+    QuotaType::Inode => pb::QuotaType::Inode,
 }
 
 /// The BeeGFS authentication secret

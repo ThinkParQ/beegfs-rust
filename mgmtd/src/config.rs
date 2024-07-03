@@ -44,6 +44,7 @@ pub struct Config {
 
     // Quota
     pub quota_enable: bool,
+    pub quota_enforce: bool,
     pub quota_update_interval: Duration,
 
     pub quota_user_system_ids_min: Option<QuotaId>,
@@ -92,6 +93,7 @@ impl Default for Config {
 
             // Quota
             quota_enable: false,
+            quota_enforce: false,
             quota_update_interval: Duration::from_secs(30),
 
             quota_user_system_ids_min: None,
@@ -124,6 +126,10 @@ impl Default for Config {
 
 impl Config {
     pub fn check_validity(&self) -> Result<()> {
+        if self.quota_enforce && !self.quota_enable {
+            bail!("Quota enforcement requires quota being enabled");
+        }
+
         self.cap_pool_meta_limits
             .check()
             .context("Capacity pool meta limits")?;
@@ -280,6 +286,7 @@ struct ConfigFileArgs {
     #[serde(with = "integer_with_time_unit::optional")]
     client_auto_remove_timeout: Option<Duration>,
     quota_enable: Option<bool>,
+    quota_enforce: Option<bool>,
     #[serde(with = "integer_with_time_unit::optional")]
     quota_update_interval: Option<Duration>,
     quota_user_system_ids_min: Option<QuotaId>,
@@ -410,6 +417,9 @@ impl Config {
         }
         if let Some(v) = args.quota_enable {
             self.quota_enable = v;
+        }
+        if let Some(v) = args.quota_enforce {
+            self.quota_enforce = v;
         }
         if let Some(v) = args.quota_update_interval {
             self.quota_update_interval = v;

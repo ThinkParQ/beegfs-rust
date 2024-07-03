@@ -2,7 +2,7 @@ use crate::db::*;
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Transaction;
 use shared::bee_msg::buddy_group::CombinedTargetState;
-use shared::bee_msg::quota::{QuotaDefaultLimits, QuotaEntry};
+use shared::bee_msg::quota::QuotaEntry;
 use shared::bee_msg::storage_pool::StoragePool;
 use shared::bee_serde::{Deserializable, Deserializer};
 use shared::types::*;
@@ -327,7 +327,10 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
     let s = std::fs::read(f)?;
 
     let mut des = Deserializer::new(&s, 0);
-    let limits = QuotaDefaultLimits::deserialize(&mut des)?;
+    let user_inode_limit = des.u64()?;
+    let user_space_limit = des.u64()?;
+    let group_inode_limit = des.u64()?;
+    let group_space_limit = des.u64()?;
     des.finish()?;
 
     let mut stmt = tx.prepare_cached(sql!(
@@ -340,28 +343,28 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
         QuotaIdType::User.sql_variant(),
         QuotaType::Space.sql_variant(),
         pool_id,
-        limits.user_space_limit
+        user_space_limit
     ])?;
     check_affected_rows(affected, [1])?;
     let affected = stmt.execute(params![
         QuotaIdType::User.sql_variant(),
         QuotaType::Inode.sql_variant(),
         pool_id,
-        limits.user_inode_limit
+        user_inode_limit
     ])?;
     check_affected_rows(affected, [1])?;
     let affected = stmt.execute(params![
         QuotaIdType::Group.sql_variant(),
         QuotaType::Space.sql_variant(),
         pool_id,
-        limits.group_space_limit
+        group_space_limit
     ])?;
     check_affected_rows(affected, [1])?;
     let affected = stmt.execute(params![
         QuotaIdType::Group.sql_variant(),
         QuotaType::Inode.sql_variant(),
         pool_id,
-        limits.group_space_limit,
+        group_inode_limit
     ])?;
     check_affected_rows(affected, [1])?;
 

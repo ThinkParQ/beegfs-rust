@@ -56,8 +56,13 @@
 # list.
 # client_auto_remove_timeout = "30m"
 
-# Enables quota check and enforcement
+# Enables quota data collection and checks. Allows querying the state and setting limits (which do
+# nothing without enforcement being enabled). Causes higher system load.
 # quota_enable = false
+
+# Enables quota enforcement, meaning that the exceeded IDs are calculated and pushed to the servers
+# on a regular basis.Requires quota_enable = true. Causes higher system load.
+# quota_enforce = false
 
 # Update interval of quota information. Defines how often the management pulls the quota information
 # from all storage nodes, calculates the IDs that exceed the limits and reports them back to the

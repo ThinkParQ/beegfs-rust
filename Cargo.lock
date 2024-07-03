@@ -669,6 +669,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rusqlite",
+ "tokio-stream",
  "toml",
  "tonic",
  "uuid",
