@@ -1,4 +1,4 @@
-name: Build packages
+name: Build Packages
 
 # Currently broken
 
@@ -9,26 +9,24 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 jobs:
-  checks:
-    uses: ./.github/workflows/checks.yml
   package:
-    needs: [checks]
     runs-on: ubuntu-latest
     container:
       image: rust
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Configure git
+        run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
+      - name: Cargo deny
+        run: |
+          cargo install cargo-deny
+          cargo deny check
       - name: Install tools
         run: |
-          # We use the musl libc implementation (https://musl.libc.org/) which is statically linked into
-          # the binary
           apt-get update && apt-get -y install musl-tools
           rustup target add x86_64-unknown-linux-musl
-
-          # cargo tools tp generate packages
-          cargo install cargo-generate-rpm
-          cargo install cargo-deb
+          cargo install --root . cargo-generate-rpm cargo-deb
       - name: Build
         run: |
           cargo build --release --target=x86_64-unknown-linux-musl
@@ -37,8 +35,8 @@ jobs:
         run: |
           mkdir -p packages
           rm -rf packages/*
-          cargo deb -p mgmtd --target=x86_64-unknown-linux-musl -o packages
-          cargo generate-rpm -p mgmtd --target=x86_64-unknown-linux-musl --auto-req=disabled -o packages          
+          bin/cargo-deb -p mgmtd --target=x86_64-unknown-linux-musl -o packages
+          bin/cargo-generate-rpm -p mgmtd --target=x86_64-unknown-linux-musl -o packages
       - name: Upload packages artifact
         uses: actions/upload-artifact@v3
         with:
