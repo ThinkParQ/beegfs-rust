@@ -40,22 +40,46 @@ The config file is ignored if not present - most configuration options can also 
 
 Management requires a TLS certificate and its private key for encrypted gRPC communication:
 
-* A X.509 certificate file at `/etc/beegfs/mgmtd.pem`. Can be set by `--tls-cert-file`.
-* A private key file at `/etc/beegfs/mgmtd.key`. Can be set by `--tls-key-file`.
+* A X.509 certificate file at `/etc/beegfs/cert.pem`. The default path be overridden by `--tls-cert-file`.
+* A private key file at `/etc/beegfs/key.pem`. The default path can be overridden by `--tls-key-file`.
 
-The following command quickly creates a self signed certificate:
+The following can be used to setup a self signed certificate:
 
+(1) Create a file `san.cnf` updating the `alt_names` to include all DNS names and/or IPs where the management is accessible:
+
+```
+[ req ]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = req_ext
+x509_extensions    = v3_ca # The extentions to add to the self signed cert
+
+[ req_distinguished_name ]
+commonName                  = Common Name (eg, fully qualified host name)
+commonName_default          = localhost
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ v3_ca ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1   = localhost
+IP.1    = 127.0.0.1
+```
+(2) Run the following command to generate the certificate and key:
 ```shell
-openssl req -x509 -days 9999 -keyout mgmtd-key.pem -out mgmtd-cert.pem -nodes -subj "/" -addext "subjectAltName = IP:127.0.0.1,DNS:localhost"
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout key.pem -out cert.pem -config san.cnf
 ```
 
-The generated certificate is valid from the local machine and can be used by clients (e.g. ctl) to connect and verify the connection. If you want to connect from other hosts, you'll have to add/replace SANs with the respective host names.
+(3) On the mgmtd install the key and cert at /etc/beegfs. On nodes with the CTL install the certificate to /etc/beegfs.
 
-Alternatively, disable TLS using `--grpc-tls-enable=false`.
+Alternatively, disable TLS using `--tls-enable=false`.
 
 ## Provide BeeMsg authentication file
 
-To use BeeMsg authentication, you have to provide the same BeeMsg authentication file used for the other nodes (formerly known as "connAuthFile"). The default location is `/etc/beegfs/mgmtd.auth`, can be set using `--auth-file`.
+To use BeeMsg authentication, you have to provide the same BeeMsg authentication file used for the other nodes (formerly known as "connAuthFile"). The default location is `/etc/beegfs/conn.auth`, but can be overridden using `--auth-file`.
 
 Alternatively, disable BeeMsg authentication using `--auth-enable=false`.
 
