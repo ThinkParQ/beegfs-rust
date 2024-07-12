@@ -1,5 +1,10 @@
 use super::*;
-use shared::bee_msg::buddy_group::{RemoveBuddyGroup, RemoveBuddyGroupResp, SetMirrorBuddyGroup};
+use db::misc::MetaRoot;
+use protobuf::{beegfs as pb, management as pm};
+use shared::bee_msg::buddy_group::{
+    RemoveBuddyGroup, RemoveBuddyGroupResp, SetMetadataMirroring, SetMetadataMirroringResp,
+    SetMirrorBuddyGroup,
+};
 use shared::bee_msg::OpsErr;
 
 /// Delivers the list of buddy groups
@@ -216,4 +221,49 @@ Primary result: {:?}, Secondary result: {:?}",
     Ok(pm::DeleteBuddyGroupResponse {
         group: Some(group.into()),
     })
+}
+
+/// Enable metadata mirroring for the root directory
+pub(crate) async fn mirror_root_inode(
+    ctx: &Context,
+    _req: pm::MirrorRootInodeRequest,
+) -> Result<pm::MirrorRootInodeResponse> {
+    let meta_root = ctx
+        .db
+        .op(|tx| {
+            let node_uid = match db::misc::get_meta_root(tx)? {
+                MetaRoot::Normal(_, node_uid) => node_uid,
+                MetaRoot::Mirrored(_) => bail!("Root inode is already mirrored"),
+                MetaRoot::Unknown => bail!("Root inode unknown"),
+            };
+
+            let count = tx.query_row(
+                sql!(
+                    "SELECT COUNT(*) FROM root_inode AS ri
+                        INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id"
+                ),
+                [],
+                |row| row.get::<_, i64>(0),
+            )?;
+
+            if count < 1 {
+                bail!("The meta target holding the root inode is not part of a buddy group.");
+            }
+
+            Ok(node_uid)
+        })
+        .await?;
+
+    let resp: SetMetadataMirroringResp = ctx
+        .conn
+        .request(meta_root, &SetMetadataMirroring {})
+        .await?;
+
+    match resp.result {
+        OpsErr::SUCCESS => ctx.db.op(db::misc::enable_metadata_mirroring).await?,
+        _ => bail!("Root inode mirroring failed with Error {:?}", resp.result),
+    }
+
+    log::info!("Root inode has been mirrored");
+    Ok(pm::MirrorRootInodeResponse {})
 }
