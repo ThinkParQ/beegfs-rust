@@ -267,4 +267,20 @@ impl pm::management_server::Management for ManagementService {
             }
         }
     }
+
+    async fn mirror_root_inode(
+        &self,
+        req: Request<pm::MirrorRootInodeRequest>,
+    ) -> Result<Response<pm::MirrorRootInodeResponse>, Status> {
+        let res = buddy_group::mirror_root_inode(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Mirroring root inode failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
 }
