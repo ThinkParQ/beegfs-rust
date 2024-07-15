@@ -29,8 +29,8 @@ impl Handler for GetNodes {
             .await;
 
         match res {
-            Ok(res) => GetNodesResp {
-                nodes: res
+            Ok(res) => {
+                let mut nodes: Vec<Node> = res
                     .0
                     .into_iter()
                     .map(|n| Node {
@@ -50,18 +50,24 @@ impl Handler for GetNodes {
                         _unused_tcp_port: n.port,
                         node_type: n.node_type,
                     })
-                    .collect(),
-                root_num_id: match res.2 {
-                    MetaRoot::Unknown => 0,
-                    MetaRoot::Normal(node_id, _) => node_id,
-                    MetaRoot::Mirrored(group_id) => group_id.into(),
-                },
-                is_root_mirrored: match res.2 {
-                    MetaRoot::Unknown => 0,
-                    MetaRoot::Normal(_, _) => 0,
-                    MetaRoot::Mirrored(_) => 1,
-                },
-            },
+                    .collect();
+
+                nodes.sort_by(|a, b| a.num_id.cmp(&b.num_id));
+
+                GetNodesResp {
+                    nodes,
+                    root_num_id: match res.2 {
+                        MetaRoot::Unknown => 0,
+                        MetaRoot::Normal(node_id, _) => node_id,
+                        MetaRoot::Mirrored(group_id) => group_id.into(),
+                    },
+                    is_root_mirrored: match res.2 {
+                        MetaRoot::Unknown => 0,
+                        MetaRoot::Normal(_, _) => 0,
+                        MetaRoot::Mirrored(_) => 1,
+                    },
+                }
+            }
             Err(err) => {
                 log_error_chain!(err, "Getting {:?} node list failed", self.node_type);
 
