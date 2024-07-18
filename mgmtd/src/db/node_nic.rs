@@ -59,7 +59,7 @@ impl NodeNic {
 }
 
 /// Retrieves all node nics for a specific node
-pub(crate) fn get_with_node(tx: &Transaction, node_uid: Uid) -> Result<Arc<[NodeNic]>> {
+pub(crate) fn get_with_node(tx: &Transaction, node_uid: Uid) -> Result<Vec<NodeNic>> {
     Ok(tx.query_map_collect(
         sql!(
             "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
