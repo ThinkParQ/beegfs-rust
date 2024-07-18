@@ -14,6 +14,10 @@ pub(crate) async fn set_alias(
         .op(move |tx| {
             let entity = entity_id.resolve(tx, entity_type)?;
 
+            if *entity.node_type() == NodeType::Client {
+                bail!("Client updates are not supported")
+            }
+
             // Check that the alias is not in use yet
             let et: Option<EntityType> = tx
                 .query_row_cached(
