@@ -4,7 +4,7 @@ use crate::bee_msg::notify_nodes;
 use crate::context::Context;
 use crate::db;
 use crate::license::LicensedFeature;
-use crate::types::{ResolveEntityId, SqliteExt};
+use crate::types::{ResolveEntityId, SqliteEnumExt};
 use anyhow::{bail, Context as AContext, Result};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{params, OptionalExtension, Transaction};

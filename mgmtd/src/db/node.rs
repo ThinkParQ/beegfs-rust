@@ -33,7 +33,7 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Vec
             FROM all_nodes_v
             WHERE node_type = ?1"
         ),
-        [node_type.sql_str()],
+        [node_type.sql_variant()],
         Node::from_row,
     )?)
 }
@@ -100,7 +100,7 @@ pub(crate) fn insert(
             // All other node types:
             misc::find_new_id(
                 tx,
-                &format!("{}_nodes", node_type.sql_str()),
+                &format!("{}_nodes", node_type.sql_table_str()),
                 "node_id",
                 1..=0xFFFF,
             )?
@@ -116,7 +116,7 @@ pub(crate) fn insert(
     let alias = if let Some(alias) = alias {
         alias
     } else {
-        format!("node_{}_{}", node_type.sql_str(), node_id).try_into()?
+        format!("node_{}_{}", node_type.sql_table_str(), node_id).try_into()?
     };
 
     let uid = entity::insert(tx, EntityType::Node, &alias)?;
@@ -126,13 +126,13 @@ pub(crate) fn insert(
             "INSERT INTO nodes (node_uid, node_type, port, last_contact)
             VALUES (?1, ?2, ?3, DATETIME('now'))"
         ),
-        params![uid, node_type.sql_str(), port],
+        params![uid, node_type.sql_variant(), port],
     )?;
 
     tx.execute_cached(
         &format!(
             "INSERT INTO {}_nodes (node_id, node_uid) VALUES (?1, ?2)",
-            node_type.sql_str()
+            node_type.sql_table_str()
         ),
         params![node_id, uid],
     )?;
@@ -170,7 +170,7 @@ pub(crate) fn update_last_contact_for_targets(
         ),
         params![
             &rarray_param(target_ids.iter().copied()),
-            node_type.sql_str()
+            node_type.sql_variant()
         ],
     )?)
 }

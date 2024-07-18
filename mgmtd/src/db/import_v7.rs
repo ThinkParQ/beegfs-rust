@@ -1,4 +1,3 @@
-use self::quota_limit::SpaceAndInodeLimits;
 use crate::db::*;
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Transaction;
@@ -193,7 +192,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
         buddy_group::insert(
             tx,
             g,
-            &format!("buddy_group_{}_{}", nt.sql_str(), g).try_into()?,
+            &format!("buddy_group_{}_{}", nt.sql_table_str(), g).try_into()?,
             nt,
             p_id.parse()?,
             s_id.parse()?,
@@ -331,34 +330,40 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
     let limits = QuotaDefaultLimits::deserialize(&mut des)?;
     des.finish()?;
 
-    quota_default_limit::upsert(
-        tx,
+    let mut stmt = tx.prepare_cached(sql!(
+        "INSERT INTO quota_default_limits
+        (id_type, quota_type, pool_id, value)
+        VALUES (?1, ?2, ?3, ?4)"
+    ))?;
+
+    let affected = stmt.execute(params![
+        QuotaIdType::User.sql_variant(),
+        QuotaType::Space.sql_variant(),
         pool_id,
-        QuotaIdType::User,
-        QuotaType::Inodes,
-        limits.user_inode_limit,
-    )?;
-    quota_default_limit::upsert(
-        tx,
+        limits.user_space_limit
+    ])?;
+    check_affected_rows(affected, [1])?;
+    let affected = stmt.execute(params![
+        QuotaIdType::User.sql_variant(),
+        QuotaType::Inodes.sql_variant(),
         pool_id,
-        QuotaIdType::User,
-        QuotaType::Space,
-        limits.user_space_limit,
-    )?;
-    quota_default_limit::upsert(
-        tx,
+        limits.user_inode_limit
+    ])?;
+    check_affected_rows(affected, [1])?;
+    let affected = stmt.execute(params![
+        QuotaIdType::Group.sql_variant(),
+        QuotaType::Space.sql_variant(),
         pool_id,
-        QuotaIdType::Group,
-        QuotaType::Inodes,
-        limits.group_inode_limit,
-    )?;
-    quota_default_limit::upsert(
-        tx,
+        limits.group_space_limit
+    ])?;
+    check_affected_rows(affected, [1])?;
+    let affected = stmt.execute(params![
+        QuotaIdType::Group.sql_variant(),
+        QuotaType::Inodes.sql_variant(),
         pool_id,
-        QuotaIdType::Group,
-        QuotaType::Space,
         limits.group_space_limit,
-    )?;
+    ])?;
+    check_affected_rows(affected, [1])?;
 
     Ok(())
 }
@@ -379,20 +384,32 @@ fn quota_limits(
     // We filter out where the quota ID is 0 because old management seems to store the default
     // settings for a pool together with the specific limits. But this is redundant, the default
     // settings are also stored (and imported) explicitly in/from a different file.
-    quota_limit::update(
-        tx,
-        limits.iter().filter(|e| e.id != 0).map(|e| {
-            (
-                quota_id_type,
+    let mut insert_stmt = tx.prepare_cached(sql!(
+        "INSERT INTO quota_limits (quota_id, id_type, quota_type, pool_id, value)
+        VALUES(?1, ?2, ?3 ,?4 ,?5)"
+    ))?;
+
+    for l in limits.iter().filter(|e| e.id_type == quota_id_type) {
+        if l.space > 0 {
+            insert_stmt.execute(params![
+                l.id,
+                l.id_type.sql_variant(),
+                QuotaType::Space.sql_variant(),
                 pool_id,
-                SpaceAndInodeLimits {
-                    quota_id: e.id,
-                    space: if e.space > 0 { Some(e.space) } else { None },
-                    inodes: if e.inodes > 0 { Some(e.inodes) } else { None },
-                },
-            )
-        }),
-    )?;
+                l.space
+            ])?;
+        }
+
+        if l.inodes > 0 {
+            insert_stmt.execute(params![
+                l.id,
+                l.id_type.sql_variant(),
+                QuotaType::Inodes.sql_variant(),
+                pool_id,
+                l.inodes
+            ])?;
+        }
+    }
 
     Ok(())
 }

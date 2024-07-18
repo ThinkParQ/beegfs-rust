@@ -24,13 +24,13 @@ pub(crate) fn get_with_pool_id(tx: &Transaction, pool_id: PoolId) -> Result<Defa
                 "SELECT DISTINCT us.value, ui.value, gs.value, gi.value
                 FROM quota_default_limits AS l
                 LEFT JOIN quota_default_limits AS us
-                    ON us.pool_id = l.pool_id AND us.quota_type = 'space' AND us.id_type = 'user'
+                    ON us.pool_id = l.pool_id AND us.quota_type = 1 AND us.id_type = 1
                 LEFT JOIN quota_default_limits AS ui
-                    ON ui.pool_id = l.pool_id AND ui.quota_type = 'inodes' AND ui.id_type = 'user'
+                    ON ui.pool_id = l.pool_id AND ui.quota_type = 2 AND ui.id_type = 1
                 LEFT JOIN quota_default_limits AS gs
-                    ON gs.pool_id = l.pool_id AND gs.quota_type = 'space' AND gs.id_type = 'group'
+                    ON gs.pool_id = l.pool_id AND gs.quota_type = 1 AND gs.id_type = 2
                 LEFT JOIN quota_default_limits AS gi
-                    ON gi.pool_id = l.pool_id AND gi.quota_type = 'inodes' AND gi.id_type = 'group'
+                    ON gi.pool_id = l.pool_id AND gi.quota_type = 2 AND gi.id_type = 2
                 WHERE l.pool_id = ?1"
             ),
             params![pool_id],
@@ -66,7 +66,12 @@ pub(crate) fn upsert(
             UPDATE SET value = ?4
             WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
         ),
-        params![id_type.sql_str(), quota_type.sql_str(), pool_id, value],
+        params![
+            id_type.sql_variant(),
+            quota_type.sql_variant(),
+            pool_id,
+            value
+        ],
     )?;
 
     Ok(())
@@ -88,7 +93,7 @@ pub(crate) fn delete(
             "DELETE FROM quota_default_limits
             WHERE id_type = ?1 AND quota_type = ?2 AND pool_id = ?3"
         ),
-        params![id_type.sql_str(), quota_type.sql_str(), pool_id],
+        params![id_type.sql_variant(), quota_type.sql_variant(), pool_id],
     )?;
 
     Ok(())

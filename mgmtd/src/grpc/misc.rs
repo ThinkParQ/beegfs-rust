@@ -30,7 +30,7 @@ pub(crate) async fn set_alias(
                 .optional()?;
 
             if let Some(et) = et {
-                bail!("Alias {} is already in use by a {}", alias, et.sql_str());
+                bail!("Alias {} is already in use by a {}", alias, et.user_str());
             }
 
             tx.execute_cached(

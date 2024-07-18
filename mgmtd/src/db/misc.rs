@@ -104,7 +104,7 @@ pub(crate) fn enable_metadata_mirroring(tx: &Transaction) -> Result<()> {
 
     let affected = tx.execute(
         sql!(
-            "UPDATE targets SET consistency = 'needs_resync'
+            "UPDATE targets SET consistency = 2
             WHERE target_uid = (
                 SELECT mt.target_uid FROM root_inode AS ri
                 INNER JOIN meta_buddy_groups AS mg USING(group_id)

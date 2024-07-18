@@ -83,7 +83,6 @@ pub struct LegacyId {
 
 impl Display for LegacyId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO sql_str is not really fitting here
         write!(f, "{}:{}", self.node_type, self.num_id)
     }
 }

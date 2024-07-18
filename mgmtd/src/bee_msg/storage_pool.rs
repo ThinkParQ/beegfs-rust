@@ -43,7 +43,7 @@ impl Handler for GetStoragePools {
                         sql!(
                             "SELECT target_id, node_id, pool_id, free_space, free_inodes
                             FROM all_targets_v
-                            WHERE node_type == 'storage'
+                            WHERE node_type == 2
                                 AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
                         ),
                         [],
@@ -66,7 +66,7 @@ impl Handler for GetStoragePools {
                             FROM all_buddy_groups_v AS g
                             INNER JOIN targets AS p_t ON p_t.target_uid = g.p_target_uid
                             INNER JOIN targets AS s_t ON s_t.target_uid = g.s_target_uid
-                            WHERE g.node_type = 'storage'
+                            WHERE g.node_type = 2
                                 AND p_t.free_space IS NOT NULL
                                 AND s_t.free_space IS NOT NULL
                                 AND p_t.free_inodes IS NOT NULL

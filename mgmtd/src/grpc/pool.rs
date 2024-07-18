@@ -22,8 +22,7 @@ pub(crate) async fn get(ctx: &Context, _req: pm::GetPoolsRequest) -> Result<pm::
                             }),
                             alias: row.get(2)?,
                         }),
-                        targets: vec![],
-                        buddy_groups: vec![],
+                        ..Default::default()
                     })
                 },
             )?;

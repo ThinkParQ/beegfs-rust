@@ -1,12 +1,74 @@
+CREATE TABLE entity_types (
+    entity_type INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+) STRICT;
+INSERT INTO entity_types VALUES
+    (1, "node"),
+    (2, "target"),
+    (3, "pool"),
+    (4, "buddy_group")
+;
+
+CREATE TABLE node_types (
+    node_type INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+) STRICT;
+INSERT INTO node_types VALUES
+    (1, "meta"),
+    (2, "storage"),
+    (3, "client"),
+    (4, "management")
+;
+
+CREATE TABLE quota_id_types (
+    quota_id_type INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+) STRICT;
+INSERT INTO quota_id_types VALUES
+    (1, "user"),
+    (2, "group")
+;
+
+CREATE TABLE quota_types (
+    quota_type INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+) STRICT;
+INSERT INTO quota_types VALUES
+    (1, "space"),
+    (2, "inode")
+;
+
+CREATE TABLE consistency_types (
+    consistency_type INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+) STRICT;
+INSERT INTO consistency_types VALUES
+    (1, "good"),
+    (2, "needs_resync"),
+    (3, "bad")
+;
+
+CREATE TABLE nic_types (
+    nic_type INTEGER PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL
+) STRICT;
+INSERT INTO nic_types VALUES
+    (1, "ethernet"),
+    (2, "rdma")
+;
+
 CREATE TABLE config (
     key TEXT PRIMARY KEY,
     value ANY NOT NULL
 ) STRICT;
 
+
+
 CREATE TABLE entities (
     uid INTEGER PRIMARY KEY AUTOINCREMENT
         CHECK(uid > 0),
-    entity_type TEXT NOT NULL,
+    entity_type INTEGER NOT NULL
+        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
     alias TEXT UNIQUE NOT NULL
         CHECK(LENGTH(alias) > 0),
 
@@ -17,12 +79,14 @@ CREATE TABLE entities (
 
 CREATE TABLE nodes (
     node_uid INTEGER PRIMARY KEY,
-    node_type TEXT NOT NULL,
+    node_type INTEGER NOT NULL
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
     port INTEGER NOT NULL
         CHECK(port BETWEEN 0 AND 0xFFFF),
     last_contact TEXT NOT NULL,
 
-    entity_type TEXT GENERATED ALWAYS AS ("node"),
+    entity_type INTEGER GENERATED ALWAYS AS (1)
+        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
     -- Required to allow being referenced on a foreign key. Also creates an index on both fields.
     -- node_type being first is intended as the index can then be used for selects filtered
@@ -44,7 +108,8 @@ CREATE TABLE meta_nodes (
         CHECK(node_id BETWEEN 1 AND 0xFFFF),
     node_uid INTEGER UNIQUE NOT NULL,
 
-    node_type TEXT GENERATED ALWAYS AS ("meta"),
+    node_type INTEGER GENERATED ALWAYS AS (1)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
@@ -62,7 +127,8 @@ CREATE TABLE storage_nodes (
         CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
     node_uid INTEGER UNIQUE NOT NULL,
 
-    node_type TEXT GENERATED ALWAYS AS ("storage"),
+    node_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
@@ -80,7 +146,8 @@ CREATE TABLE client_nodes (
         CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
     node_uid INTEGER UNIQUE NOT NULL,
 
-    node_type TEXT GENERATED ALWAYS AS ("client"),
+    node_type INTEGER GENERATED ALWAYS AS (3)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
@@ -98,7 +165,8 @@ CREATE TABLE management_nodes (
         CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
     node_uid INTEGER UNIQUE NOT NULL,
 
-    node_type TEXT GENERATED ALWAYS AS ("management"),
+    node_type INTEGER GENERATED ALWAYS AS (4)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
 ) STRICT;
@@ -110,8 +178,8 @@ BEGIN
 END;
 
 -- Default / local management node
-INSERT INTO entities VALUES (1, "node", "management");
-INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES (1, "management", 0, "");
+INSERT INTO entities VALUES (1, 1, "management");
+INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES (1, 4, 0, "");
 INSERT INTO management_nodes (node_id, node_uid) VALUES (1, 1);
 
 CREATE TRIGGER keep_default_management_node BEFORE DELETE ON management_nodes
@@ -125,7 +193,8 @@ END;
 CREATE TABLE node_nics (
     node_uid INTEGER NOT NULL
         REFERENCES nodes (node_uid) ON DELETE CASCADE,
-    nic_type TEXT NOT NULL,
+    nic_type INTEGER NOT NULL
+        REFERENCES nic_types (nic_type) ON DELETE RESTRICT,
     addr BLOB NOT NULL,
     name TEXT NOT NULL
         -- Nic names tend to contain null bytes which we don't want to be in the database.
@@ -139,7 +208,8 @@ CREATE INDEX index_node_nics_1 ON node_nics(node_uid);
 
 CREATE TABLE targets (
     target_uid INTEGER PRIMARY KEY,
-    node_type TEXT NOT NULL,
+    node_type INTEGER NOT NULL
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     total_space INTEGER
         CHECK(total_space >= 0),
@@ -149,9 +219,11 @@ CREATE TABLE targets (
         CHECK(free_space >= 0),
     free_inodes INTEGER
         CHECK(free_inodes >= 0),
-    consistency TEXT NOT NULL DEFAULT "good",
+    consistency INTEGER NOT NULL DEFAULT 1
+        REFERENCES consistency_types (consistency_type) ON DELETE RESTRICT,
 
-    entity_type TEXT GENERATED ALWAYS AS ("target"),
+    entity_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
     UNIQUE(node_type, target_uid),
     FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
@@ -177,7 +249,8 @@ CREATE TABLE meta_targets (
     node_id INTEGER NOT NULL
         REFERENCES meta_nodes (node_id) ON DELETE RESTRICT,
 
-    node_type TEXT GENERATED ALWAYS AS ("meta"),
+    node_type INTEGER GENERATED ALWAYS AS (1)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
 ) STRICT;
@@ -201,7 +274,8 @@ CREATE TABLE storage_targets (
     pool_id INTEGER NOT NULL DEFAULT 1
         REFERENCES storage_pools (pool_id) ON DELETE RESTRICT,
 
-    node_type TEXT GENERATED ALWAYS AS ("storage"),
+    node_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
 ) STRICT;
@@ -219,7 +293,8 @@ CREATE TABLE storage_pools (
         CHECK(pool_id BETWEEN 1 AND 0xFFFF),
     pool_uid INTEGER UNIQUE NOT NULL,
 
-    entity_type TEXT GENERATED ALWAYS AS ("pool"),
+    entity_type INTEGER GENERATED ALWAYS AS (3)
+        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (pool_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
@@ -231,7 +306,7 @@ BEGIN
 END;
 
 -- Default storage pool
-INSERT INTO entities VALUES (2, "pool", "storage_pool_default");
+INSERT INTO entities VALUES (2, 3, "storage_pool_default");
 INSERT INTO storage_pools (pool_id, pool_uid) VALUES (1, 2);
 
 CREATE TRIGGER keep_default_pool BEFORE DELETE ON storage_pools
@@ -244,9 +319,11 @@ END;
 
 CREATE TABLE buddy_groups (
     group_uid INTEGER PRIMARY KEY,
-    node_type TEXT NOT NULL,
+    node_type INTEGER NOT NULL
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
-    entity_type TEXT GENERATED ALWAYS AS ("buddy_group"),
+    entity_type INTEGER GENERATED ALWAYS AS (4)
+        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
     UNIQUE(node_type, group_uid),
     FOREIGN KEY (group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
@@ -272,7 +349,8 @@ CREATE TABLE meta_buddy_groups (
     s_target_id INTEGER UNIQUE NOT NULL
         REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
 
-    node_type TEXT GENERATED ALWAYS AS ("meta"),
+    node_type INTEGER GENERATED ALWAYS AS (1)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (group_uid, node_type) REFERENCES buddy_groups (group_uid, node_type)
 ) STRICT;
@@ -300,7 +378,8 @@ CREATE TABLE storage_buddy_groups (
     pool_id INTEGER NOT NULL
         REFERENCES storage_pools (pool_id) ON DELETE RESTRICT,
 
-    node_type TEXT GENERATED ALWAYS AS ("storage"),
+    node_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
     FOREIGN KEY (group_uid, node_type) REFERENCES buddy_groups (group_uid, node_type)
 ) STRICT;
@@ -332,8 +411,10 @@ CREATE TABLE root_inode (
 -- Tables with a composite primary key usually benefit from a WITHOUT ROWID table if the
 -- row size is small: https://www.sqlite.org/withoutrowid.html
 CREATE TABLE quota_default_limits (
-    id_type TEXT NOT NULL,
-    quota_type TEXT NOT NULL,
+    id_type INTEGER NOT NULL
+        REFERENCES quota_id_types (quota_id_type) ON DELETE RESTRICT,
+    quota_type INTEGER NOT NULL
+        REFERENCES quota_types (quota_type) ON DELETE RESTRICT,
     pool_id INTEGER NOT NULL
         REFERENCES storage_pools (pool_id) ON DELETE CASCADE,
     value INTEGER NOT NULL,
@@ -345,8 +426,10 @@ CREATE TABLE quota_default_limits (
 
 CREATE TABLE quota_limits (
     quota_id INTEGER NOT NULL,
-    id_type TEXT NOT NULL,
-    quota_type TEXT NOT NULL,
+    id_type INTEGER NOT NULL
+        REFERENCES quota_id_types (quota_id_type) ON DELETE RESTRICT,
+    quota_type INTEGER NOT NULL
+        REFERENCES quota_types (quota_type) ON DELETE RESTRICT,
     pool_id INTEGER NOT NULL
         REFERENCES storage_pools (pool_id) ON DELETE CASCADE,
     value INTEGER NOT NULL,
@@ -358,8 +441,10 @@ CREATE TABLE quota_limits (
 
 CREATE TABLE quota_usage (
     quota_id INTEGER NOT NULL,
-    id_type TEXT NOT NULL,
-    quota_type TEXT NOT NULL,
+    id_type INTEGER NOT NULL
+        REFERENCES quota_id_types (quota_id_type) ON DELETE RESTRICT,
+    quota_type INTEGER NOT NULL
+        REFERENCES quota_types (quota_type) ON DELETE RESTRICT,
     target_id INTEGER NOT NULL
         REFERENCES storage_targets (target_id) ON DELETE CASCADE,
     value INTEGER NOT NULL,
