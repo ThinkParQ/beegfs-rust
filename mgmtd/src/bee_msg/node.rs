@@ -193,8 +193,9 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> NodeId {
                 } else {
                     // New node, do additional checks and insert data
 
-                    // Check node registration is allowed
-                    if !info.user_config.registration_enable {
+                    // Check node registration is allowed. This should ignore registering client
+                    // nodes.
+                    if msg.node_type != NodeType::Client && !info.user_config.registration_enable {
                         bail!("Registration of new nodes is not allowed");
                     }
 

@@ -77,12 +77,34 @@ pub(crate) fn insert(
     port: Port,
 ) -> Result<(Uid, NodeId)> {
     let node_id = if node_id == 0 {
-        misc::find_new_id(
-            tx,
-            &format!("{}_nodes", node_type.sql_str()),
-            "node_id",
-            1..=0xFFFF,
-        )?
+        if node_type == NodeType::Client {
+            // Immediately reusing client IDs is not possible because nodes only learn about removed
+            // clients periodically when they download the node lists via the InternodeSyncer. At
+            // most this could take up to 10 minutes. The old mgmtd ensured client IDs were
+            // generated sequentially, and only once the u32 wrapped would it allow IDs to be reused
+            // from the bottom part of the range. This implements the same behavior.
+            let last_id: u32 = config::get(tx, config::Config::CounterLastClientID)?.unwrap_or(0);
+            let min_id = if last_id == u32::MAX { 1 } else { last_id + 1 };
+            // Generally the new_id will always be last_id+1. However after the u32 wraps it is
+            // theoretically possible (though highly unlikely) we encounter an ID that is already in
+            // use. The use of find_lowest_unused_id avoids ever assigning an already in use ID to a
+            // new client, though doesn't completely guarantee we don't reuse a client ID that was
+            // just released but still associated on the meta and storage nodes with the alias of an
+            // client that no longer exists. This is HIGHLY unlikely as it would mean a client had
+            // BeeGFS mounted for a REALLY long time and that client just happened to be unmounted
+            // right before another client mount happened.
+            let new_id = misc::find_new_id(tx, "client_nodes", "node_id", min_id..=u32::MAX)?;
+            config::set(tx, config::Config::CounterLastClientID, new_id)?;
+            new_id
+        } else {
+            // All other node types:
+            misc::find_new_id(
+                tx,
+                &format!("{}_nodes", node_type.sql_str()),
+                "node_id",
+                1..=0xFFFF,
+            )?
+        }
     } else {
         if let Some(node) = try_resolve_num_id(tx, EntityType::Node, node_type, node_id)? {
             bail!("{node} already exists");
