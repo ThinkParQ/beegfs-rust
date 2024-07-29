@@ -156,6 +156,22 @@ impl pm::management_server::Management for ManagementService {
         }
     }
 
+    async fn set_target_state(
+        &self,
+        req: Request<pm::SetTargetStateRequest>,
+    ) -> Result<Response<pm::SetTargetStateResponse>, Status> {
+        let res = target::set_state(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Set target state failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
     async fn get_pools(
         &self,
         req: Request<pm::GetPoolsRequest>,
