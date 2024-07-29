@@ -10,9 +10,8 @@ use std::ops::RangeInclusive;
 /// the squery to a given numerical range.
 ///
 /// It tries by the following order:
-/// 1. The biggest unused id within the allowed range
-/// 2. The smallest unused id within the allowed range
-/// 3. The minimum value if unused (this happens when the table is empty)
+/// 1. The smallest unused id within the allowed range
+/// 2. The minimum value if unused (this happens when the table is empty)
 ///
 /// # Return value
 /// Returns an unused and available ID using the given constraints. If there is none available, an
@@ -32,11 +31,6 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
     let id = tx.query_row(
         &format!(
             "SELECT COALESCE(
-                (SELECT MAX(t1.{field}) + 1 AS new
-                    FROM {table} AS t1
-                    LEFT JOIN {table} AS t2 ON t2.{field} = t1.{field} + 1
-                    WHERE t2.{field} IS NULL AND t1.{field} + 1 BETWEEN {min} AND {max}
-                ),
                 (SELECT MIN(t1.{field}) + 1 AS new
                     FROM {table} AS t1
                     LEFT JOIN {table} AS t2 ON t2.{field} = t1.{field} + 1
