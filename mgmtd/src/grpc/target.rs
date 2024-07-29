@@ -1,6 +1,10 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use shared::bee_msg::misc::RefreshCapacityPools;
+use shared::bee_msg::target::{
+    RefreshTargetStates, SetTargetConsistencyStates, SetTargetConsistencyStatesResp,
+};
+use shared::bee_msg::OpsErr;
 use std::time::Duration;
 
 impl CapacityInfo for &pm::get_targets_response::Target {
@@ -221,4 +225,60 @@ pub(crate) fn calc_reachability_state(
     } else {
         pb::ReachabilityState::Online
     }
+}
+
+/// set consistancy state for a target
+pub(crate) async fn set_state(
+    ctx: &Context,
+    req: pm::SetTargetStateRequest,
+) -> Result<pm::SetTargetStateResponse> {
+    let state: TargetConsistencyState = req.consistency_state().try_into()?;
+    let target: EntityId = required_field(req.target)?.try_into()?;
+
+    let (target, node_uid) = ctx
+        .db
+        .op(move |tx| {
+            let target = target.resolve(tx, EntityType::Target)?;
+
+            let node: i64 = tx.query_row_cached(
+                sql!("SELECT node_uid FROM all_targets_v WHERE target_uid = ?1"),
+                [target.uid],
+                |row| row.get(0),
+            )?;
+
+            db::target::update_consistency_states(
+                tx,
+                [(target.num_id().try_into()?, state)],
+                NodeTypeServer::try_from(*target.node_type())?,
+            )?;
+
+            Ok((target, node))
+        })
+        .await?;
+
+    let resp: SetTargetConsistencyStatesResp = ctx
+        .conn
+        .request(
+            node_uid,
+            &SetTargetConsistencyStates {
+                node_type: *target.node_type(),
+                target_ids: vec![target.num_id().try_into().unwrap()],
+                states: vec![state],
+                ack_id: "".into(),
+                set_online: 0,
+            },
+        )
+        .await?;
+    if resp.result != OpsErr::SUCCESS {
+        bail!("Management successfully set the target state, but the target {target} failed to process it: {:?}", resp.result);
+    }
+
+    notify_nodes(
+        ctx,
+        &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+        &RefreshTargetStates { ack_id: "".into() },
+    )
+    .await;
+
+    Ok(pm::SetTargetStateResponse {})
 }
