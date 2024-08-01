@@ -5,7 +5,7 @@ use core::hash::Hash;
 use protobuf::beegfs as pb;
 use regex::Regex;
 use std::fmt::{Debug, Display};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EntityType {
@@ -33,15 +33,18 @@ impl_enum_protobuf_traits! {EntityType => pb::EntityType,
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Alias(String);
 
-static REGEX: OnceLock<Regex> = OnceLock::new();
+static REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_.]+$").expect("Regex must be valid"));
 
 impl TryFrom<String> for Alias {
     type Error = anyhow::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let re = REGEX
-            .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_.]+$").expect("Regex must be valid"));
-        if !re.is_match(&value) {
+        if value.len() > 32 {
+            bail!("invalid alias '{value}': max length is 32 characters");
+        }
+
+        if !REGEX.is_match(&value) {
             bail!("invalid alias '{value}': must start with a letter and may only contain letters, digits, '-', '_' and '.'");
         }
 
