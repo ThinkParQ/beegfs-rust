@@ -29,6 +29,8 @@ pub struct Config {
     pub tls_enable: bool,
     pub tls_cert_file: PathBuf,
     pub tls_key_file: PathBuf,
+    pub license_cert_file: PathBuf,
+    pub license_lib_file: PathBuf,
     pub interfaces: Vec<String>,
     pub connection_limit: usize,
     pub db_file: PathBuf,
@@ -74,6 +76,8 @@ impl Default for Config {
             tls_enable: true,
             tls_cert_file: "/etc/beegfs/cert.pem".into(),
             tls_key_file: "/etc/beegfs/key.pem".into(),
+            license_cert_file: "/etc/beegfs/license.pem".into(),
+            license_lib_file: "/opt/beegfs/lib/libbeegfs_license.so".into(),
             interfaces: vec![],
             connection_limit: 12,
             db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
@@ -189,6 +193,12 @@ struct CommandLineArgs {
     /// The private key file belonging to the above certificate [default: /etc/beegfs/key.pem]
     #[arg(long)]
     tls_key_file: Option<PathBuf>,
+    /// The BeeGFS license certificate file [default: /etc/beegfs/license.crt]
+    #[arg(long)]
+    license_cert_file: Option<PathBuf>,
+    /// The BeeGFS license library file [default: /opt/beegfs/lib/libbeegfs_license.so]
+    #[arg(long)]
+    license_lib_file: Option<PathBuf>,
     /// Network interfaces reported to other nodes for incoming communication
     ///
     /// Can be specified multiple times. If not given, all suitable interfaces
@@ -254,6 +264,8 @@ struct ConfigFileArgs {
     grpc_tls_enable: Option<bool>,
     tls_cert_file: Option<PathBuf>,
     tls_key_file: Option<PathBuf>,
+    license_cert_file: Option<PathBuf>,
+    license_lib_file: Option<PathBuf>,
     interfaces: Option<Vec<String>>,
     connection_limit: Option<usize>,
     db_file: Option<PathBuf>,
@@ -310,6 +322,12 @@ impl Config {
         if let Some(v) = args.tls_key_file {
             self.tls_key_file = v;
         }
+        if let Some(v) = args.license_cert_file {
+            self.license_cert_file = v;
+        }
+        if let Some(v) = args.license_lib_file {
+            self.license_lib_file = v;
+        }
         if let Some(v) = args.interfaces {
             self.interfaces = v;
         }
@@ -352,6 +370,12 @@ impl Config {
         }
         if let Some(v) = args.tls_key_file {
             self.tls_key_file = v;
+        }
+        if let Some(v) = args.license_cert_file {
+            self.license_cert_file = v;
+        }
+        if let Some(v) = args.license_lib_file {
+            self.license_lib_file = v;
         }
         if let Some(v) = args.interfaces {
             self.interfaces = v;

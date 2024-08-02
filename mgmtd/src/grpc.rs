@@ -3,6 +3,7 @@
 use crate::bee_msg::notify_nodes;
 use crate::context::Context;
 use crate::db;
+use crate::license::LicensedFeature;
 use crate::types::{ResolveEntityId, SqliteExt};
 use anyhow::{bail, Context as AContext, Result};
 use protobuf::{beegfs as pb, management as pm};
@@ -17,6 +18,7 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 
 mod buddy_group;
+mod license;
 mod misc;
 mod node;
 mod pool;
@@ -71,6 +73,12 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
 #[derive(Debug)]
 pub(crate) struct ManagementService {
     pub ctx: Context,
+}
+
+fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<(), Status> {
+    ctx.lic
+        .verify_feature(feature)
+        .map_err(|e| Status::new(Code::Unauthenticated, e.to_string()))
 }
 
 /// gRPC server implementation
@@ -192,6 +200,8 @@ impl pm::management_server::Management for ManagementService {
         &self,
         req: Request<pm::CreatePoolRequest>,
     ) -> Result<Response<pm::CreatePoolResponse>, Status> {
+        needs_license(&self.ctx, LicensedFeature::Storagepool)?;
+
         let res = pool::create(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -208,6 +218,8 @@ impl pm::management_server::Management for ManagementService {
         &self,
         req: Request<pm::AssignPoolRequest>,
     ) -> Result<Response<pm::AssignPoolResponse>, Status> {
+        needs_license(&self.ctx, LicensedFeature::Storagepool)?;
+
         let res = pool::assign(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -224,6 +236,8 @@ impl pm::management_server::Management for ManagementService {
         &self,
         req: Request<pm::DeletePoolRequest>,
     ) -> Result<Response<pm::DeletePoolResponse>, Status> {
+        needs_license(&self.ctx, LicensedFeature::Storagepool)?;
+
         let res = pool::delete(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -256,6 +270,8 @@ impl pm::management_server::Management for ManagementService {
         &self,
         req: Request<pm::CreateBuddyGroupRequest>,
     ) -> Result<Response<pm::CreateBuddyGroupResponse>, Status> {
+        needs_license(&self.ctx, LicensedFeature::Mirroring)?;
+
         let res = buddy_group::create(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -272,6 +288,8 @@ impl pm::management_server::Management for ManagementService {
         &self,
         req: Request<pm::DeleteBuddyGroupRequest>,
     ) -> Result<Response<pm::DeleteBuddyGroupResponse>, Status> {
+        needs_license(&self.ctx, LicensedFeature::Mirroring)?;
+
         let res = buddy_group::delete(&self.ctx, req.into_inner()).await;
 
         match res {
@@ -294,6 +312,22 @@ impl pm::management_server::Management for ManagementService {
             Ok(res) => Ok(Response::new(res)),
             Err(err) => {
                 let msg = error_chain!(err, "Mirroring root inode failed");
+                log::error!("{msg}");
+                Err(Status::new(Code::Internal, msg))
+            }
+        }
+    }
+
+    async fn get_license(
+        &self,
+        req: Request<pm::GetLicenseRequest>,
+    ) -> Result<Response<pm::GetLicenseResponse>, Status> {
+        let res = license::get(&self.ctx, req.into_inner()).await;
+
+        match res {
+            Ok(res) => Ok(Response::new(res)),
+            Err(err) => {
+                let msg = error_chain!(err, "Getting license failed");
                 log::error!("{msg}");
                 Err(Status::new(Code::Internal, msg))
             }

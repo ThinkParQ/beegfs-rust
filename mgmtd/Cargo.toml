@@ -24,6 +24,7 @@ clap = { workspace = true, features = ["derive"] }
 env_logger = { workspace = true }
 itertools = { workspace = true }
 libc = { version = "~0" }
+libloading = { version = "~0.8" }
 log = { workspace = true }
 prost = { workspace = true }
 regex = { workspace = true }

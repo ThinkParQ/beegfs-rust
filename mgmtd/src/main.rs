@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
+use mgmtd::license::LicenseVerifier;
 use mgmtd::{start, StaticInfo};
 use shared::types::AuthSecret;
 use shared::{journald_logger, shutdown};
@@ -65,6 +66,8 @@ fn inner_main() -> Result<()> {
         None
     };
 
+    let lic = LicenseVerifier::new(&user_config.license_lib_file);
+
     let (shutdown, shutdown_control) = shutdown::new();
 
     // Ensure the program ends if a task panics
@@ -84,6 +87,10 @@ fn inner_main() -> Result<()> {
 
     // Run the tokio executor
     rt.block_on(async move {
+        let _ = lic
+            .load_and_verify_cert(user_config.license_cert_file.as_path())
+            .await?;
+
         // Start the actual daemon
         start(
             StaticInfo {
@@ -91,6 +98,7 @@ fn inner_main() -> Result<()> {
                 auth_secret,
                 network_addrs,
             },
+            lic,
             shutdown,
         )
         .await?;
