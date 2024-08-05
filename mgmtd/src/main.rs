@@ -87,9 +87,12 @@ fn inner_main() -> Result<()> {
 
     // Run the tokio executor
     rt.block_on(async move {
-        let _ = lic
+        if let Err(err) = lic
             .load_and_verify_cert(user_config.license_cert_file.as_path())
-            .await?;
+            .await
+        {
+            log::warn!("Initializing licensing library failed. Licensed features will be unavailable: {err}");
+        }
 
         // Start the actual daemon
         start(

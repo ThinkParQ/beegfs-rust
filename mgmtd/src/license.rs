@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use prost::Message;
 use protobuf::license::*;
 use std::ffi::{CStr, CString};
@@ -150,9 +150,7 @@ impl LicenseVerifier {
                 Self(Some(l))
             }
             Err(e) => {
-                log::warn!(
-                    "Failed to load license verification library. Licensed functionality will be unavailable: {e}"
-                );
+                log::warn!("Failed to load license verification library: {e}");
                 Self(None)
             }
         }
@@ -181,7 +179,10 @@ impl LicenseVerifier {
             None => return Err(anyhow!("Configured license certificate path is invalid")),
         }
         library.init_cert_store();
-        let pem = tokio::fs::read(cert_path).await?;
+        let pem = tokio::fs::read(cert_path)
+            .await
+            .with_context(|| format!("Reading certificate file {cert_path:?} failed"))?;
+
         let res = VerifyCertResult::decode(library.verify_pem(&pem)?.as_ref())?;
         let result = res.result();
         let serial = res.serial;
