@@ -45,6 +45,8 @@ toml = "~0"
 tonic = { workspace = true }
 uuid = { workspace = true }
 
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
 
 [package.metadata.generate-rpm]
 name = "beegfs-mgmtd"

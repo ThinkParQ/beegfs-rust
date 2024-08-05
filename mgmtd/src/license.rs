@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
+use core::ffi::{c_char, c_uchar, c_uint};
 use prost::Message;
 use protobuf::license::*;
 use std::ffi::{CStr, CString};
@@ -32,70 +33,92 @@ impl AsRef<CStr> for LicensedFeature {
 }
 
 /// Encapsulates a C string buffer and provides methods for easy access to the data inside the
-/// buffer and automatic deallocation
+/// buffer and automatic deallocation.
 struct ExternalBuf {
-    data: *mut ::std::os::raw::c_char,
-    free: unsafe extern "C" fn(ptr: *mut ::std::os::raw::c_char),
+    /// # Safety
+    /// See [`CStr::from_ptr()`].
+    /// Despite being *mut, might not be mutated while Self is hold.
+    data: *mut c_char,
+    /// # Safety
+    /// must point to a function releasing the C-String behind `data`
+    free: unsafe extern "C" fn(ptr: *mut c_char),
 }
 
 impl AsRef<[u8]> for ExternalBuf {
     fn as_ref(&self) -> &[u8] {
+        // SAFETY:
+        // `self.data` fulfills the requirements by the struct definitions contract
         unsafe { CStr::from_ptr(self.data).to_bytes() }
     }
 }
 
 impl Drop for ExternalBuf {
     fn drop(&mut self) {
+        // SAFETY:
+        // `self.free` fulfills the requirements by the struct definitions contract
         unsafe {
             (self.free)(self.data);
         }
     }
 }
 
-/// An abstraction for the Go library that encapsulates all unsafe operations
+/// An abstraction for the BeeGFS licensing Go library that encapsulates all the ffi interactions
+/// with it.
+///
+/// # Safety
+///
+/// * All functions pointers returning a `*mut c_char` must return a valid, nul terminated C-String
+///   which must stay valid and may not written to until `free_return_buffer` is called.
+/// * `free_return_buffer` must free C-Strings (`*mut c_char`) returned by the other functions.
 #[derive(Debug)]
 struct LoadedLibrary {
     #[allow(dead_code)]
     library: ::libloading::Library,
-    init_cert_store: unsafe extern "C" fn() -> core::ffi::c_uchar,
-    verify_pem: unsafe extern "C" fn(
-        pem: *mut core::ffi::c_char,
-        len: core::ffi::c_uint,
-    ) -> *mut core::ffi::c_char,
-    verify_file: unsafe extern "C" fn(path: *mut core::ffi::c_char) -> *mut core::ffi::c_char,
-    get_loaded_cert_data: unsafe extern "C" fn() -> *mut core::ffi::c_char,
-    verify_feature: unsafe extern "C" fn(feature: *mut core::ffi::c_char) -> *mut core::ffi::c_char,
-    free_returned_buffer: unsafe extern "C" fn(ptr: *mut core::ffi::c_char),
+
+    init_cert_store: unsafe extern "C" fn() -> c_uchar,
+    verify_pem: unsafe extern "C" fn(pem: *mut c_char, len: c_uint) -> *mut c_char,
+    verify_file: unsafe extern "C" fn(path: *mut c_char) -> *mut c_char,
+    get_loaded_cert_data: unsafe extern "C" fn() -> *mut c_char,
+    verify_feature: unsafe extern "C" fn(feature: *mut c_char) -> *mut c_char,
+    free_returned_buffer: unsafe extern "C" fn(ptr: *mut c_char),
 }
 
 impl LoadedLibrary {
-    fn new(path: impl AsRef<Path>) -> Result<Self, ::libloading::Error> {
+    /// # Safety
+    /// The signatures of the functions loaded from the dynamic library at `path` must match the
+    /// function pointers defined in the LoadedLibrary struct.
+    unsafe fn new(path: impl AsRef<Path>) -> Result<Self, ::libloading::Error> {
+        // SAFETY:
+        // Self::new() already requires fulfilling the Library::new() contract
         unsafe {
             let library = ::libloading::Library::new(path.as_ref())?;
+
             Ok(Self {
-                init_cert_store: library.get(b"InitCertStore\0").map(|sym| *sym)?,
-                verify_pem: library.get(b"VerifyPEM\0").map(|sym| *sym)?,
-                verify_file: library.get(b"VerifyFile\0").map(|sym| *sym)?,
-                get_loaded_cert_data: library.get(b"GetLoadedCertData\0").map(|sym| *sym)?,
-                verify_feature: library.get(b"VerifyFeature\0").map(|sym| *sym)?,
-                free_returned_buffer: library.get(b"FreeReturnedBuffer\0").map(|sym| *sym)?,
+                init_cert_store: *library.get(b"InitCertStore\0")?,
+                verify_pem: *library.get(b"VerifyPEM\0")?,
+                verify_file: *library.get(b"VerifyFile\0")?,
+                get_loaded_cert_data: *library.get(b"GetLoadedCertData\0")?,
+                verify_feature: *library.get(b"VerifyFeature\0")?,
+                free_returned_buffer: *library.get(b"FreeReturnedBuffer\0")?,
+
                 library,
             })
         }
     }
 
-    fn init_cert_store(&self) -> core::ffi::c_uchar {
+    fn init_cert_store(&self) -> c_uchar {
+        // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe { (self.init_cert_store)() }
     }
 
     fn verify_pem(&self, pem: &[u8]) -> Result<ExternalBuf> {
-        let len = pem.len() as core::ffi::c_uint;
-        let pem = pem.as_ptr() as *mut core::ffi::c_char;
+        let len = pem.len() as c_uint;
+        let pem = pem.as_ptr() as *mut c_char;
 
+        // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
-            let data = (self.verify_pem)(pem, len);
             Ok(ExternalBuf {
-                data,
+                data: (self.verify_pem)(pem, len),
                 free: self.free_returned_buffer,
             })
         }
@@ -107,32 +130,32 @@ impl LoadedLibrary {
             path.to_str()
                 .ok_or_else(|| anyhow!("Couldn't convert cert path to C string."))?,
         )?;
-        let ppath = path.as_ptr() as *mut i8;
+        let ppath = path.as_ptr() as *mut c_char;
 
+        // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
-            let data = (self.verify_file)(ppath);
             Ok(ExternalBuf {
-                data,
+                data: (self.verify_file)(ppath),
                 free: self.free_returned_buffer,
             })
         }
     }
 
     fn get_loaded_cert_data(&self) -> ExternalBuf {
+        // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
-            let data = (self.get_loaded_cert_data)();
             ExternalBuf {
-                data,
+                data: (self.get_loaded_cert_data)(),
                 free: self.free_returned_buffer,
             }
         }
     }
 
-    fn verify_feature(&self, feature: *mut core::ffi::c_char) -> ExternalBuf {
+    fn verify_feature(&self, feature: *mut c_char) -> ExternalBuf {
+        // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
-            let data = (self.verify_feature)(feature);
             ExternalBuf {
-                data,
+                data: (self.verify_feature)(feature),
                 free: self.free_returned_buffer,
             }
         }
@@ -143,8 +166,13 @@ impl LoadedLibrary {
 pub struct LicenseVerifier(Option<LoadedLibrary>);
 
 impl LicenseVerifier {
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        match LoadedLibrary::new(path) {
+    /// # Safety
+    /// The signatures of the functions loaded from the dynamic library at `path` must match the
+    /// function pointers defined in the LoadedLibrary struct.
+    pub unsafe fn new(path: impl AsRef<Path>) -> Self {
+        // SAFETY:
+        // Self::new() already requires fulfilling the LoadedLibrary::new() contract
+        match unsafe { LoadedLibrary::new(path) } {
             Ok(l) => {
                 log::info!("Successfully initialized certificate verification library.");
                 Self(Some(l))
@@ -170,14 +198,10 @@ impl LicenseVerifier {
             bail!("License verification library not loaded.");
         };
 
-        match cert_path.to_str() {
-            Some(path) => {
-                if path.is_empty() {
-                    return Err(anyhow!("No license certificate configured"));
-                }
-            }
-            None => return Err(anyhow!("Configured license certificate path is invalid")),
+        if cert_path.as_os_str().is_empty() {
+            bail!("No license certificate configured");
         }
+
         library.init_cert_store();
         let pem = tokio::fs::read(cert_path)
             .await
@@ -204,7 +228,7 @@ impl LicenseVerifier {
     /// Fetches contents of the certificate that was last verified
     ///
     /// Returns a `GetCertDataResult` that contains the data of the certificate that was last
-    /// verified, regardless of verfication success. This is useful for consumers like ctl that
+    /// verified, regardless of verification success. This is useful for consumers like ctl that
     /// might be interested in certificate for invalid certificates. The `GetCertDataResult` will
     /// also contain the verification status. `Error`s are simply propagated.
     pub fn get_cert_data(&self) -> Result<GetCertDataResult> {

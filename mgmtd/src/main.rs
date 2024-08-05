@@ -66,7 +66,12 @@ fn inner_main() -> Result<()> {
         None
     };
 
-    let lic = LicenseVerifier::new(&user_config.license_lib_file);
+    // SAFETY:
+    // There is no way to verify that the user loaded dynamic library matches the requirements
+    // of LicenseVerifier. After all, users can load anything they want. Therefore, this is just not
+    // safe to do from the Rust compilers perspective and loading anything with non-matching fp
+    // signatures or not behaving as expected will lead to undefined behavior.
+    let lic = unsafe { LicenseVerifier::new(&user_config.license_lib_file) };
 
     let (shutdown, shutdown_control) = shutdown::new();
 

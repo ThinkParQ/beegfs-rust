@@ -271,6 +271,7 @@ mod system_ids {
     pub async fn user_ids<'a>() -> UserIDIter<'a> {
         let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
 
+        // SAFETY: See above
         unsafe {
             libc::setpwent();
         }
@@ -280,6 +281,7 @@ mod system_ids {
 
     impl Drop for UserIDIter<'_> {
         fn drop(&mut self) {
+            // SAFETY: See above
             unsafe {
                 libc::endpwent();
             }
@@ -290,6 +292,7 @@ mod system_ids {
         type Item = u32;
 
         fn next(&mut self) -> Option<Self::Item> {
+            // SAFETY: See above
             unsafe {
                 let passwd: *mut libc::passwd = libc::getpwent();
                 if passwd.is_null() {
@@ -316,6 +319,7 @@ mod system_ids {
     pub async fn group_ids<'a>() -> GroupIDIter<'a> {
         let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
 
+        // SAFETY: See above
         unsafe {
             libc::setgrent();
         }
@@ -325,6 +329,7 @@ mod system_ids {
 
     impl Drop for GroupIDIter<'_> {
         fn drop(&mut self) {
+            // SAFETY: See above
             unsafe {
                 libc::endgrent();
             }
@@ -335,6 +340,7 @@ mod system_ids {
         type Item = u32;
 
         fn next(&mut self) -> Option<Self::Item> {
+            // SAFETY: See above
             unsafe {
                 let passwd: *mut libc::group = libc::getgrent();
                 if passwd.is_null() {

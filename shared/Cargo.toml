@@ -30,3 +30,6 @@ tokio = { workspace = true, features = [
 
 [features]
 protobuf = ["dep:protobuf"]
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
