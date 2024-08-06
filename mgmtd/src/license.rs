@@ -106,7 +106,7 @@ impl LoadedLibrary {
         }
     }
 
-    fn init_cert_store(&self) -> c_uchar {
+    fn init_cert_store(&self) -> u8 {
         // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe { (self.init_cert_store)() }
     }
@@ -130,12 +130,11 @@ impl LoadedLibrary {
             path.to_str()
                 .ok_or_else(|| anyhow!("Couldn't convert cert path to C string."))?,
         )?;
-        let ppath = path.as_ptr() as *mut c_char;
 
         // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
             Ok(ExternalBuf {
-                data: (self.verify_file)(ppath),
+                data: (self.verify_file)(path.as_ptr() as *mut c_char),
                 free: self.free_returned_buffer,
             })
         }
@@ -151,11 +150,11 @@ impl LoadedLibrary {
         }
     }
 
-    fn verify_feature(&self, feature: *mut c_char) -> ExternalBuf {
+    fn verify_feature(&self, feature: LicensedFeature) -> ExternalBuf {
         // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
             ExternalBuf {
-                data: (self.verify_feature)(feature),
+                data: (self.verify_feature)(feature.as_ref().as_ptr() as *mut c_char),
                 free: self.free_returned_buffer,
             }
         }
@@ -249,8 +248,7 @@ impl LicenseVerifier {
             bail!("License verification library not loaded. Feature {feature:?} unavailable.");
         };
 
-        let pfeature = feature.as_ref().as_ptr() as *mut i8;
-        let res = VerifyFeatureResult::decode(library.verify_feature(pfeature).as_ref())?;
+        let res = VerifyFeatureResult::decode(library.verify_feature(feature).as_ref())?;
         let result = res.result();
         let message = res.message;
 
