@@ -137,7 +137,7 @@ pub(crate) async fn delete(
             }
 
             // Meta nodes have an auto-assigned target which needs to be deleted first.
-            if node.node_type() == &NodeType::Meta {
+            if node.node_type() == NodeType::Meta {
                 let assigned_groups: usize = tx.query_row_cached(
                     sql!(
                         "SELECT COUNT(*) FROM meta_buddy_groups
@@ -202,7 +202,7 @@ pub(crate) async fn delete(
                 _ => &[],
             },
             &RemoveNode {
-                node_type: *node.node_type(),
+                node_type: node.node_type(),
                 node_id: node.num_id(),
                 ack_id: "".into(),
             },

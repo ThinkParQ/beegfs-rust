@@ -16,7 +16,7 @@ pub(crate) async fn set_alias(
         .op(move |tx| {
             let entity = entity_id.resolve(tx, entity_type)?;
 
-            if entity.node_type() == &NodeType::Client {
+            if entity.node_type() == NodeType::Client {
                 bail!("Client updates are not supported")
             }
 

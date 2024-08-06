@@ -169,7 +169,7 @@ pub(crate) async fn delete(
 
             let target = target.resolve(&tx, EntityType::Target)?;
 
-            if target.node_type() != &NodeType::Storage {
+            if target.node_type() != NodeType::Storage {
                 bail!("Only storage targets can be deleted directly");
             }
 
@@ -227,7 +227,7 @@ pub(crate) fn calc_reachability_state(
     }
 }
 
-/// set consistancy state for a target
+/// Set consistency state for a target
 pub(crate) async fn set_state(
     ctx: &Context,
     req: pm::SetTargetStateRequest,
@@ -249,7 +249,7 @@ pub(crate) async fn set_state(
             db::target::update_consistency_states(
                 tx,
                 [(target.num_id().try_into()?, state)],
-                NodeTypeServer::try_from(*target.node_type())?,
+                NodeTypeServer::try_from(target.node_type())?,
             )?;
 
             Ok((target, node))
@@ -261,7 +261,7 @@ pub(crate) async fn set_state(
         .request(
             node_uid,
             &SetTargetConsistencyStates {
-                node_type: *target.node_type(),
+                node_type: target.node_type(),
                 target_ids: vec![target.num_id().try_into().unwrap()],
                 states: vec![state],
                 ack_id: "".into(),

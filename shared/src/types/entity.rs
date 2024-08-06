@@ -162,8 +162,8 @@ pub struct EntityIdSet {
 }
 
 impl EntityIdSet {
-    pub fn node_type(&self) -> &NodeType {
-        &self.legacy_id.node_type
+    pub fn node_type(&self) -> NodeType {
+        self.legacy_id.node_type
     }
 
     pub fn num_id(&self) -> u32 {
