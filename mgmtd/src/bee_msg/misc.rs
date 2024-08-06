@@ -96,7 +96,7 @@ fn load_targets_by_type(
             FROM all_targets_v
             WHERE node_type = ?1 AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
         ),
-        [node_type.sql_str()],
+        [node_type.sql_variant()],
         |row| {
             Ok(TargetOrBuddyGroup {
                 id: row.get(0)?,
@@ -126,7 +126,7 @@ fn load_buddy_groups_by_type(
                 AND p_t.free_space IS NOT NULL AND s_t.free_space IS NOT NULL
                 AND p_t.free_inodes IS NOT NULL AND s_t.free_inodes IS NOT NULL"
         ),
-        [node_type.sql_str()],
+        [node_type.sql_variant()],
         |row| {
             Ok(TargetOrBuddyGroup {
                 id: row.get(0)?,

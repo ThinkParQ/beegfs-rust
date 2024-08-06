@@ -165,7 +165,7 @@ pub(crate) async fn delete(
 
             let group = group.resolve(&tx, EntityType::BuddyGroup)?;
 
-            if group.node_type() != &NodeType::Storage {
+            if group.node_type() != NodeType::Storage {
                 bail!("Only storage buddy groups can be deleted");
             }
 

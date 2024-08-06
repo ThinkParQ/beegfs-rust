@@ -53,7 +53,7 @@ pub(crate) fn insert(tx: &Transaction, entity_type: EntityType, alias: &Alias) -
 
     let affected = tx.execute_cached(
         sql!("INSERT INTO entities (entity_type, alias) VALUES (?1, ?2)"),
-        params![entity_type.sql_str(), alias.as_ref()],
+        params![entity_type.sql_variant(), alias.as_ref()],
     )?;
 
     check_affected_rows(affected, [1])?;

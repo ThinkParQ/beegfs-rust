@@ -28,7 +28,7 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeTypeServer) -> Resu
             INNER JOIN nodes AS n USING(node_uid)
             WHERE t.node_type = ?1 AND t.node_id IS NOT NULL;"
         ),
-        [node_type.sql_str()],
+        [node_type.sql_variant()],
         |row| {
             Ok(Target {
                 target_id: row.get(0)?,
@@ -149,14 +149,14 @@ fn insert(
     let alias = if let Some(alias) = alias {
         alias
     } else {
-        format!("target_{}_{}", node_type.sql_str(), target_id).try_into()?
+        format!("target_{}_{}", node_type.sql_table_str(), target_id).try_into()?
     };
 
     let new_uid = entity::insert(tx, EntityType::Target, &alias)?;
 
     tx.execute(
         sql!("INSERT INTO targets (target_uid, node_type) VALUES (?1, ?2)"),
-        params![new_uid, node_type.sql_str()],
+        params![new_uid, node_type.sql_variant()],
     )?;
 
     tx.execute(
@@ -197,7 +197,7 @@ pub(crate) fn update_consistency_states(
 
     let mut updated = 0;
     for e in changes {
-        updated += update.execute(params![e.0, node_type.sql_str(), e.1.sql_str()])?;
+        updated += update.execute(params![e.0, node_type.sql_variant(), e.1.sql_variant()])?;
     }
 
     Ok(updated)
@@ -287,17 +287,19 @@ pub(crate) fn get_and_update_capacities(
     for i in items {
         let i = i?;
 
-        old_values.push(select.query_row(params![i.0, node_type.sql_str()], |row| {
-            Ok((
-                i.0,
-                TargetCapacities {
-                    total_space: row.get(0)?,
-                    total_inodes: row.get(1)?,
-                    free_space: row.get(2)?,
-                    free_inodes: row.get(3)?,
-                },
-            ))
-        })?);
+        old_values.push(
+            select.query_row(params![i.0, node_type.sql_variant()], |row| {
+                Ok((
+                    i.0,
+                    TargetCapacities {
+                        total_space: row.get(0)?,
+                        total_inodes: row.get(1)?,
+                        free_space: row.get(2)?,
+                        free_inodes: row.get(3)?,
+                    },
+                ))
+            })?,
+        );
 
         update.execute(params![
             i.1.total_space,
@@ -305,7 +307,7 @@ pub(crate) fn get_and_update_capacities(
             i.1.free_space,
             i.1.free_inodes,
             i.0,
-            node_type.sql_str()
+            node_type.sql_variant()
         ])?;
     }
 

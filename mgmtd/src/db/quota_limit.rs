@@ -26,9 +26,9 @@ macro_rules! select_limits {
                 "SELECT DISTINCT l.quota_id, s.value AS 'space_value', i.value AS 'inodes_value'
                 FROM quota_limits AS l
                 LEFT JOIN quota_limits AS s ON s.quota_id = l.quota_id AND s.id_type = l.id_type
-                    AND s.pool_id = l.pool_id AND s.quota_type = 'space'
+                    AND s.pool_id = l.pool_id AND s.quota_type = 1
                 LEFT JOIN quota_limits AS i ON i.quota_id = l.quota_id AND i.id_type = l.id_type
-                    AND i.pool_id = l.pool_id AND i.quota_type = 'inodes'"
+                    AND i.pool_id = l.pool_id AND i.quota_type = 2 "
             ),
             $wh
         )
@@ -49,7 +49,7 @@ pub(crate) fn with_quota_id_range(
             quota_id_range.start(),
             quota_id_range.end(),
             pool_id,
-            id_type.sql_str()
+            id_type.sql_variant()
         ],
         SpaceAndInodeLimits::from_row,
     )?)
@@ -63,7 +63,7 @@ pub(crate) fn with_quota_id_list(
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2 AND l.quota_id IN rarray(?3)"),
-        params![pool_id, id_type.sql_str(), &rarray_param(quota_ids)],
+        params![pool_id, id_type.sql_variant(), &rarray_param(quota_ids)],
         SpaceAndInodeLimits::from_row,
     )?)
 }
@@ -75,7 +75,7 @@ pub(crate) fn all(
 ) -> Result<Vec<SpaceAndInodeLimits>> {
     Ok(tx.query_map_collect(
         select_limits!("WHERE l.pool_id == ?1 AND l.id_type = ?2"),
-        params![pool_id, id_type.sql_str()],
+        params![pool_id, id_type.sql_variant()],
         SpaceAndInodeLimits::from_row,
     )?)
 }
@@ -100,16 +100,16 @@ pub(crate) fn update(
         if let Some(space) = l.2.space {
             insert_stmt.execute(params![
                 l.2.quota_id,
-                l.0.sql_str(),
-                QuotaType::Space.sql_str(),
+                l.0.sql_variant(),
+                QuotaType::Space.sql_variant(),
                 l.1,
                 space
             ])?;
         } else {
             delete_stmt.execute(params![
                 l.2.quota_id,
-                l.0.sql_str(),
-                QuotaType::Space.sql_str(),
+                l.0.sql_variant(),
+                QuotaType::Space.sql_variant(),
                 l.1
             ])?;
         }
@@ -117,16 +117,16 @@ pub(crate) fn update(
         if let Some(inodes) = l.2.inodes {
             insert_stmt.execute(params![
                 l.2.quota_id,
-                l.0.sql_str(),
-                QuotaType::Inodes.sql_str(),
+                l.0.sql_variant(),
+                QuotaType::Inodes.sql_variant(),
                 l.1,
                 inodes
             ])?;
         } else {
             delete_stmt.execute(params![
                 l.2.quota_id,
-                l.0.sql_str(),
-                QuotaType::Inodes.sql_str(),
+                l.0.sql_variant(),
+                QuotaType::Inodes.sql_variant(),
                 l.1
             ])?;
         }

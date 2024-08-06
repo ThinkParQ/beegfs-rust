@@ -54,7 +54,7 @@ impl<T> AsyncQueue<T> {
     ///
     /// Note: Even when being the only waiter, it is not guaranteed to receive the next available
     /// item. The actual queue is locked after receiving the notification, so, in rare cases,
-    /// another non-async requestor might call `try_pop()` in between and receives the item instead.
+    /// another non-async requester might call `try_pop()` in between and receives the item instead.
     /// In that case this request is queued up again.
     pub async fn pop(&self) -> T {
         loop {

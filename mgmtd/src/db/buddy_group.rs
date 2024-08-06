@@ -26,7 +26,7 @@ pub(crate) fn get_with_type(
             FROM all_buddy_groups_v
             WHERE node_type = ?1;"
         ),
-        [node_type.sql_str()],
+        [node_type.sql_variant()],
         |row| {
             Ok(BuddyGroup {
                 id: row.get(0)?,
@@ -90,7 +90,7 @@ pub(crate) fn insert(
     let group_id = if group_id == 0 {
         misc::find_new_id(
             tx,
-            &format!("{}_buddy_groups", node_type.sql_str()),
+            &format!("{}_buddy_groups", node_type.sql_table_str()),
             "group_id",
             1..=0xFFFF,
         )?
@@ -117,7 +117,7 @@ pub(crate) fn insert(
              WHERE node_type = ?1
              AND (p_target_id IN (?2, ?3) OR s_target_id IN (?2, ?3))"
         ),
-        params![node_type.sql_str(), p_target_id, s_target_id],
+        params![node_type.sql_variant(), p_target_id, s_target_id],
         |row| row.get::<_, i64>(0),
     )? > 0
     {
@@ -147,7 +147,7 @@ pub(crate) fn insert(
     // Insert generic buddy group
     tx.execute(
         sql!("INSERT INTO buddy_groups (group_uid, node_type) VALUES (?1, ?2)"),
-        params![new_uid, node_type.sql_str()],
+        params![new_uid, node_type.sql_variant()],
     )?;
 
     // Insert type specific buddy group
@@ -223,9 +223,9 @@ pub(crate) fn check_and_swap_buddies(
             WHERE (
                 (STRFTIME('%s', 'now') - STRFTIME('%s', p_n.last_contact)) >= ?1
                 OR
-                p_t.consistency == 'needs_resync'
+                p_t.consistency == 2
             )
-                AND s_t.consistency == 'good'
+                AND s_t.consistency == 1
                 AND (STRFTIME('%s', 'now') - STRFTIME('%s', s_n.last_contact)) < (?1 / 2)"
         ),
         [timeout.as_secs()],
@@ -495,7 +495,7 @@ mod test {
     #[test]
     fn prepare_storage_deletion_returns_correct_node_uids() {
         with_test_data(|tx| {
-            tx.execute("DELETE FROM nodes WHERE node_type = 'client'", [])
+            tx.execute("DELETE FROM nodes WHERE node_type = 3", [])
                 .unwrap();
 
             let res = super::prepare_storage_deletion(tx, 1).unwrap();

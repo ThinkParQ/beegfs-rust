@@ -37,7 +37,7 @@ pub(crate) fn exceeded_quota_ids(
             GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
             HAVING SUM(e.value) > COALESCE(l.value, d.value)"
         ),
-        params![id_type.sql_str(), quota_type.sql_str(), pool_id],
+        params![id_type.sql_variant(), quota_type.sql_variant(), pool_id],
         |row| row.get(0),
     )?)
 }
@@ -111,14 +111,14 @@ pub(crate) fn update(
         match d.space {
             0 => delete_stmt.execute(params![
                 d.quota_id,
-                d.id_type.sql_str(),
-                QuotaType::Space.sql_str(),
+                d.id_type.sql_variant(),
+                QuotaType::Space.sql_variant(),
                 target_id,
             ])?,
             _ => insert_stmt.execute(params![
                 d.quota_id,
-                d.id_type.sql_str(),
-                QuotaType::Space.sql_str(),
+                d.id_type.sql_variant(),
+                QuotaType::Space.sql_variant(),
                 target_id,
                 d.space
             ])?,
@@ -127,14 +127,14 @@ pub(crate) fn update(
         match d.inodes {
             0 => delete_stmt.execute(params![
                 d.quota_id,
-                d.id_type.sql_str(),
-                QuotaType::Inodes.sql_str(),
+                d.id_type.sql_variant(),
+                QuotaType::Inodes.sql_variant(),
                 target_id,
             ])?,
             _ => insert_stmt.execute(params![
                 d.quota_id,
-                d.id_type.sql_str(),
-                QuotaType::Inodes.sql_str(),
+                d.id_type.sql_variant(),
+                QuotaType::Inodes.sql_variant(),
                 target_id,
                 d.inodes
             ])?,

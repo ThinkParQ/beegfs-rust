@@ -1,5 +1,4 @@
 use super::*;
-use crate::types::SqliteExt;
 use shared::bee_msg::node::RemoveNode;
 use std::net::Ipv4Addr;
 
@@ -62,29 +61,29 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
 
             // Figure out the meta root node
             let meta_root_node = if let Some((uid, alias, num_id)) = tx
-                .query_row(
+                .query_row_cached(
                     sql!(
                         "SELECT
                         COALESCE(mn.node_uid, mn2.node_uid),
                         COALESCE(e.alias, e2.alias),
                         COALESCE(mn.node_id, mn2.node_id)
-                    FROM root_inode as ri
-                    LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
-                    LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
-                    LEFT JOIN entities AS e ON e.uid = mn.node_uid
-                    LEFT JOIN meta_buddy_groups AS mg ON mg.group_id = ri.group_id
-                    LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
-                    LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
-                    LEFT JOIN entities AS e2 ON e2.uid = mn2.node_uid"
+                        FROM root_inode as ri
+                        LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
+                        LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
+                        LEFT JOIN entities AS e ON e.uid = mn.node_uid
+                        LEFT JOIN meta_buddy_groups AS mg ON mg.group_id = ri.group_id
+                        LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
+                        LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
+                        LEFT JOIN entities AS e2 ON e2.uid = mn2.node_uid"
                     ),
                     [],
-                    |row| Ok((row.get(0)?, Alias::from_row(row, 1)?, row.get(2)?)),
+                    |row| Ok((row.get(0)?, row.get::<_, String>(1)?, row.get(2)?)),
                 )
                 .optional()?
             {
                 Some(EntityIdSet {
                     uid,
-                    alias,
+                    alias: alias.try_into()?,
                     legacy_id: LegacyId {
                         node_type: NodeType::Meta,
                         num_id,
@@ -138,7 +137,7 @@ pub(crate) async fn delete(
             }
 
             // Meta nodes have an auto-assigned target which needs to be deleted first.
-            if node.node_type() == &NodeType::Meta {
+            if node.node_type() == NodeType::Meta {
                 let assigned_groups: usize = tx.query_row_cached(
                     sql!(
                         "SELECT COUNT(*) FROM meta_buddy_groups
@@ -203,7 +202,7 @@ pub(crate) async fn delete(
                 _ => &[],
             },
             &RemoveNode {
-                node_type: *node.node_type(),
+                node_type: node.node_type(),
                 node_id: node.num_id(),
                 ack_id: "".into(),
             },

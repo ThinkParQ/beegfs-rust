@@ -83,7 +83,7 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Arc
             WHERE n.node_type = ?1
             ORDER BY nn.node_uid ASC"
         ),
-        params![node_type.sql_str()],
+        params![node_type.sql_variant()],
         NodeNic::from_row,
     )?)
 }
@@ -114,7 +114,7 @@ pub(crate) fn replace<'a>(
     for nic in nics {
         stmt.execute(params![
             node_uid,
-            nic.nic_type.sql_str(),
+            nic.nic_type.sql_variant(),
             nic.addr.octets(),
             nic.name
         ])?;

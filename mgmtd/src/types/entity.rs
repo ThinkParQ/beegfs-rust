@@ -1,4 +1,4 @@
-use super::SqliteExt;
+use super::SqliteEnumExt;
 use anyhow::{bail, Result};
 use rusqlite::{params, OptionalExtension, Params, Transaction};
 use shared::types::*;
@@ -54,7 +54,7 @@ impl ResolveEntityId for LegacyId {
     ) -> Result<Option<EntityIdSet>> {
         let sql = resolve_sql_from(entity_type);
         let sql = format!("{sql} WHERE node_type = ?1 AND id = ?2");
-        resolve_query(tx, &sql, params![self.node_type.sql_str(), self.num_id])
+        resolve_query(tx, &sql, params![self.node_type.sql_variant(), self.num_id])
     }
 }
 
@@ -102,7 +102,7 @@ fn resolve_sql_from(entity_type: EntityType) -> &'static str {
             )
         }
         EntityType::Pool => {
-            sql!("SELECT pool_uid AS uid, alias, 'storage' AS node_type, pool_id AS id FROM all_pools_v")
+            sql!("SELECT pool_uid AS uid, alias, 2 AS node_type, pool_id AS id FROM all_pools_v")
         }
     }
 }
