@@ -160,7 +160,17 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
         }
     }
 
-    // calculate exceeded quota information and create messages
+    if ctx.info.user_config.quota_enforce {
+        exceeded_quota(ctx).await?;
+    }
+
+    Ok(())
+}
+
+/// Calculate and push exceeded quota info to the nodes
+async fn exceeded_quota(ctx: &Context) -> Result<()> {
+    log::info!("Calculating and pushing exceeded quota");
+
     let mut msges: Vec<SetExceededQuota> = vec![];
     for e in ctx.db.op(db::quota_usage::all_exceeded_quota_ids).await? {
         if let Some(last) = msges.last_mut() {

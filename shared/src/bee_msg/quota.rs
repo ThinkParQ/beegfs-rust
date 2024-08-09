@@ -1,59 +1,5 @@
 use super::*;
 
-/// Fetch default quota settings for the given storage pool
-///
-/// Used by old ctl only
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct GetDefaultQuota {
-    pub pool_id: PoolId,
-}
-
-impl Msg for GetDefaultQuota {
-    const ID: MsgId = 2109;
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct GetDefaultQuotaResp {
-    pub limits: QuotaDefaultLimits,
-}
-
-impl Msg for GetDefaultQuotaResp {
-    const ID: MsgId = 2110;
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
-pub struct QuotaDefaultLimits {
-    pub user_inode_limit: u64,
-    pub user_space_limit: u64,
-    pub group_inode_limit: u64,
-    pub group_space_limit: u64,
-}
-
-/// Sets default quota limits per storage pool
-///
-/// Used by old ctl only
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct SetDefaultQuota {
-    pub pool_id: PoolId,
-    pub space: u64,
-    pub inodes: u64,
-    #[bee_serde(as = Int<i32>)]
-    pub id_type: QuotaIdType,
-}
-
-impl Msg for SetDefaultQuota {
-    const ID: MsgId = 2111;
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct SetDefaultQuotaResp {
-    pub result: i32,
-}
-
-impl Msg for SetDefaultQuotaResp {
-    const ID: MsgId = 2112;
-}
-
 /// Fetch quota info for the given type and list or range of IDs.
 ///
 /// Used by the ctl to query management and by the management to query the nodes
@@ -161,29 +107,6 @@ impl Deserializable for GetQuotaInfo {
             pool_id: PoolId::deserialize(des)?,
         })
     }
-}
-
-/// Set the quota limits for a given storage pool.
-///
-/// Used by old ctl only
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct SetQuota {
-    pub pool_id: PoolId,
-    #[bee_serde(as = Seq<false, _>)]
-    pub quota_entry: Vec<QuotaEntry>,
-}
-
-impl Msg for SetQuota {
-    const ID: MsgId = 2075;
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct SetQuotaResp {
-    pub result: i32,
-}
-
-impl Msg for SetQuotaResp {
-    const ID: MsgId = 2076;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]

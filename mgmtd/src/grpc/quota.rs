@@ -1,0 +1,395 @@
+use super::*;
+use std::cmp::Ordering;
+use std::fmt::Write;
+
+const QUOTA_NOT_ENABLED: &str = "Quota support is not enabled";
+
+pub(crate) async fn set_default_quota_limits(
+    ctx: &Context,
+    req: pm::SetDefaultQuotaLimitsRequest,
+) -> Result<pm::SetDefaultQuotaLimitsResponse> {
+    if !ctx.info.user_config.quota_enable {
+        bail!(QUOTA_NOT_ENABLED);
+    }
+
+    let pool: EntityId = required_field(req.pool)?.try_into()?;
+
+    fn update(
+        tx: &Transaction,
+        limit: i64,
+        pool_id: PoolId,
+        id_type: QuotaIdType,
+        quota_type: QuotaType,
+    ) -> Result<()> {
+        match limit.cmp(&-1) {
+            Ordering::Less => bail!("invalid {id_type} {quota_type} limit {limit}"),
+            Ordering::Equal => {
+                tx.execute_cached(
+                    sql!(
+                        "DELETE FROM quota_default_limits
+                        WHERE pool_id = ?1 AND id_type = ?2 AND quota_type = ?3"
+                    ),
+                    params![pool_id, id_type.sql_variant(), quota_type.sql_variant()],
+                )?;
+            }
+            Ordering::Greater => {
+                tx.execute_cached(
+                    sql!(
+                        "REPLACE INTO quota_default_limits (pool_id, id_type, quota_type, value)
+                        VALUES(?1, ?2, ?3, ?4)"
+                    ),
+                    params![
+                        pool_id,
+                        id_type.sql_variant(),
+                        quota_type.sql_variant(),
+                        limit
+                    ],
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    ctx.db
+        .op(move |tx| {
+            let pool = pool.resolve(tx, EntityType::Pool)?;
+            let pool_id: PoolId = pool.num_id().try_into()?;
+
+            if let Some(l) = req.user_space_limit {
+                update(tx, l, pool_id, QuotaIdType::User, QuotaType::Space)?;
+            }
+            if let Some(l) = req.user_inode_limit {
+                update(tx, l, pool_id, QuotaIdType::User, QuotaType::Inode)?;
+            }
+            if let Some(l) = req.group_space_limit {
+                update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Space)?;
+            }
+            if let Some(l) = req.group_inode_limit {
+                update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Inode)?;
+            }
+
+            Ok(())
+        })
+        .await?;
+
+    Ok(pm::SetDefaultQuotaLimitsResponse {})
+}
+
+pub(crate) async fn set_quota_limits(
+    ctx: &Context,
+    req: pm::SetQuotaLimitsRequest,
+) -> Result<pm::SetQuotaLimitsResponse> {
+    if !ctx.info.user_config.quota_enable {
+        bail!(QUOTA_NOT_ENABLED);
+    }
+
+    ctx.db
+        .op(|tx| {
+            let mut insert_stmt = tx.prepare_cached(sql!(
+                "REPLACE INTO quota_limits
+                (quota_id, id_type, quota_type, pool_id, value)
+                VALUES (?1, ?2, ?3, ?4, ?5)"
+            ))?;
+
+            let mut delete_stmt = tx.prepare_cached(sql!(
+                "DELETE FROM quota_limits
+                WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND pool_id = ?4"
+            ))?;
+
+            for lim in req.limits {
+                let id_type: QuotaIdType = lim.id_type().try_into()?;
+                let quota_id = required_field(lim.quota_id)?;
+
+                let pool: EntityId = required_field(lim.pool)?.try_into()?;
+                let pool_id = pool.resolve(tx, EntityType::Pool)?.num_id();
+
+                if let Some(l) = lim.space_limit {
+                    if l > -1 {
+                        insert_stmt.execute(params![
+                            quota_id,
+                            id_type.sql_variant(),
+                            QuotaType::Space.sql_variant(),
+                            pool_id,
+                            l
+                        ])?
+                    } else {
+                        delete_stmt.execute(params![
+                            quota_id,
+                            id_type.sql_variant(),
+                            QuotaType::Space.sql_variant(),
+                            pool_id,
+                        ])?
+                    };
+                }
+
+                if let Some(l) = lim.inode_limit {
+                    if l > -1 {
+                        insert_stmt.execute(params![
+                            quota_id,
+                            id_type.sql_variant(),
+                            QuotaType::Inode.sql_variant(),
+                            pool_id,
+                            l
+                        ])?
+                    } else {
+                        delete_stmt.execute(params![
+                            quota_id,
+                            id_type.sql_variant(),
+                            QuotaType::Inode.sql_variant(),
+                            pool_id,
+                        ])?
+                    };
+                }
+            }
+
+            Ok(())
+        })
+        .await?;
+
+    Ok(pm::SetQuotaLimitsResponse {})
+}
+
+// Fetching pages of 1M from quota_usage takes around 2100ms on my slow developer laptop (using a
+// release build). In comparison, a page size of 100k takes around 750ms which is far worse. This
+// feels like a good middle point to not let the requester wait too long and not waste too many db
+// thread cycles with overhead.
+const PAGE_LIMIT: usize = 1_000_000;
+// Need to hit a compromise between memory footprint and speed. Bigger is better if multiple
+// pages need to be fetched but doesn't matter too much if not. Each entry is roughly 50 -
+// 60 bytes, so 100k (= 5-6MB) feels fine. And it is still big enough to give a significant
+// boost to throughput for big numbers.
+const BUF_SIZE: usize = 100_000;
+
+pub(crate) async fn get_quota_limits(
+    ctx: Context,
+    req: pm::GetQuotaLimitsRequest,
+) -> Result<RespStream<pm::GetQuotaLimitsResponse>> {
+    if !ctx.info.user_config.quota_enable {
+        bail!(QUOTA_NOT_ENABLED);
+    }
+
+    let mut r#where = "TRUE ".to_string();
+
+    if let Some(id) = req.quota_id_min {
+        write!(r#where, "AND l.quota_id >= {id} ")?;
+    }
+    if let Some(id) = req.quota_id_max {
+        write!(r#where, "AND l.quota_id <= {id} ")?;
+    }
+    if req.id_type() != pb::QuotaIdType::Unspecified {
+        let t: QuotaIdType = req.id_type().try_into()?;
+        write!(r#where, "AND l.id_type = {} ", t.sql_variant())?;
+    }
+    if let Some(pool) = req.pool {
+        let pool: EntityId = pool.try_into()?;
+        let pool_id = ctx
+            .db
+            .op(move |tx| pool.resolve(tx, EntityType::Pool))
+            .await?
+            .num_id();
+
+        write!(r#where, "AND l.pool_id = {pool_id} ")?;
+    }
+
+    let sql = format!(
+        "SELECT l.quota_id, l.id_type, l.pool_id, e.alias, sp.pool_uid,
+            MAX(CASE WHEN l.quota_type = 1 THEN l.value END) AS space_limit,
+            MAX(CASE WHEN l.quota_type = 2 THEN l.value END) AS inode_limit
+        FROM quota_limits AS l
+        INNER JOIN storage_pools AS sp USING(pool_id)
+        INNER JOIN entities AS e ON e.uid = sp.pool_uid
+        WHERE {where}
+        GROUP BY l.quota_id, l.id_type, l.pool_id
+        LIMIT ?1, ?2"
+    );
+
+    let stream = resp_stream(BUF_SIZE, move |stream| async move {
+        let mut offset = 0;
+
+        loop {
+            let sql = sql.clone();
+            let entries: Vec<_> = ctx
+                .db
+                .op(move |tx| {
+                    tx.query_map_collect(&sql, [offset, PAGE_LIMIT], |row| {
+                        Ok(pm::QuotaInfo {
+                            pool: Some(pb::EntityIdSet {
+                                uid: row.get(4)?,
+                                legacy_id: Some(pb::LegacyId {
+                                    num_id: row.get(2)?,
+                                    node_type: pb::NodeType::Storage.into(),
+                                }),
+                                alias: row.get(3)?,
+                            }),
+                            id_type: QuotaIdType::from_row(row, 1)?.into_proto_i32(),
+                            quota_id: Some(row.get(0)?),
+                            space_limit: row.get(5)?,
+                            inode_limit: row.get(6)?,
+                            space_used: None,
+                            inode_used: None,
+                        })
+                    })
+                    .map_err(Into::into)
+                })
+                .await?;
+
+            let len = entries.len();
+
+            // Send the entries to the client
+            for entry in entries {
+                stream
+                    .send(pm::GetQuotaLimitsResponse {
+                        limits: Some(entry),
+                    })
+                    .await?;
+            }
+
+            // This was the last page? Then we are done
+            if len < PAGE_LIMIT {
+                return Ok(());
+            }
+
+            offset += PAGE_LIMIT;
+        }
+    });
+
+    Ok(stream)
+}
+
+pub(crate) async fn get_quota_usage(
+    ctx: Context,
+    req: pm::GetQuotaUsageRequest,
+) -> Result<RespStream<pm::GetQuotaUsageResponse>> {
+    if !ctx.info.user_config.quota_enable {
+        bail!(QUOTA_NOT_ENABLED);
+    }
+
+    let mut r#where = "TRUE ".to_string();
+    let mut having = "TRUE ".to_string();
+
+    if let Some(id) = req.quota_id_min {
+        write!(r#where, "AND u.quota_id >= {id} ")?;
+    }
+    if let Some(id) = req.quota_id_max {
+        write!(r#where, "AND u.quota_id <= {id} ")?;
+    }
+    if req.id_type() != pb::QuotaIdType::Unspecified {
+        let t: QuotaIdType = req.id_type().try_into()?;
+        write!(r#where, "AND u.id_type = {} ", t.sql_variant())?;
+    }
+    if let Some(pool) = req.pool {
+        let pool: EntityId = pool.try_into()?;
+        let pool_uid = ctx
+            .db
+            .op(move |tx| pool.resolve(tx, EntityType::Pool))
+            .await?
+            .uid;
+
+        write!(having, "AND sp.pool_uid = {pool_uid} ")?;
+    }
+    if let Some(exceeded) = req.exceeded {
+        if exceeded {
+            write!(
+                having,
+                "AND (space_used > space_limit OR inode_used > inode_limit) "
+            )?;
+        } else {
+            write!(
+                having,
+                "AND (space_used <= space_limit AND inode_used <= inode_limit) "
+            )?;
+        }
+    }
+
+    let sql = format!(
+        "SELECT u.quota_id, u.id_type, sp.pool_id, e.alias, sp.pool_uid,
+            MAX(CASE WHEN u.quota_type = 1 THEN
+                COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
+            END) AS space_limit,
+            MAX(CASE WHEN u.quota_type = 2 THEN
+                COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
+            END) AS inode_limit,
+            SUM(CASE WHEN u.quota_type = 1 THEN u.value END) AS space_used,
+            SUM(CASE WHEN u.quota_type = 2 THEN u.value END) AS inode_used
+        FROM quota_usage AS u
+        INNER JOIN storage_targets AS st USING(target_id)
+        INNER JOIN storage_pools AS sp USING(pool_id)
+        INNER JOIN entities AS e ON e.uid = sp.pool_uid
+        LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+        LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+        WHERE {where}
+        GROUP BY u.quota_id, u.id_type, st.pool_id
+        HAVING {having}
+        LIMIT ?1, ?2"
+    );
+
+    let stream = resp_stream(BUF_SIZE, move |stream| async move {
+        let mut offset = 0;
+
+        loop {
+            let sql = sql.clone();
+            let entries: Vec<_> = ctx
+                .db
+                .op(move |tx| {
+                    tx.query_map_collect(&sql, [offset, PAGE_LIMIT], |row| {
+                        Ok(pm::QuotaInfo {
+                            pool: Some(pb::EntityIdSet {
+                                uid: row.get(4)?,
+                                legacy_id: Some(pb::LegacyId {
+                                    num_id: row.get(2)?,
+                                    node_type: pb::NodeType::Storage.into(),
+                                }),
+                                alias: row.get(3)?,
+                            }),
+                            id_type: QuotaIdType::from_row(row, 1)?.into_proto_i32(),
+                            quota_id: Some(row.get(0)?),
+                            space_limit: row.get(5)?,
+                            inode_limit: row.get(6)?,
+                            space_used: row.get(7)?,
+                            inode_used: row.get(8)?,
+                        })
+                    })
+                    .map_err(Into::into)
+                })
+                .await?;
+
+            let len = entries.len();
+            let mut entries = entries.into_iter();
+
+            // If this if the first entry, include the quota refresh period. Do not send it again
+            // after to minimize message size.
+            if offset == 0 {
+                if let Some(entry) = entries.next() {
+                    stream
+                        .send(pm::GetQuotaUsageResponse {
+                            entry: Some(entry),
+                            refresh_period_s: Some(
+                                ctx.info.user_config.quota_update_interval.as_secs(),
+                            ),
+                        })
+                        .await?;
+                }
+            }
+
+            // Send all the (remaining) entries to the client
+            for entry in entries {
+                stream
+                    .send(pm::GetQuotaUsageResponse {
+                        entry: Some(entry),
+                        refresh_period_s: None,
+                    })
+                    .await?;
+            }
+
+            // This was the last page? Then we are done
+            if len < PAGE_LIMIT {
+                return Ok(());
+            }
+
+            offset += PAGE_LIMIT;
+        }
+    });
+
+    Ok(stream)
+}

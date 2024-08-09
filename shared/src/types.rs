@@ -133,8 +133,8 @@ pub enum NicType {
 impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 1);
 
 impl_enum_user_str! {NicType,
-    NicType::Ethernet => "meta",
-    NicType::Rdma => "storage",
+    NicType::Ethernet => "ethernet",
+    NicType::Rdma => "rdma",
 }
 
 #[cfg(feature = "protobuf")]
@@ -239,22 +239,36 @@ impl_enum_user_str! {QuotaIdType,
     QuotaIdType::Group => "group",
 }
 
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {QuotaIdType=> pb::QuotaIdType,
+    unspecified => pb::QuotaIdType::Unspecified,
+    QuotaIdType::User => pb::QuotaIdType::User,
+    QuotaIdType::Group => pb::QuotaIdType::Group,
+}
+
 /// Type of a quota entry as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaType {
     #[default]
     Space,
-    Inodes,
+    Inode,
 }
 
 impl_enum_bee_msg_traits!(QuotaType,
     Space => 1,
-    Inodes => 2
+    Inode => 2
 );
 
 impl_enum_user_str! {QuotaType,
     QuotaType::Space => "space",
-    QuotaType::Inodes => "inodes",
+    QuotaType::Inode => "inode",
+}
+
+#[cfg(feature = "protobuf")]
+impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
+    unspecified => pb::QuotaType::Unspecified,
+    QuotaType::Space=> pb::QuotaType::Space,
+    QuotaType::Inode => pb::QuotaType::Inode,
 }
 
 /// The BeeGFS authentication secret

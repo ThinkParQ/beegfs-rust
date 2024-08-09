@@ -24,31 +24,37 @@ pub struct Config {
     pub init: bool,
     pub import_from_v7: Option<PathBuf>,
     pub upgrade: bool,
+
+    // Connection
     pub beemsg_port: Port,
     pub grpc_port: Port,
     pub tls_enable: bool,
     pub tls_cert_file: PathBuf,
     pub tls_key_file: PathBuf,
-    pub license_cert_file: PathBuf,
-    pub license_lib_file: PathBuf,
     pub interfaces: Vec<String>,
     pub connection_limit: usize,
-    pub db_file: PathBuf,
-    pub auth_file: PathBuf,
     pub auth_enable: bool,
+    pub auth_file: PathBuf,
+
+    // Generic
     pub log_target: LogTarget,
     pub log_level: LevelFilter,
+    pub db_file: PathBuf,
     pub registration_enable: bool,
     pub node_offline_timeout: Duration,
     pub client_auto_remove_timeout: Duration,
+    pub license_cert_file: PathBuf,
+    pub license_lib_file: PathBuf,
 
     // Quota
     pub quota_enable: bool,
+    pub quota_enforce: bool,
     pub quota_update_interval: Duration,
 
     pub quota_user_system_ids_min: Option<QuotaId>,
     pub quota_user_ids_file: Option<PathBuf>,
     pub quota_user_ids_range: Option<RangeInclusive<u32>>,
+
     pub quota_group_system_ids_min: Option<QuotaId>,
     pub quota_group_ids_file: Option<PathBuf>,
     pub quota_group_ids_range: Option<RangeInclusive<u32>>,
@@ -56,8 +62,6 @@ pub struct Config {
     // Capacity pools
     pub cap_pool_meta_limits: CapPoolLimits,
     pub cap_pool_storage_limits: CapPoolLimits,
-
-    // Dynamic capacity pools
     pub cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits>,
     pub cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits>,
 }
@@ -71,32 +75,37 @@ impl Default for Config {
             init: false,
             import_from_v7: None,
             upgrade: false,
+
+            // Connection
             beemsg_port: 8008,
             grpc_port: 8010,
             tls_enable: true,
             tls_cert_file: "/etc/beegfs/cert.pem".into(),
             tls_key_file: "/etc/beegfs/key.pem".into(),
-            license_cert_file: "/etc/beegfs/license.pem".into(),
-            license_lib_file: "/opt/beegfs/lib/libbeegfs_license.so".into(),
             interfaces: vec![],
             connection_limit: 12,
-            db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
-            auth_file: "/etc/beegfs/conn.auth".into(),
             auth_enable: true,
+            auth_file: "/etc/beegfs/conn.auth".into(),
+
+            // Generic
             log_target: LogTarget::Journald,
             log_level: LevelFilter::Warn,
-
+            db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
             registration_enable: true,
             node_offline_timeout: Duration::from_secs(180),
             client_auto_remove_timeout: Duration::from_secs(30 * 60),
+            license_cert_file: "/etc/beegfs/license.pem".into(),
+            license_lib_file: "/opt/beegfs/lib/libbeegfs_license.so".into(),
 
             // Quota
             quota_enable: false,
+            quota_enforce: false,
             quota_update_interval: Duration::from_secs(30),
 
             quota_user_system_ids_min: None,
             quota_user_ids_file: None,
             quota_user_ids_range: None,
+
             quota_group_system_ids_min: None,
             quota_group_ids_file: None,
             quota_group_ids_range: None,
@@ -114,8 +123,6 @@ impl Default for Config {
                 space_low: 512 * 1024 * 1024 * 1024,
                 space_emergency: 10 * 1024 * 1024 * 1024,
             },
-
-            // Dynamic capacity pools
             cap_pool_dynamic_meta_limits: None,
             cap_pool_dynamic_storage_limits: None,
         }
@@ -124,6 +131,10 @@ impl Default for Config {
 
 impl Config {
     pub fn check_validity(&self) -> Result<()> {
+        if self.quota_enforce && !self.quota_enable {
+            bail!("Quota enforcement requires quota being enabled");
+        }
+
         self.cap_pool_meta_limits
             .check()
             .context("Capacity pool meta limits")?;
@@ -174,66 +185,6 @@ impl Config {
     hide_possible_values = false
 )]
 struct CommandLineArgs {
-    //
-    // CLI and config file args - can be filled in later from another ConfigArgs if they are
-    // still none
-    /// Sets the BeeGFS port (TCP and UDP) to listen on [default: 8008]
-    #[arg(long)]
-    beegfs_port: Option<Port>,
-    /// Sets the gRPC port (TCP) to listen on [default: 8010]
-    #[arg(long)]
-    grpc_port: Option<Port>,
-    /// Enables TLS for gRPC communication [default: true]
-    #[arg(long)]
-    tls_enable: Option<bool>,
-    /// The PEM encoded .X509 certificate file that provides the identity of the gRPC server
-    /// [default: /etc/beegfs/cert.pem]
-    #[arg(long)]
-    tls_cert_file: Option<PathBuf>,
-    /// The private key file belonging to the above certificate [default: /etc/beegfs/key.pem]
-    #[arg(long)]
-    tls_key_file: Option<PathBuf>,
-    /// The BeeGFS license certificate file [default: /etc/beegfs/license.crt]
-    #[arg(long)]
-    license_cert_file: Option<PathBuf>,
-    /// The BeeGFS license library file [default: /opt/beegfs/lib/libbeegfs_license.so]
-    #[arg(long)]
-    license_lib_file: Option<PathBuf>,
-    /// Network interfaces reported to other nodes for incoming communication
-    ///
-    /// Can be specified multiple times. If not given, all suitable interfaces
-    /// can be used.
-    #[arg(long = "interface", short = 'i')]
-    interfaces: Option<Vec<String>>,
-    /// Maximum number of outgoing connections per node [default: 12]
-    #[arg(long)]
-    connection_limit: Option<usize>,
-    /// Sqlite database file location [default: /var/lib/beegfs/mgmtd.sqlite]
-    #[arg(long)]
-    db_file: Option<PathBuf>,
-    /// Enable authentication [default: true]
-    #[arg(long)]
-    auth_enable: Option<bool>,
-    /// Authentication file location [default: /etc/beegfs/conn.auth]
-    #[arg(long)]
-    auth_file: Option<PathBuf>,
-    /// Log target [default: journald]
-    ///
-    /// Sets the logging mechanism to use.
-    #[arg(long)]
-    log_target: Option<LogTarget>,
-    /// Log level [default: warn]
-    ///
-    /// Sets the maximum level to log.
-    ///
-    /// When logging to std, the logging behavior can be fine controlled by
-    /// setting the RUST_LOG environment variable. This overwrites this
-    /// setting. See the env_logger documentation for more details:
-    ///
-    /// <https://docs.rs/env_logger/latest/env_logger/#enabling-logging>
-    #[arg(long)]
-    log_level: Option<LogLevel>,
-
     // CLI only args - we do not parse them from file and also do not update them
     /// Initialize a new installation, then quit
     #[arg(long)]
@@ -254,42 +205,119 @@ struct CommandLineArgs {
     /// Config file location
     #[arg(long, default_value = "/etc/beegfs/mgmtd.toml")]
     config_file: PathBuf,
+
+    // Connection
+    /// Sets the BeeGFS port (TCP and UDP) to listen on [default: 8008]
+    #[arg(long)]
+    beemsg_port: Option<Port>,
+    /// Sets the gRPC port (TCP) to listen on [default: 8010]
+    #[arg(long)]
+    grpc_port: Option<Port>,
+    /// Enables TLS for gRPC communication [default: true]
+    #[arg(long)]
+    tls_enable: Option<bool>,
+    /// The PEM encoded .X509 certificate file that provides the identity of the gRPC server
+    /// [default: /etc/beegfs/cert.pem]
+    #[arg(long)]
+    tls_cert_file: Option<PathBuf>,
+    /// The private key file belonging to the above certificate [default: /etc/beegfs/key.pem]
+    #[arg(long)]
+    tls_key_file: Option<PathBuf>,
+    /// Network interfaces reported to other nodes for incoming communication
+    ///
+    /// Can be specified multiple times. If not given, all suitable interfaces
+    /// can be used.
+    #[arg(long = "interface", short = 'i')]
+    interfaces: Option<Vec<String>>,
+    /// Maximum number of outgoing connections per node [default: 12]
+    #[arg(long)]
+    connection_limit: Option<usize>,
+    /// Enable authentication [default: true]
+    #[arg(long)]
+    auth_enable: Option<bool>,
+    /// Authentication file location [default: /etc/beegfs/conn.auth]
+    #[arg(long)]
+    auth_file: Option<PathBuf>,
+
+    // Generic
+    /// Log target [default: journald]
+    ///
+    /// Sets the logging mechanism to use.
+    #[arg(long)]
+    log_target: Option<LogTarget>,
+    /// Log level [default: warn]
+    ///
+    /// Sets the maximum level to log.
+    ///
+    /// When logging to std, the logging behavior can be fine controlled by
+    /// setting the RUST_LOG environment variable. This overwrites this
+    /// setting. See the env_logger documentation for more details:
+    ///
+    /// <https://docs.rs/env_logger/latest/env_logger/#enabling-logging>
+    #[arg(long)]
+    log_level: Option<LogLevel>,
+    /// Sqlite database file location [default: /var/lib/beegfs/mgmtd.sqlite]
+    #[arg(long)]
+    db_file: Option<PathBuf>,
+    /// The BeeGFS license certificate file [default: /etc/beegfs/license.crt]
+    #[arg(long)]
+    license_cert_file: Option<PathBuf>,
+    /// The BeeGFS license library file [default: /opt/beegfs/lib/libbeegfs_license.so]
+    #[arg(long)]
+    license_lib_file: Option<PathBuf>,
+
+    // Quota
+    /// Enables the quota features [default: false]
+    #[arg(long)]
+    quota_enable: Option<bool>,
+    /// Enables quota enforcement [default: false]
+    #[arg(long)]
+    quota_enforce: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
 struct ConfigFileArgs {
-    beegfs_port: Option<Port>,
+    // Connection
+    beemsg_port: Option<Port>,
     grpc_port: Option<Port>,
-    grpc_tls_enable: Option<bool>,
+    tls_enable: Option<bool>,
     tls_cert_file: Option<PathBuf>,
     tls_key_file: Option<PathBuf>,
-    license_cert_file: Option<PathBuf>,
-    license_lib_file: Option<PathBuf>,
     interfaces: Option<Vec<String>>,
     connection_limit: Option<usize>,
-    db_file: Option<PathBuf>,
     auth_enable: Option<bool>,
     auth_file: Option<PathBuf>,
+
+    // Generic
     log_target: Option<LogTarget>,
     log_level: Option<LogLevel>,
-
+    db_file: Option<PathBuf>,
     registration_enable: Option<bool>,
     #[serde(with = "integer_with_time_unit::optional")]
     node_offline_timeout: Option<Duration>,
     #[serde(with = "integer_with_time_unit::optional")]
     client_auto_remove_timeout: Option<Duration>,
+    license_cert_file: Option<PathBuf>,
+    license_lib_file: Option<PathBuf>,
+
+    // Quota
     quota_enable: Option<bool>,
+    quota_enforce: Option<bool>,
     #[serde(with = "integer_with_time_unit::optional")]
     quota_update_interval: Option<Duration>,
+
     quota_user_system_ids_min: Option<QuotaId>,
     quota_user_ids_file: Option<PathBuf>,
     quota_user_ids_range_start: Option<u32>,
     quota_user_ids_range_end: Option<u32>,
+
     quota_group_system_ids_min: Option<QuotaId>,
     quota_group_ids_file: Option<PathBuf>,
     quota_group_ids_range_start: Option<u32>,
     quota_group_ids_range_end: Option<u32>,
+
+    // Capacity pools
     cap_pool_meta_limits: Option<CapPoolLimits>,
     cap_pool_storage_limits: Option<CapPoolLimits>,
     cap_pool_dynamic_meta_limits: Option<CapPoolDynamicLimits>,
@@ -307,14 +335,16 @@ impl Config {
             self.import_from_v7 = v.into();
         }
         self.upgrade = args.upgrade;
-        if let Some(v) = args.beegfs_port {
+
+        // Connection
+        if let Some(v) = args.beemsg_port {
             self.beemsg_port = v;
-        }
-        if let Some(v) = args.tls_enable {
-            self.tls_enable = v;
         }
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;
+        }
+        if let Some(v) = args.tls_enable {
+            self.tls_enable = v;
         }
         if let Some(v) = args.tls_cert_file {
             self.tls_cert_file = v;
@@ -322,32 +352,42 @@ impl Config {
         if let Some(v) = args.tls_key_file {
             self.tls_key_file = v;
         }
-        if let Some(v) = args.license_cert_file {
-            self.license_cert_file = v;
-        }
-        if let Some(v) = args.license_lib_file {
-            self.license_lib_file = v;
-        }
         if let Some(v) = args.interfaces {
             self.interfaces = v;
         }
         if let Some(v) = args.connection_limit {
             self.connection_limit = v;
         }
-        if let Some(v) = args.db_file {
-            self.db_file = v;
+        if let Some(v) = args.auth_enable {
+            self.auth_enable = v;
         }
         if let Some(v) = args.auth_file {
             self.auth_file = v;
         }
-        if let Some(v) = args.auth_enable {
-            self.auth_enable = v;
-        }
+
+        // Generic
         if let Some(v) = args.log_target {
             self.log_target = v;
         }
         if let Some(v) = args.log_level {
             self.log_level = v.into();
+        }
+        if let Some(v) = args.db_file {
+            self.db_file = v;
+        }
+        if let Some(v) = args.license_cert_file {
+            self.license_cert_file = v;
+        }
+        if let Some(v) = args.license_lib_file {
+            self.license_lib_file = v;
+        }
+
+        // Quota
+        if let Some(v) = args.quota_enable {
+            self.quota_enable = v;
+        }
+        if let Some(v) = args.quota_enforce {
+            self.quota_enforce = v;
         }
     }
 
@@ -356,13 +396,14 @@ impl Config {
     /// Non-Option parameters in this struct are only updates if they are `Some` in
     /// [[ConfigFileArgs]], otherwise they were not given and shall stay as they are.
     fn update_from_config_file_args(&mut self, args: ConfigFileArgs) {
-        if let Some(v) = args.beegfs_port {
+        // Connection
+        if let Some(v) = args.beemsg_port {
             self.beemsg_port = v;
         }
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;
         }
-        if let Some(v) = args.grpc_tls_enable {
+        if let Some(v) = args.tls_enable {
             self.tls_enable = v;
         }
         if let Some(v) = args.tls_cert_file {
@@ -371,20 +412,11 @@ impl Config {
         if let Some(v) = args.tls_key_file {
             self.tls_key_file = v;
         }
-        if let Some(v) = args.license_cert_file {
-            self.license_cert_file = v;
-        }
-        if let Some(v) = args.license_lib_file {
-            self.license_lib_file = v;
-        }
         if let Some(v) = args.interfaces {
             self.interfaces = v;
         }
         if let Some(v) = args.connection_limit {
             self.connection_limit = v;
-        }
-        if let Some(v) = args.db_file {
-            self.db_file = v;
         }
         if let Some(v) = args.auth_enable {
             self.auth_enable = v;
@@ -392,13 +424,17 @@ impl Config {
         if let Some(v) = args.auth_file {
             self.auth_file = v;
         }
+
+        // Generic
         if let Some(v) = args.log_target {
             self.log_target = v;
         }
         if let Some(v) = args.log_level {
             self.log_level = v.into();
         }
-
+        if let Some(v) = args.db_file {
+            self.db_file = v;
+        }
         if let Some(v) = args.registration_enable {
             self.registration_enable = v;
         }
@@ -408,8 +444,19 @@ impl Config {
         if let Some(v) = args.client_auto_remove_timeout {
             self.client_auto_remove_timeout = v;
         }
+        if let Some(v) = args.license_cert_file {
+            self.license_cert_file = v;
+        }
+        if let Some(v) = args.license_lib_file {
+            self.license_lib_file = v;
+        }
+
+        // Quota
         if let Some(v) = args.quota_enable {
             self.quota_enable = v;
+        }
+        if let Some(v) = args.quota_enforce {
+            self.quota_enforce = v;
         }
         if let Some(v) = args.quota_update_interval {
             self.quota_update_interval = v;
@@ -437,6 +484,7 @@ impl Config {
             self.quota_group_ids_range = Some(s..=e);
         }
 
+        // Capacity pools
         if let Some(v) = args.cap_pool_meta_limits {
             self.cap_pool_meta_limits = v;
         }

@@ -109,5 +109,5 @@ impl_enum_sqlite! {QuotaIdType,
 
 impl_enum_sqlite! {QuotaType,
     QuotaType::Space => 1,
-    QuotaType::Inodes => 2,
+    QuotaType::Inode => 2,
 }

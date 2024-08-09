@@ -39,7 +39,7 @@ pub(crate) async fn get(
     );
 
     let targets_f = move |row: &rusqlite::Row| {
-        let node_type = i32::from(pb::NodeType::from(NodeType::from_row(row, 3)?));
+        let node_type = NodeType::from_row(row, 3)?.into_proto_i32();
 
         Ok(pm::get_targets_response::Target {
             id: Some(pb::EntityIdSet {
@@ -75,15 +75,13 @@ pub(crate) async fn get(
             reachability_state: calc_reachability_state(
                 Duration::from_secs(row.get(11)?),
                 node_offline_timeout,
-            ) as i32,
-            consistency_state: pb::ConsistencyState::from(TargetConsistencyState::from_row(
-                row, 10,
-            )?)
+            )
             .into(),
+            consistency_state: TargetConsistencyState::from_row(row, 10)?.into_proto_i32(),
             last_contact_s: row.get(11)?,
             free_space_bytes: row.get(12)?,
             free_inodes: row.get(13)?,
-            cap_pool: pb::CapacityPool::Unspecified as i32,
+            cap_pool: pb::CapacityPool::Unspecified.into(),
             total_space_bytes: row.get(14)?,
             total_inodes: row.get(15)?,
         })

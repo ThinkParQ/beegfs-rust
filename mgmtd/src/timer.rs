@@ -2,6 +2,7 @@
 
 use crate::context::Context;
 use crate::db::{self};
+use crate::license::LicensedFeature;
 use crate::quota::update_and_distribute;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::log_error_chain;
@@ -17,8 +18,15 @@ pub(crate) fn start_tasks(ctx: Context, shutdown: Shutdown) {
     // state changed ?
 
     tokio::spawn(delete_stale_clients(ctx.clone(), shutdown.clone()));
-    tokio::spawn(update_quota(ctx.clone(), shutdown.clone()));
-    tokio::spawn(switchover(ctx, shutdown));
+    tokio::spawn(switchover(ctx.clone(), shutdown.clone()));
+
+    if ctx.info.user_config.quota_enable {
+        if let Err(err) = ctx.lic.verify_feature(LicensedFeature::Quota) {
+            log::error!("Quota is enabled in the config, but the feature could not be verified. Continuing without quota support: {err}");
+        } else {
+            tokio::spawn(update_quota(ctx, shutdown));
+        }
+    }
 }
 
 /// Deletes client nodes from the database which haven't responded for the configured time.
@@ -51,11 +59,9 @@ async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
 async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
     loop {
-        if ctx.info.user_config.quota_enable {
-            match update_and_distribute(&ctx).await {
-                Ok(_) => {}
-                Err(err) => log_error_chain!(err, "Updating quota failed"),
-            }
+        match update_and_distribute(&ctx).await {
+            Ok(_) => {}
+            Err(err) => log_error_chain!(err, "Updating quota failed"),
         }
 
         tokio::select! {

@@ -30,13 +30,9 @@ pub(crate) async fn get(
                 ),
                 [],
                 |row| {
-                    let node_type = i32::from(pb::NodeType::from(NodeType::from_row(row, 3)?));
-                    let p_con_state = i32::from(pb::ConsistencyState::from(
-                        TargetConsistencyState::from_row(row, 13)?,
-                    ));
-                    let s_con_state = i32::from(pb::ConsistencyState::from(
-                        TargetConsistencyState::from_row(row, 14)?,
-                    ));
+                    let node_type = NodeType::from_row(row, 3)?.into_proto_i32();
+                    let p_con_state = TargetConsistencyState::from_row(row, 13)?.into_proto_i32();
+                    let s_con_state = TargetConsistencyState::from_row(row, 14)?.into_proto_i32();
 
                     Ok(pm::get_buddy_groups_response::BuddyGroup {
                         id: Some(pb::EntityIdSet {

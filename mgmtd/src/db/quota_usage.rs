@@ -128,13 +128,13 @@ pub(crate) fn update(
             0 => delete_stmt.execute(params![
                 d.quota_id,
                 d.id_type.sql_variant(),
-                QuotaType::Inodes.sql_variant(),
+                QuotaType::Inode.sql_variant(),
                 target_id,
             ])?,
             _ => insert_stmt.execute(params![
                 d.quota_id,
                 d.id_type.sql_variant(),
-                QuotaType::Inodes.sql_variant(),
+                QuotaType::Inode.sql_variant(),
                 target_id,
                 d.inodes
             ])?,
@@ -195,7 +195,7 @@ mod test {
                     tx,
                     PoolOrTargetId::PoolID(1),
                     QuotaIdType::User,
-                    QuotaType::Inodes,
+                    QuotaType::Inode,
                 )
                 .unwrap()
                 .len()
