@@ -43,7 +43,7 @@ pub(crate) async fn get(ctx: &Context, _req: pm::GetPoolsRequest) -> Result<pm::
                             uid: row.get(0)?,
                             legacy_id: Some(pb::LegacyId {
                                 num_id: row.get(1)?,
-                                node_type: pb::NodeType::Storage as i32,
+                                node_type: pb::NodeType::Storage.into(),
                             }),
                             alias: row.get(2)?,
                         },
@@ -67,7 +67,7 @@ pub(crate) async fn get(ctx: &Context, _req: pm::GetPoolsRequest) -> Result<pm::
                             uid: row.get(0)?,
                             legacy_id: Some(pb::LegacyId {
                                 num_id: row.get(1)?,
-                                node_type: pb::NodeType::Storage as i32,
+                                node_type: pb::NodeType::Storage.into(),
                             }),
                             alias: row.get(2)?,
                         },

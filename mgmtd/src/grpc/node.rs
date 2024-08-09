@@ -18,7 +18,7 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
                     ),
                     [],
                     |row| {
-                        let nic_type = NicType::from_row(row, 3)? as i32;
+                        let nic_type = NicType::from_row(row, 3)?.into_proto_i32();
 
                         Ok((
                             row.get(0)?,
@@ -39,7 +39,7 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
                 sql!("SELECT node_uid, node_id, node_type, alias, port FROM all_nodes_v"),
                 [],
                 |row| {
-                    let node_type = i32::from(pb::NodeType::from(NodeType::from_row(row, 2)?));
+                    let node_type = NodeType::from_row(row, 2)?.into_proto_i32();
 
                     let node = pb::EntityIdSet {
                         uid: row.get(0)?,

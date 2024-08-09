@@ -121,7 +121,7 @@ mod test {
             assert_eq!(None, defaults.group_inodes_limit);
 
             super::delete(tx, 1, QuotaIdType::User, QuotaType::Space).unwrap();
-            super::upsert(tx, 1, QuotaIdType::User, QuotaType::Inodes, 2000).unwrap();
+            super::upsert(tx, 1, QuotaIdType::User, QuotaType::Inode, 2000).unwrap();
 
             let defaults = super::get_with_pool_id(tx, 1).unwrap();
 

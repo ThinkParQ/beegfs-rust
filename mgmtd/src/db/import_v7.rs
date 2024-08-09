@@ -345,7 +345,7 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
     check_affected_rows(affected, [1])?;
     let affected = stmt.execute(params![
         QuotaIdType::User.sql_variant(),
-        QuotaType::Inodes.sql_variant(),
+        QuotaType::Inode.sql_variant(),
         pool_id,
         limits.user_inode_limit
     ])?;
@@ -359,7 +359,7 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
     check_affected_rows(affected, [1])?;
     let affected = stmt.execute(params![
         QuotaIdType::Group.sql_variant(),
-        QuotaType::Inodes.sql_variant(),
+        QuotaType::Inode.sql_variant(),
         pool_id,
         limits.group_space_limit,
     ])?;
@@ -404,7 +404,7 @@ fn quota_limits(
             insert_stmt.execute(params![
                 l.id,
                 l.id_type.sql_variant(),
-                QuotaType::Inodes.sql_variant(),
+                QuotaType::Inode.sql_variant(),
                 pool_id,
                 l.inodes
             ])?;

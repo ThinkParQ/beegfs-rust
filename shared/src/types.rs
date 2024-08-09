@@ -133,8 +133,8 @@ pub enum NicType {
 impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 1);
 
 impl_enum_user_str! {NicType,
-    NicType::Ethernet => "meta",
-    NicType::Rdma => "storage",
+    NicType::Ethernet => "ethernet",
+    NicType::Rdma => "rdma",
 }
 
 #[cfg(feature = "protobuf")]
@@ -244,17 +244,17 @@ impl_enum_user_str! {QuotaIdType,
 pub enum QuotaType {
     #[default]
     Space,
-    Inodes,
+    Inode,
 }
 
 impl_enum_bee_msg_traits!(QuotaType,
     Space => 1,
-    Inodes => 2
+    Inode => 2
 );
 
 impl_enum_user_str! {QuotaType,
     QuotaType::Space => "space",
-    QuotaType::Inodes => "inodes",
+    QuotaType::Inode => "inode",
 }
 
 /// The BeeGFS authentication secret

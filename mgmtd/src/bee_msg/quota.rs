@@ -77,13 +77,13 @@ impl Handler for SetDefaultQuota {
                         tx,
                         self.pool_id,
                         self.id_type,
-                        QuotaType::Inodes,
+                        QuotaType::Inode,
                     )?,
                     n => db::quota_default_limit::upsert(
                         tx,
                         self.pool_id,
                         self.id_type,
-                        QuotaType::Inodes,
+                        QuotaType::Inode,
                         n,
                     )?,
                 };

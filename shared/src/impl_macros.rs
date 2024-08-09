@@ -85,5 +85,11 @@ macro_rules! impl_enum_protobuf_traits {
                 }
             }
         }
+
+        impl $type {
+            pub fn into_proto_i32(self) -> i32 {
+                <$proto_type>::from(self).into()
+            }
+        }
     };
 }

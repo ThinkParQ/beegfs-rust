@@ -118,7 +118,7 @@ pub(crate) fn update(
             insert_stmt.execute(params![
                 l.2.quota_id,
                 l.0.sql_variant(),
-                QuotaType::Inodes.sql_variant(),
+                QuotaType::Inode.sql_variant(),
                 l.1,
                 inodes
             ])?;
@@ -126,7 +126,7 @@ pub(crate) fn update(
             delete_stmt.execute(params![
                 l.2.quota_id,
                 l.0.sql_variant(),
-                QuotaType::Inodes.sql_variant(),
+                QuotaType::Inode.sql_variant(),
                 l.1
             ])?;
         }
