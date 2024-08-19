@@ -130,6 +130,8 @@ pub struct Heartbeat {
     pub port_tcp_unused: Port,
     #[bee_serde(as = Seq<false, _>)]
     pub nic_list: Vec<Nic>,
+    #[bee_serde(as = CStr<0>)]
+    pub machine_uuid: Vec<u8>,
 }
 
 impl Msg for Heartbeat {
@@ -160,6 +162,8 @@ pub struct RegisterNode {
     /// This is transmitted from other nodes but we decided to just use one port for TCP and UDP in
     /// the future
     pub port_tcp_unused: Port,
+    #[bee_serde(as = CStr<0>)]
+    pub machine_uuid: Vec<u8>,
 }
 
 impl Msg for RegisterNode {

@@ -88,6 +88,8 @@ CREATE TABLE nodes (
     entity_type INTEGER GENERATED ALWAYS AS (1)
         REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
+    machine_uuid TEXT,
+
     -- Required to allow being referenced on a foreign key. Also creates an index on both fields.
     -- node_type being first is intended as the index can then be used for selects filtered
     -- by node_type.

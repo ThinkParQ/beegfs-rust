@@ -17,8 +17,8 @@ pub enum LicensedFeature {
     Flex,
 }
 
-impl AsRef<CStr> for LicensedFeature {
-    fn as_ref(&self) -> &CStr {
+impl LicensedFeature {
+    fn as_cstr(&self) -> &CStr {
         match self {
             LicensedFeature::Mirroring => c"io.beegfs.mirroring",
             LicensedFeature::HA => c"io.beegfs.ha",
@@ -31,6 +31,9 @@ impl AsRef<CStr> for LicensedFeature {
         }
     }
 }
+
+const NUM_MACHINES_PREFIX: &str = "io.beegfs.numservers.";
+const NUM_MACHINES_UNLIMITED: &str = "unlimited";
 
 /// Encapsulates a C string buffer and provides methods for easy access to the data inside the
 /// buffer and automatic deallocation.
@@ -154,7 +157,7 @@ impl LoadedLibrary {
         // SAFETY: Being valid fp and correct signatures assured by [`Self::new()`].
         unsafe {
             ExternalBuf {
-                data: (self.verify_feature)(feature.as_ref().as_ptr() as *mut c_char),
+                data: (self.verify_feature)(feature.as_cstr().as_ptr() as *mut c_char),
                 free: self.free_returned_buffer,
             }
         }
@@ -237,6 +240,34 @@ impl LicenseVerifier {
 
         let cert = GetCertDataResult::decode(library.get_loaded_cert_data().as_ref())?;
         Ok(cert)
+    }
+
+    /// Fetches the number of machines the license is valid for
+    pub fn get_num_machines(&self) -> Result<u32> {
+        let cert_data = match self
+            .get_cert_data()
+            .and_then(|e| e.data.ok_or_else(|| anyhow!("No certificate loaded")))
+        {
+            Ok(cert_data) => cert_data,
+            Err(err) => {
+                log::debug!(
+                    "Could not obtain certificate data, defaulting to unlimited machines: {err:#}"
+                );
+                return Ok(u32::MAX);
+            }
+        };
+
+        for name in cert_data.dns_names {
+            if let Some(suffix) = name.strip_prefix(NUM_MACHINES_PREFIX) {
+                if suffix == NUM_MACHINES_UNLIMITED {
+                    return Ok(u32::MAX);
+                } else {
+                    return Ok(suffix.parse::<u32>()?);
+                }
+            }
+        }
+
+        bail!("Number of licensed servers not specified in certificate")
     }
 
     /// Verifies a specific licensed feature

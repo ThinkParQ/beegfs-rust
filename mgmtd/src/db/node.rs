@@ -140,14 +140,63 @@ pub(crate) fn insert(
     Ok((uid, node_id))
 }
 
-/// Updates a node in the database.
-pub(crate) fn update(tx: &Transaction, node_uid: Uid, new_port: Port) -> Result<()> {
+/// Updates a node in the database
+///
+/// This function is meant to be called whenever a node registers or sends a heartbeat.
+pub(crate) fn update(
+    tx: &Transaction,
+    node_uid: Uid,
+    new_port: Port,
+    new_machine_uuid: Option<&str>,
+) -> Result<()> {
     let affected = tx.execute_cached(
-        sql!("UPDATE nodes SET port = ?1, last_contact = DATETIME('now') WHERE node_uid = ?2"),
-        params![new_port, node_uid],
+        sql!(
+            "UPDATE nodes SET port = ?1, last_contact = DATETIME('now'), machine_uuid = ?2
+            WHERE node_uid = ?3"
+        ),
+        params![new_port, new_machine_uuid, node_uid],
     )?;
 
     check_affected_rows(affected, [1])
+}
+
+/// Counts the number of currently registered distinct machines.
+///
+/// This function is meant to be called during node registration to give an indication whether nodes
+/// can still register or the licensed machine limit has been reached.
+///
+/// Nodes are only counted if:
+///   - They have a machine UUID registered.
+///   - Their node type is either `NodeType::Meta` or `NodeType::Storage`.
+///   - Their UUID is different from the one we are trying to register, because multiple services on
+///     the same machine only count once according to the EULA. For the same reason, only nodes with
+///     distinct UUIDs are counted.
+///   - Their node ID is different from the one optionally supplied as an argument, because nodes
+///     should still be able to move between machines.
+///   - They have been active within the last five minutes. This is to prevent stale and no longer
+///     used nodes from blocking other nodes from (re-registering).
+///
+/// # Return value
+/// Returns the number of currently registered distinct machines if successful.
+pub(crate) fn count_machines(
+    tx: &Transaction,
+    machine_uuid: &str,
+    node_uid: Option<Uid>,
+) -> Result<u32> {
+    tx.query_row(
+        sql!(
+            "SELECT COUNT(DISTINCT machine_uuid) FROM nodes
+            WHERE
+                machine_uuid IS NOT NULL
+                AND machine_uuid != ?1
+                AND node_uid IS NOT ?2
+                AND node_type IN (1, 2)
+                AND UNIXEPOCH(DATETIME('now')) - UNIXEPOCH(last_contact) < 300"
+        ),
+        params![machine_uuid, node_uid],
+        |row| row.get(0),
+    )
+    .map_err(|e| anyhow!(e))
 }
 
 /// Updates the `last_contact` time for all the nodes belonging to the passed targets.

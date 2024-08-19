@@ -86,6 +86,7 @@ impl HandleWithResponse for Heartbeat {
                 is_root_mirrored: self.is_root_mirrored,
                 port: self.port,
                 port_tcp_unused: self.port_tcp_unused,
+                machine_uuid: self.machine_uuid,
             },
             ctx,
         )
@@ -136,6 +137,7 @@ impl HandleWithResponse for HeartbeatRequest {
             port: ctx.info.user_config.beemsg_port,
             port_tcp_unused: ctx.info.user_config.beemsg_port,
             nic_list: nics,
+            machine_uuid: vec![], // No need for the other nodes to know machine UUIDs
         };
 
         Ok(resp)
@@ -159,6 +161,14 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
     let msg2 = msg.clone();
     let info = ctx.info;
 
+    let licensed_machines = match ctx.lic.get_num_machines() {
+        Ok(n) => n,
+        Err(e) => {
+            log::warn!("Error while parsing number of licensed servers: {}", e);
+            0
+        }
+    };
+
     let (node_uid, node_id, meta_root, is_new) = ctx
         .db
         .op(move |tx| {
@@ -170,9 +180,26 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
                 try_resolve_num_id(tx, EntityType::Node, msg.node_type, msg.node_id)?
             };
 
+            let machine_uuid = if matches!(msg.node_type, NodeType::Meta | NodeType::Storage)
+                && !msg.machine_uuid.is_empty()
+            {
+                Some(std::str::from_utf8(&msg.machine_uuid)?)
+            } else {
+                None
+            };
+
+            if let Some(machine_uuid) = machine_uuid {
+                if licensed_machines > 0
+                    && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
+                        >= licensed_machines
+                {
+                    bail!("Licensed server limit reached. Node registration denied.");
+                }
+            }
+
             let (node_id, node_uid) = if let Some(ref node) = node {
                 // Existing node, update data
-                db::node::update(tx, node.uid, msg.port)?;
+                db::node::update(tx, node.uid, msg.port, machine_uuid)?;
 
                 (node.num_id(), node.uid)
             } else {
@@ -308,6 +335,7 @@ client version < 8.0)"
             port: msg.port,
             port_tcp_unused: msg.port,
             nic_list: msg2.nics,
+            machine_uuid: vec![], // No need for the other nodes to know machine UUIDs
         },
     )
     .await;
