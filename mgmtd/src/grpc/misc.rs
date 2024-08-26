@@ -3,7 +3,7 @@ use shared::bee_msg::node::*;
 
 /// Sets the entity alias for any entity
 pub(crate) async fn set_alias(
-    ctx: &Context,
+    ctx: Context,
     req: pm::SetAliasRequest,
 ) -> Result<pm::SetAliasResponse> {
     // Parse proto msg
@@ -58,7 +58,7 @@ pub(crate) async fn set_alias(
             .await?;
 
         notify_nodes(
-            ctx,
+            &ctx,
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
             &Heartbeat {
                 instance_version: 0,

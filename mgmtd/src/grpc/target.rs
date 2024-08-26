@@ -19,7 +19,7 @@ impl CapacityInfo for &pm::get_targets_response::Target {
 
 /// Delivers the list of targets
 pub(crate) async fn get(
-    ctx: &Context,
+    ctx: Context,
     _req: pm::GetTargetsRequest,
 ) -> Result<pm::GetTargetsResponse> {
     let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
@@ -154,7 +154,7 @@ pub(crate) async fn get(
 
 /// Deletes a target
 pub(crate) async fn delete(
-    ctx: &Context,
+    ctx: Context,
     req: pm::DeleteTargetRequest,
 ) -> Result<pm::DeleteTargetResponse> {
     let target: EntityId = required_field(req.target)?.try_into()?;
@@ -197,7 +197,7 @@ pub(crate) async fn delete(
         log::info!("Target deleted: {target}");
 
         notify_nodes(
-            ctx,
+            &ctx,
             &[NodeType::Meta],
             &RefreshCapacityPools { ack_id: "".into() },
         )
@@ -227,7 +227,7 @@ pub(crate) fn calc_reachability_state(
 
 /// Set consistency state for a target
 pub(crate) async fn set_state(
-    ctx: &Context,
+    ctx: Context,
     req: pm::SetTargetStateRequest,
 ) -> Result<pm::SetTargetStateResponse> {
     let state: TargetConsistencyState = req.consistency_state().try_into()?;
@@ -272,7 +272,7 @@ pub(crate) async fn set_state(
     }
 
     notify_nodes(
-        ctx,
+        &ctx,
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &RefreshTargetStates { ack_id: "".into() },
     )

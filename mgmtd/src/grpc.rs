@@ -37,6 +37,12 @@ pub(crate) fn required_field<T>(f: Option<T>) -> Result<T> {
     f.ok_or_else(|| ::anyhow::anyhow!("missing required {} field", std::any::type_name::<T>()))
 }
 
+fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<(), Status> {
+    ctx.lic
+        .verify_feature(feature)
+        .map_err(|e| Status::new(Code::Unauthenticated, e.to_string()))
+}
+
 /// Serve gRPC requests on the `grpc_port` extracted from the config
 pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
     let builder = Server::builder();
@@ -141,344 +147,183 @@ where
     Box::pin(stream)
 }
 
-/// gRPC server implementation
+/// Autoimplements a gRPC handle function as expected by impl pm::management_server::Management
+/// (which itself is auto-defined by the protobuf definition) for ManagementService, forwards to the
+/// actual handler function and handles errors returned from the it. One call of the macro
+/// implements one function. Must be called from within the impl block below (see there for usage
+/// examples).
+///
+/// The handler must return anyhow::Result<$resp_msg> or in case of a stream,
+/// anyhow::Result<$resp_stream>. If the result is an error and can be downcasted to
+/// tonic::Status, it will be sent to the client as given. This can be used to control which gRPC
+/// status to send back. For any other error, a generic Code::Internal will be sent back. Finally,
+/// if the Result is Ok, a tonic::Response containing will be returned.
+macro_rules! impl_handler {
+    // Implements the function for a response stream RPC.
+    ($impl_fn:ident => $handle_fn:path, $req_msg:path => STREAM($resp_stream:ident, $resp_msg:path), $ctx_str:literal) => {
+        // A response stream RPC requires to define a `<MsgName>Stream` associated type and use this
+        // as the response for the handler.
+        type $resp_stream = RespStream<$resp_msg>;
+
+        impl_handler!(@INNER $impl_fn => $handle_fn, $req_msg => Self::$resp_stream, $ctx_str);
+    };
+
+    // Implements the function for a unary RPC.
+    ($impl_fn:ident => $handle_fn:path, $req_msg:path => $resp_msg:path, $ctx_str:literal) => {
+        impl_handler!(@INNER $impl_fn => $handle_fn, $req_msg => $resp_msg, $ctx_str);
+    };
+
+    // Generates the actual function. Note that we implement the `async fn` manually to avoid having
+    // to use `#[tonic::async_trait]`. This is exactly how that macro does it in the background, but
+    // we can't rely on that here within this macro as attribute macros are evaluated first.
+    (@INNER $impl_fn:ident => $handle_fn:path, $req_msg:path => $resp_msg:path, $ctx_str:literal) => {
+        fn $impl_fn<'a, 'async_trait>(
+            &'a self,
+            req: Request<$req_msg>,
+        ) -> Pin<Box<dyn Future<Output = Result<Response<$resp_msg>, Status>> + Send + 'async_trait>>
+        where
+            'a: 'async_trait,
+            Self: 'async_trait,
+        {
+            Box::pin(async move {
+                let res = $handle_fn(self.ctx.clone(), req.into_inner()).await;
+
+                match res {
+                    Ok(res) => Ok(Response::new(res)),
+                    Err(err) => {
+                        let msg = error_chain!(err, concat!($ctx_str, " failed"));
+                        log::error!("{msg}");
+
+                        match err.downcast::<Status>() {
+                            // If handle_fn returned a gRPC status as error, send it. This allows the
+                            // function to control the error response
+                            Ok(status) => Err(status),
+                            // If it is any other error, send a generic gRPC error
+                            Err(err) => Err(Status::new(Code::Internal, format!("{err:#}"))),
+                        }
+                    }
+                }
+            })
+        }
+    };
+}
+
+/// Management gRPC service implementation struct
 #[derive(Debug)]
 pub(crate) struct ManagementService {
     pub ctx: Context,
 }
 
-fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<(), Status> {
-    ctx.lic
-        .verify_feature(feature)
-        .map_err(|e| Status::new(Code::Unauthenticated, e.to_string()))
-}
-
-/// gRPC server implementation
-#[tonic::async_trait]
+/// Implementation of the management gRPC service. Use the impl_handler! macro to implement each
+/// function.
+///
+/// However, if a function should be implemented manually using an async fn, re-add the
+/// #[tonic::async_trait] macro (or it will not work).
 impl pm::management_server::Management for ManagementService {
-    async fn set_alias(
-        &self,
-        req: Request<pm::SetAliasRequest>,
-    ) -> Result<Response<pm::SetAliasResponse>, Status> {
-        let res = misc::set_alias(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Setting alias failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    // Example: Implement pm::management_server::Management::set_alias using the impl_handler macro
+    impl_handler! {
+        // <the function to implement (as defined by the trait)> => <the actual, custom handler function to call>,
+        set_alias => misc::set_alias,
+        // <request message passed to the fn impl (as defined by the trait)> => <response message,
+        // returned by the fn impl (as defined by the trait)>,
+        pm::SetAliasRequest => pm::SetAliasResponse,
+        // <context string for logged errors>
+        "Set alias"
     }
 
-    async fn get_nodes(
-        &self,
-        req: Request<pm::GetNodesRequest>,
-    ) -> Result<Response<pm::GetNodesResponse>, Status> {
-        let res = node::get(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting nodes failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    impl_handler! {
+        get_nodes => node::get,
+        pm::GetNodesRequest => pm::GetNodesResponse,
+        "Get nodes"
+    }
+    impl_handler! {
+        delete_node => node::delete,
+        pm::DeleteNodeRequest => pm::DeleteNodeResponse,
+        "Delete node"
     }
 
-    async fn delete_node(
-        &self,
-        req: Request<pm::DeleteNodeRequest>,
-    ) -> Result<Response<pm::DeleteNodeResponse>, Status> {
-        let res = node::delete(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Deleting node failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    impl_handler! {
+        get_targets => target::get,
+        pm::GetTargetsRequest => pm::GetTargetsResponse,
+        "Get targets"
+    }
+    impl_handler! {
+        delete_target => target::delete,
+        pm::DeleteTargetRequest => pm::DeleteTargetResponse,
+        "Delete target"
+    }
+    impl_handler! {
+        set_target_state => target::set_state,
+        pm::SetTargetStateRequest => pm::SetTargetStateResponse,
+        "Set target state"
     }
 
-    async fn get_targets(
-        &self,
-        req: Request<pm::GetTargetsRequest>,
-    ) -> Result<Response<pm::GetTargetsResponse>, Status> {
-        let res = target::get(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting targets failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    impl_handler! {
+        get_pools => pool::get,
+        pm::GetPoolsRequest => pm::GetPoolsResponse,
+        "Get pools"
+    }
+    impl_handler! {
+        create_pool => pool::create,
+        pm::CreatePoolRequest => pm::CreatePoolResponse,
+        "Create pool"
+    }
+    impl_handler! {
+        assign_pool => pool::assign,
+        pm::AssignPoolRequest => pm::AssignPoolResponse,
+        "Assign pool"
+    }
+    impl_handler! {
+        delete_pool => pool::delete,
+        pm::DeletePoolRequest => pm::DeletePoolResponse,
+        "Delete pool"
     }
 
-    async fn delete_target(
-        &self,
-        req: Request<pm::DeleteTargetRequest>,
-    ) -> Result<Response<pm::DeleteTargetResponse>, Status> {
-        let res = target::delete(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Deleting target failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    impl_handler! {
+        get_buddy_groups => buddy_group::get,
+        pm::GetBuddyGroupsRequest => pm::GetBuddyGroupsResponse,
+        "Get buddy groups"
+    }
+    impl_handler! {
+        create_buddy_group => buddy_group::create,
+        pm::CreateBuddyGroupRequest => pm::CreateBuddyGroupResponse,
+        "Create buddy group"
+    }
+    impl_handler! {
+        delete_buddy_group => buddy_group::delete,
+        pm::DeleteBuddyGroupRequest => pm::DeleteBuddyGroupResponse,
+        "Delete buddy group"
+    }
+    impl_handler! {
+        mirror_root_inode => buddy_group::mirror_root_inode,
+        pm::MirrorRootInodeRequest => pm::MirrorRootInodeResponse,
+        "Mirror root inode"
     }
 
-    async fn set_target_state(
-        &self,
-        req: Request<pm::SetTargetStateRequest>,
-    ) -> Result<Response<pm::SetTargetStateResponse>, Status> {
-        let res = target::set_state(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Set target state failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    impl_handler! {
+        set_default_quota_limits => quota::set_default_quota_limits,
+        pm::SetDefaultQuotaLimitsRequest => pm::SetDefaultQuotaLimitsResponse,
+        "Set default quota limits"
+    }
+    impl_handler! {
+        set_quota_limits => quota::set_quota_limits,
+        pm::SetQuotaLimitsRequest => pm::SetQuotaLimitsResponse,
+        "Set quota limits"
+    }
+    impl_handler! {
+        get_quota_limits => quota::get_quota_limits,
+        pm::GetQuotaLimitsRequest => STREAM(GetQuotaLimitsStream, pm::GetQuotaLimitsResponse),
+        "Get quota limits"
+    }
+    impl_handler! {
+        get_quota_usage => quota::get_quota_usage,
+        pm::GetQuotaUsageRequest => STREAM(GetQuotaUsageStream, pm::GetQuotaUsageResponse),
+        "Get quota usage"
     }
 
-    async fn get_pools(
-        &self,
-        req: Request<pm::GetPoolsRequest>,
-    ) -> Result<Response<pm::GetPoolsResponse>, Status> {
-        let res = pool::get(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting storage pools failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn create_pool(
-        &self,
-        req: Request<pm::CreatePoolRequest>,
-    ) -> Result<Response<pm::CreatePoolResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Storagepool)?;
-
-        let res = pool::create(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Creating storage pool failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn assign_pool(
-        &self,
-        req: Request<pm::AssignPoolRequest>,
-    ) -> Result<Response<pm::AssignPoolResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Storagepool)?;
-
-        let res = pool::assign(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Moving targets to storage pool failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn delete_pool(
-        &self,
-        req: Request<pm::DeletePoolRequest>,
-    ) -> Result<Response<pm::DeletePoolResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Storagepool)?;
-
-        let res = pool::delete(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Deleting storage pool failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn get_buddy_groups(
-        &self,
-        req: Request<pm::GetBuddyGroupsRequest>,
-    ) -> Result<Response<pm::GetBuddyGroupsResponse>, Status> {
-        let res = buddy_group::get(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting buddy groups failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn create_buddy_group(
-        &self,
-        req: Request<pm::CreateBuddyGroupRequest>,
-    ) -> Result<Response<pm::CreateBuddyGroupResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Mirroring)?;
-
-        let res = buddy_group::create(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Creating storage buddy_group failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn delete_buddy_group(
-        &self,
-        req: Request<pm::DeleteBuddyGroupRequest>,
-    ) -> Result<Response<pm::DeleteBuddyGroupResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Mirroring)?;
-
-        let res = buddy_group::delete(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Deleting storage buddy_group failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn set_default_quota_limits(
-        &self,
-        req: Request<pm::SetDefaultQuotaLimitsRequest>,
-    ) -> Result<Response<pm::SetDefaultQuotaLimitsResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Quota)?;
-
-        let res = quota::set_default_quota_limits(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Setting default quota limits failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    type GetQuotaLimitsStream = RespStream<pm::GetQuotaLimitsResponse>;
-
-    async fn get_quota_limits(
-        &self,
-        req: Request<pm::GetQuotaLimitsRequest>,
-    ) -> Result<Response<Self::GetQuotaLimitsStream>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Quota)?;
-
-        let res = quota::get_quota_limits(self.ctx.clone(), req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting quota limits failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn set_quota_limits(
-        &self,
-        req: Request<pm::SetQuotaLimitsRequest>,
-    ) -> Result<Response<pm::SetQuotaLimitsResponse>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Quota)?;
-
-        let res = quota::set_quota_limits(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Setting quota limits failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    type GetQuotaUsageStream = RespStream<pm::GetQuotaUsageResponse>;
-
-    async fn get_quota_usage(
-        &self,
-        req: Request<pm::GetQuotaUsageRequest>,
-    ) -> Result<Response<Self::GetQuotaUsageStream>, Status> {
-        needs_license(&self.ctx, LicensedFeature::Quota)?;
-
-        let res_stream = quota::get_quota_usage(self.ctx.clone(), req.into_inner()).await;
-
-        match res_stream {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting quota usage failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn mirror_root_inode(
-        &self,
-        req: Request<pm::MirrorRootInodeRequest>,
-    ) -> Result<Response<pm::MirrorRootInodeResponse>, Status> {
-        let res = buddy_group::mirror_root_inode(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Mirroring root inode failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
-    }
-
-    async fn get_license(
-        &self,
-        req: Request<pm::GetLicenseRequest>,
-    ) -> Result<Response<pm::GetLicenseResponse>, Status> {
-        let res = license::get(&self.ctx, req.into_inner()).await;
-
-        match res {
-            Ok(res) => Ok(Response::new(res)),
-            Err(err) => {
-                let msg = error_chain!(err, "Getting license failed");
-                log::error!("{msg}");
-                Err(Status::new(Code::Internal, msg))
-            }
-        }
+    impl_handler! {
+        get_license => license::get,
+        pm::GetLicenseRequest => pm::GetLicenseResponse,
+        "Get license"
     }
 }

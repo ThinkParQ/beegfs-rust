@@ -5,9 +5,11 @@ use std::fmt::Write;
 const QUOTA_NOT_ENABLED: &str = "Quota support is not enabled";
 
 pub(crate) async fn set_default_quota_limits(
-    ctx: &Context,
+    ctx: Context,
     req: pm::SetDefaultQuotaLimitsRequest,
 ) -> Result<pm::SetDefaultQuotaLimitsResponse> {
+    needs_license(&ctx, LicensedFeature::Quota)?;
+
     if !ctx.info.user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
@@ -77,9 +79,11 @@ pub(crate) async fn set_default_quota_limits(
 }
 
 pub(crate) async fn set_quota_limits(
-    ctx: &Context,
+    ctx: Context,
     req: pm::SetQuotaLimitsRequest,
 ) -> Result<pm::SetQuotaLimitsResponse> {
+    needs_license(&ctx, LicensedFeature::Quota)?;
+
     if !ctx.info.user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
@@ -165,6 +169,8 @@ pub(crate) async fn get_quota_limits(
     ctx: Context,
     req: pm::GetQuotaLimitsRequest,
 ) -> Result<RespStream<pm::GetQuotaLimitsResponse>> {
+    needs_license(&ctx, LicensedFeature::Quota)?;
+
     if !ctx.info.user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
@@ -261,6 +267,8 @@ pub(crate) async fn get_quota_usage(
     ctx: Context,
     req: pm::GetQuotaUsageRequest,
 ) -> Result<RespStream<pm::GetQuotaUsageResponse>> {
+    needs_license(&ctx, LicensedFeature::Quota)?;
+
     if !ctx.info.user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
