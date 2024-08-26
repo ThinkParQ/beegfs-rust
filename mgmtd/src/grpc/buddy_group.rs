@@ -242,7 +242,7 @@ pub(crate) async fn mirror_root_inode(
             let count = tx.query_row(
                 sql!(
                     "SELECT COUNT(*) FROM root_inode AS ri
-                        INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id"
+                    INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id"
                 ),
                 [],
                 |row| row.get::<_, i64>(0),
@@ -250,6 +250,18 @@ pub(crate) async fn mirror_root_inode(
 
             if count < 1 {
                 bail!("The meta target holding the root inode is not part of a buddy group.");
+            }
+
+            // Check that no clients are connected to prevent data corruption. Note that there is
+            // still a small chance for a client being mounted again before the action is taken on
+            // the root meta server below. In the end, it's the administrators responsibility to not
+            // let any client mount during that process.
+            let clients = tx.query_row(sql!("SELECT COUNT(*) FROM client_nodes"), [], |row| {
+                row.get::<_, i64>(0)
+            })?;
+
+            if clients > 0 {
+                bail!("This operation requires that all clients are disconnected/unmounted, but still has {clients} clients mounted.");
             }
 
             Ok(node_uid)
@@ -263,7 +275,10 @@ pub(crate) async fn mirror_root_inode(
 
     match resp.result {
         OpsErr::SUCCESS => ctx.db.op(db::misc::enable_metadata_mirroring).await?,
-        _ => bail!("Root inode mirroring failed with Error {:?}", resp.result),
+        _ => bail!(
+            "The root meta server failed to mirror the root inode: {:?}",
+            resp.result
+        ),
     }
 
     log::info!("Root inode has been mirrored");
