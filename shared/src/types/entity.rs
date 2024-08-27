@@ -40,6 +40,9 @@ impl TryFrom<String> for Alias {
     type Error = anyhow::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
+        // Max length allowed is 32 bytes (which is equal to 32 characters with the allowed set). If
+        // the length limit is ever changed, it should be reflected on the client which uses fixed
+        // size buffers to store the alias.
         if value.len() > 32 {
             bail!("invalid alias '{value}': max length is 32 characters");
         }
