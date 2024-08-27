@@ -30,6 +30,7 @@ fn inner_main() -> Result<()> {
         LogTarget::Std => Ok(env_logger::Builder::from_env(
             env_logger::Env::default().default_filter_or(user_config.log_level.as_str()),
         )
+        .format_target(false)
         .try_init()?),
         LogTarget::Journald => journald_logger::init(user_config.log_level),
     }

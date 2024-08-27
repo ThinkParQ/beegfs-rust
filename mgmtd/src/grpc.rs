@@ -8,11 +8,12 @@ use crate::types::{ResolveEntityId, SqliteEnumExt};
 use anyhow::{bail, Context as AContext, Result};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{params, OptionalExtension, Transaction};
-use shared::error_chain;
 use shared::shutdown::Shutdown;
 use shared::types::*;
+use shared::{error_chain, log_error_chain};
 use sqlite::{check_affected_rows, ConnectionExt, TransactionExt};
 use sqlite_check::sql;
+use std::fmt::Debug;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -49,10 +50,18 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
 
     // If gRPC TLS is enabled, configure the server accordingly
     let mut builder = if !ctx.info.user_config.tls_disable {
-        let tls_cert = std::fs::read(&ctx.info.user_config.tls_cert_file)
-            .context("Could not read certificate file")?;
-        let tls_key =
-            std::fs::read(&ctx.info.user_config.tls_key_file).context("Could not read key file")?;
+        let tls_cert = std::fs::read(&ctx.info.user_config.tls_cert_file).with_context(|| {
+            format!(
+                "Could not read TLS certificate file {:?}",
+                &ctx.info.user_config.tls_cert_file
+            )
+        })?;
+        let tls_key = std::fs::read(&ctx.info.user_config.tls_key_file).with_context(|| {
+            format!(
+                "Could not read TLS key file {:?}",
+                &ctx.info.user_config.tls_key_file
+            )
+        })?;
 
         builder
             .tls_config(ServerTlsConfig::new().identity(Identity::from_pem(tls_cert, tls_key)))?
@@ -118,7 +127,7 @@ type RespStream<T> = Pin<Box<dyn Stream<Item = std::result::Result<T, Status>> +
 /// account.
 fn resp_stream<RespMsg, SourceFn, Fut>(buf_size: usize, source_fn: SourceFn) -> RespStream<RespMsg>
 where
-    RespMsg: Send + 'static,
+    RespMsg: Send + Sync + 'static,
     SourceFn: FnOnce(StreamSender<RespMsg>) -> Fut + Send + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
@@ -126,18 +135,38 @@ where
 
     tokio::spawn(async move {
         if let Err(err) = source_fn(StreamSender(tx.clone())).await {
+            // If this is the result of a closed receive channel (e.g. client cancels
+            // receiving early), we don't want to log this as an error.
+            if err.is::<mpsc::error::SendError<std::result::Result<RespMsg, Status>>>() {
+                log::debug!(
+                    "response stream of {} got interrupted: receiver closed the channel",
+                    std::any::type_name::<RespMsg>()
+                        .split("::")
+                        .last()
+                        .expect("RespMsg implementor name is never empty")
+                );
+                return;
+            }
+
+            log_error_chain!(
+                err,
+                "response stream of {}",
+                std::any::type_name::<RespMsg>()
+                    .split("::")
+                    .last()
+                    .expect("RespMsg implementor name is never empty")
+            );
+
             match err.downcast::<Status>() {
                 // If source_fn returned a gRPC status as error, send it. This allows the
                 // function to control the error response
                 Ok(status) => {
-                    log::error!("{status:#}");
                     let _ = tx.send(Err(status)).await;
                 }
                 // If it is any other error, send a generic gRPC error
                 Err(err) => {
                     let resp = Err(Status::new(Code::Internal, format!("{err:#}")));
                     let _ = tx.send(resp).await;
-                    log::error!("{err:#}");
                 }
             }
         }
@@ -191,8 +220,7 @@ macro_rules! impl_handler {
                 match res {
                     Ok(res) => Ok(Response::new(res)),
                     Err(err) => {
-                        let msg = error_chain!(err, concat!($ctx_str, " failed"));
-                        log::error!("{msg}");
+                        log_error_chain!(err, concat!($ctx_str, " failed"));
 
                         match err.downcast::<Status>() {
                             // If handle_fn returned a gRPC status as error, send it. This allows the
