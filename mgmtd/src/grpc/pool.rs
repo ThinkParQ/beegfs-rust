@@ -3,7 +3,7 @@ use rusqlite::Row;
 use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Delivers the list of pools
-pub(crate) async fn get(ctx: &Context, req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {
+pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {
     let (mut pools, targets, buddy_groups) = ctx
         .db
         .op(move |tx| {
@@ -131,9 +131,11 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetPoolsRequest) -> Result<pm::G
 
 /// Creates a new pool, optionally assigning targets and groups
 pub(crate) async fn create(
-    ctx: &Context,
+    ctx: Context,
     req: pm::CreatePoolRequest,
 ) -> Result<pm::CreatePoolResponse> {
+    needs_license(&ctx, LicensedFeature::Storagepool)?;
+
     if req.node_type() != pb::NodeType::Storage {
         bail!("node type must be storage");
     }
@@ -162,7 +164,7 @@ pub(crate) async fn create(
     log::info!("Pool created: {pool}");
 
     notify_nodes(
-        ctx,
+        &ctx,
         &[NodeType::Meta, NodeType::Storage],
         &RefreshStoragePools { ack_id: "".into() },
     )
@@ -175,9 +177,11 @@ pub(crate) async fn create(
 
 /// Assigns a pool to a list of targets and buddy groups.
 pub(crate) async fn assign(
-    ctx: &Context,
+    ctx: Context,
     req: pm::AssignPoolRequest,
 ) -> Result<pm::AssignPoolResponse> {
+    needs_license(&ctx, LicensedFeature::Storagepool)?;
+
     let pool: EntityId = required_field(req.pool)?.try_into()?;
 
     let pool = ctx
@@ -192,7 +196,7 @@ pub(crate) async fn assign(
     log::info!("Pool assigned: {pool}");
 
     notify_nodes(
-        ctx,
+        &ctx,
         &[NodeType::Meta, NodeType::Storage],
         &RefreshStoragePools { ack_id: "".into() },
     )
@@ -265,9 +269,11 @@ fn assign_pool(
 
 /// Deletes a pool. The pool must be empty.
 pub(crate) async fn delete(
-    ctx: &Context,
+    ctx: Context,
     req: pm::DeletePoolRequest,
 ) -> Result<pm::DeletePoolResponse> {
+    needs_license(&ctx, LicensedFeature::Storagepool)?;
+
     let pool: EntityId = required_field(req.pool)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
@@ -314,7 +320,7 @@ are still assigned to this pool"
         log::info!("Pool deleted: {pool}");
 
         notify_nodes(
-            ctx,
+            &ctx,
             &[NodeType::Meta, NodeType::Storage],
             &RefreshStoragePools { ack_id: "".into() },
         )

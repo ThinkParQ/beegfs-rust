@@ -3,7 +3,7 @@ use shared::bee_msg::node::RemoveNode;
 use std::net::Ipv4Addr;
 
 /// Delivers a list of nodes
-pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
+pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
     let (mut nodes, nics, meta_root_node) = ctx
         .db
         .op(move |tx| {
@@ -119,7 +119,7 @@ pub(crate) async fn get(ctx: &Context, req: pm::GetNodesRequest) -> Result<pm::G
 
 /// Deletes a node. If it is a meta node, deletes its target first.
 pub(crate) async fn delete(
-    ctx: &Context,
+    ctx: Context,
     req: pm::DeleteNodeRequest,
 ) -> Result<pm::DeleteNodeResponse> {
     let node: EntityId = required_field(req.node)?.try_into()?;
@@ -195,7 +195,7 @@ pub(crate) async fn delete(
         log::info!("Node deleted: {node}");
 
         notify_nodes(
-            ctx,
+            &ctx,
             match node.node_type() {
                 NodeType::Meta => &[NodeType::Meta, NodeType::Client],
                 NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],

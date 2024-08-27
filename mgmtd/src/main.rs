@@ -30,6 +30,7 @@ fn inner_main() -> Result<()> {
         LogTarget::Std => Ok(env_logger::Builder::from_env(
             env_logger::Env::default().default_filter_or(user_config.log_level.as_str()),
         )
+        .format_target(false)
         .try_init()?),
         LogTarget::Journald => journald_logger::init(user_config.log_level),
     }
@@ -54,7 +55,7 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
-    let auth_secret = if user_config.auth_enable {
+    let auth_secret = if !user_config.auth_disable {
         let secret = std::fs::read(&user_config.auth_file).with_context(|| {
             format!(
                 "Could not open authentication file {:?}",

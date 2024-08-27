@@ -9,7 +9,7 @@ use shared::bee_msg::OpsErr;
 
 /// Delivers the list of buddy groups
 pub(crate) async fn get(
-    ctx: &Context,
+    ctx: Context,
     _req: pm::GetBuddyGroupsRequest,
 ) -> Result<pm::GetBuddyGroupsResponse> {
     let buddy_groups = ctx
@@ -85,9 +85,11 @@ pub(crate) async fn get(
 
 /// Creates a new buddy group
 pub(crate) async fn create(
-    ctx: &Context,
+    ctx: Context,
     req: pm::CreateBuddyGroupRequest,
 ) -> Result<pm::CreateBuddyGroupResponse> {
+    needs_license(&ctx, LicensedFeature::Mirroring)?;
+
     let node_type: NodeTypeServer = req.node_type().try_into()?;
     let alias: Alias = required_field(req.alias)?.try_into()?;
     let num_id: BuddyGroupId = req.num_id.unwrap_or_default().try_into()?;
@@ -126,7 +128,7 @@ pub(crate) async fn create(
     log::info!("Buddy group created: {group}");
 
     notify_nodes(
-        ctx,
+        &ctx,
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &SetMirrorBuddyGroup {
             ack_id: "".into(),
@@ -147,9 +149,11 @@ pub(crate) async fn create(
 /// Deletes a buddy group. This function is racy as it is a two step process, talking to other
 /// nodes in between. Since it is rarely used, that's ok though.
 pub(crate) async fn delete(
-    ctx: &Context,
+    ctx: Context,
     req: pm::DeleteBuddyGroupRequest,
 ) -> Result<pm::DeleteBuddyGroupResponse> {
+    needs_license(&ctx, LicensedFeature::Mirroring)?;
+
     let group: EntityId = required_field(req.group)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
@@ -221,9 +225,11 @@ Primary result: {:?}, Secondary result: {:?}",
 
 /// Enable metadata mirroring for the root directory
 pub(crate) async fn mirror_root_inode(
-    ctx: &Context,
+    ctx: Context,
     _req: pm::MirrorRootInodeRequest,
 ) -> Result<pm::MirrorRootInodeResponse> {
+    needs_license(&ctx, LicensedFeature::Mirroring)?;
+
     let meta_root = ctx
         .db
         .op(|tx| {
@@ -236,7 +242,7 @@ pub(crate) async fn mirror_root_inode(
             let count = tx.query_row(
                 sql!(
                     "SELECT COUNT(*) FROM root_inode AS ri
-                        INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id"
+                    INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id"
                 ),
                 [],
                 |row| row.get::<_, i64>(0),
@@ -244,6 +250,18 @@ pub(crate) async fn mirror_root_inode(
 
             if count < 1 {
                 bail!("The meta target holding the root inode is not part of a buddy group.");
+            }
+
+            // Check that no clients are connected to prevent data corruption. Note that there is
+            // still a small chance for a client being mounted again before the action is taken on
+            // the root meta server below. In the end, it's the administrators responsibility to not
+            // let any client mount during that process.
+            let clients = tx.query_row(sql!("SELECT COUNT(*) FROM client_nodes"), [], |row| {
+                row.get::<_, i64>(0)
+            })?;
+
+            if clients > 0 {
+                bail!("This operation requires that all clients are disconnected/unmounted, but still has {clients} clients mounted.");
             }
 
             Ok(node_uid)
@@ -257,7 +275,10 @@ pub(crate) async fn mirror_root_inode(
 
     match resp.result {
         OpsErr::SUCCESS => ctx.db.op(db::misc::enable_metadata_mirroring).await?,
-        _ => bail!("Root inode mirroring failed with Error {:?}", resp.result),
+        _ => bail!(
+            "The root meta server failed to mirror the root inode: {:?}",
+            resp.result
+        ),
     }
 
     log::info!("Root inode has been mirrored");

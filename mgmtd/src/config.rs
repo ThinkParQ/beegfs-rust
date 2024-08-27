@@ -28,12 +28,12 @@ pub struct Config {
     // Connection
     pub beemsg_port: Port,
     pub grpc_port: Port,
-    pub tls_enable: bool,
+    pub tls_disable: bool,
     pub tls_cert_file: PathBuf,
     pub tls_key_file: PathBuf,
     pub interfaces: Vec<String>,
     pub connection_limit: usize,
-    pub auth_enable: bool,
+    pub auth_disable: bool,
     pub auth_file: PathBuf,
 
     // Generic
@@ -79,12 +79,12 @@ impl Default for Config {
             // Connection
             beemsg_port: 8008,
             grpc_port: 8010,
-            tls_enable: true,
+            tls_disable: false,
             tls_cert_file: "/etc/beegfs/cert.pem".into(),
             tls_key_file: "/etc/beegfs/key.pem".into(),
             interfaces: vec![],
             connection_limit: 12,
-            auth_enable: true,
+            auth_disable: false,
             auth_file: "/etc/beegfs/conn.auth".into(),
 
             // Generic
@@ -189,7 +189,6 @@ struct CommandLineArgs {
     /// Initialize a new installation, then quit
     #[arg(long)]
     init: bool,
-    #[arg(long)]
     /// Set to a v7 management installation directory to import its data.
     ///
     /// The database must be new, e.g. freshly generated using --init. The two
@@ -198,6 +197,7 @@ struct CommandLineArgs {
     /// whole system has been shutdown. After importing the data, verify its
     /// correctness by only starting the management and checking the existing
     /// nodes, targets, buddy groups, storage pools and quota settings.
+    #[arg(long)]
     import_from_v7: Option<PathBuf>,
     /// Upgrade the managements database to the current version
     #[arg(long)]
@@ -213,9 +213,9 @@ struct CommandLineArgs {
     /// Sets the gRPC port (TCP) to listen on [default: 8010]
     #[arg(long)]
     grpc_port: Option<Port>,
-    /// Enables TLS for gRPC communication [default: true]
-    #[arg(long)]
-    tls_enable: Option<bool>,
+    /// Disables TLS for gRPC communication [default: false]
+    #[arg(long, default_missing_value = "true", num_args = 0..=1)]
+    tls_disable: Option<bool>,
     /// The PEM encoded .X509 certificate file that provides the identity of the gRPC server
     /// [default: /etc/beegfs/cert.pem]
     #[arg(long)]
@@ -232,9 +232,9 @@ struct CommandLineArgs {
     /// Maximum number of outgoing connections per node [default: 12]
     #[arg(long)]
     connection_limit: Option<usize>,
-    /// Enable authentication [default: true]
-    #[arg(long)]
-    auth_enable: Option<bool>,
+    /// Disable authentication [default: false]
+    #[arg(long, default_missing_value = "true", num_args = 0..=1)]
+    auth_disable: Option<bool>,
     /// Authentication file location [default: /etc/beegfs/conn.auth]
     #[arg(long)]
     auth_file: Option<PathBuf>,
@@ -268,11 +268,14 @@ struct CommandLineArgs {
 
     // Quota
     /// Enables the quota features [default: false]
-    #[arg(long)]
+    #[arg(long, default_missing_value = "true", num_args = 0..=1)]
     quota_enable: Option<bool>,
     /// Enables quota enforcement [default: false]
-    #[arg(long)]
+    #[arg(long, default_missing_value = "true", num_args = 0..=1)]
     quota_enforce: Option<bool>,
+    /// Update interval of quota information
+    #[arg(long, value_parser = integer_with_time_unit::parse)]
+    quota_update_interval: Option<Duration>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -281,12 +284,12 @@ struct ConfigFileArgs {
     // Connection
     beemsg_port: Option<Port>,
     grpc_port: Option<Port>,
-    tls_enable: Option<bool>,
+    tls_disable: Option<bool>,
     tls_cert_file: Option<PathBuf>,
     tls_key_file: Option<PathBuf>,
     interfaces: Option<Vec<String>>,
     connection_limit: Option<usize>,
-    auth_enable: Option<bool>,
+    auth_disable: Option<bool>,
     auth_file: Option<PathBuf>,
 
     // Generic
@@ -343,8 +346,8 @@ impl Config {
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;
         }
-        if let Some(v) = args.tls_enable {
-            self.tls_enable = v;
+        if let Some(v) = args.tls_disable {
+            self.tls_disable = v;
         }
         if let Some(v) = args.tls_cert_file {
             self.tls_cert_file = v;
@@ -358,8 +361,8 @@ impl Config {
         if let Some(v) = args.connection_limit {
             self.connection_limit = v;
         }
-        if let Some(v) = args.auth_enable {
-            self.auth_enable = v;
+        if let Some(v) = args.auth_disable {
+            self.auth_disable = v;
         }
         if let Some(v) = args.auth_file {
             self.auth_file = v;
@@ -389,6 +392,9 @@ impl Config {
         if let Some(v) = args.quota_enforce {
             self.quota_enforce = v;
         }
+        if let Some(v) = args.quota_update_interval {
+            self.quota_update_interval = v;
+        }
     }
 
     /// Update parameters from the config file parameter struct
@@ -403,8 +409,8 @@ impl Config {
         if let Some(v) = args.grpc_port {
             self.grpc_port = v;
         }
-        if let Some(v) = args.tls_enable {
-            self.tls_enable = v;
+        if let Some(v) = args.tls_disable {
+            self.tls_disable = v;
         }
         if let Some(v) = args.tls_cert_file {
             self.tls_cert_file = v;
@@ -418,8 +424,8 @@ impl Config {
         if let Some(v) = args.connection_limit {
             self.connection_limit = v;
         }
-        if let Some(v) = args.auth_enable {
-            self.auth_enable = v;
+        if let Some(v) = args.auth_disable {
+            self.auth_disable = v;
         }
         if let Some(v) = args.auth_file {
             self.auth_file = v;

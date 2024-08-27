@@ -2,7 +2,7 @@ use super::*;
 use protobuf::management::{self as pm, GetLicenseResponse};
 
 pub(crate) async fn get(
-    ctx: &Context,
+    ctx: Context,
     req: pm::GetLicenseRequest,
 ) -> Result<pm::GetLicenseResponse> {
     let reload: bool = required_field(req.reload)?;
