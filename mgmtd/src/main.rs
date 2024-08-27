@@ -54,7 +54,7 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
-    let auth_secret = if user_config.auth_enable {
+    let auth_secret = if !user_config.auth_disable {
         let secret = std::fs::read(&user_config.auth_file).with_context(|| {
             format!(
                 "Could not open authentication file {:?}",

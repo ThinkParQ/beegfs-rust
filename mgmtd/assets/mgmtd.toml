@@ -17,8 +17,8 @@
 # TCP port for the gRPC server to listen on
 # grpc-port = 8010
 
-# Enables TLS for gRPC communication
-# tls-enable = true
+# Disables TLS for gRPC communication
+# tls-disable = false
 
 # The PEM encoded .X509 certificate file that provides the identity of the gRPC server
 # tls-cert-file = /etc/beegfs/cert.pem
@@ -32,8 +32,8 @@
 # Maximum number of outgoing connections per node
 # connection-limit = 12
 
-# Enable authentication
-# auth-enable = true
+# Disable authentication
+# auth-disable = false
 
 # Location of the file containing the authentication secret
 # auth-file = "/etc/beegfs/conn.auth"

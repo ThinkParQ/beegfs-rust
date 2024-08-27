@@ -1,12 +1,21 @@
-/// Custom serde parser for integers with arbitrary units (like `"10kiB"`)
-///
-/// Meant for command line argument and config file parsing.
+//! Custom serde parser for integers with arbitrary units (like `"10kiB"`)
+//!
+//! Meant for command line argument and config file parsing.
+
+use anyhow::{anyhow, Result};
 use regex::Regex;
 use serde::de::{Unexpected, Visitor};
 use serde::{Deserializer, Serializer};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
-static REGEX: OnceLock<Regex> = OnceLock::new();
+static REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(\d+) *([kMGTPE]?i?)[[:alpha:]]*$").expect("Regex must be valid")
+});
+
+const EXPECT_STR: &str =
+    "a positive integer representing the base value or a string containing a positive \
+     integer n with appended arbitrary unit with optional SI prefix in the form \
+     \"<integer>[k|M|G|T|P|E][i][unit]\"";
 
 /// Parses a string in the form `<int>[kMGTPE][i]<unit>` into an integer.
 ///
@@ -14,15 +23,12 @@ static REGEX: OnceLock<Regex> = OnceLock::new();
 /// (`10k` becomes 10000). When the `[i]` is given, base 2 is used (`10kiB` becomes 10240).
 ///
 /// The `<unit>` suffix is ignored and can be anything or be omitted.
-fn parse(input: &str) -> Result<u64, ()> {
-    let regex = REGEX.get_or_init(|| {
-        Regex::new(r"^(\d+) *([kMGTPE]?i?)[[:alpha:]]*$").expect("Regex must be valid")
-    });
-    let captures = regex.captures(input.trim()).ok_or(())?;
-    let number = captures.get(1).ok_or(())?;
-    let suffix = captures.get(2).ok_or(())?;
+pub fn parse_optional(input: &str) -> Option<u64> {
+    let captures = REGEX.captures(input.trim())?;
+    let number = captures.get(1)?;
+    let suffix = captures.get(2)?;
 
-    let number: u64 = number.as_str().parse().map_err(|_| ())?;
+    let number: u64 = number.as_str().parse().ok()?;
 
     let number = number.saturating_mul(match suffix.as_str() {
         "" => 1,
@@ -39,10 +45,14 @@ fn parse(input: &str) -> Result<u64, ()> {
         "Ti" => 2u64.pow(40),
         "Pi" => 2u64.pow(50),
         "Ei" => 2u64.pow(60),
-        _ => return Err(()),
+        _ => return None,
     });
 
-    Ok(number)
+    Some(number)
+}
+
+pub fn parse(input: &str) -> Result<u64> {
+    parse_optional(input).ok_or_else(|| anyhow!(EXPECT_STR))
 }
 
 struct CustomVisitor {}
@@ -51,19 +61,14 @@ impl<'a> Visitor<'a> for CustomVisitor {
     type Value = u64;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            formatter,
-            "a positive integer representing the base value or a string containing a positive \
-             integer n with appended arbitrary unit with optional SI prefix in the form \
-             \"<integer>[k|M|G|T|P|E][i][unit]\""
-        )
+        formatter.write_str(EXPECT_STR)
     }
 
     fn visit_str<E>(self, input: &str) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        parse(input).map_err(|_| E::invalid_value(Unexpected::Str(input), &self))
+        parse_optional(input).ok_or_else(|| E::invalid_value(Unexpected::Str(input), &self))
     }
 
     fn visit_u64<E>(self, input: u64) -> Result<Self::Value, E>
@@ -102,20 +107,20 @@ mod test {
 
     #[test]
     fn basic() {
-        assert_eq!(parse("100").unwrap(), 100);
-        assert_eq!(parse(" 200  ").unwrap(), 200);
-        assert_eq!(parse("100k").unwrap(), 100_000);
-        assert_eq!(parse("100 k").unwrap(), 100_000);
-        assert_eq!(parse("123 M").unwrap(), 123_000_000);
-        assert_eq!(parse("0 T").unwrap(), 0);
-        assert_eq!(parse("1ki").unwrap(), 1024);
-        assert_eq!(parse("2 ki ").unwrap(), 2048);
-        assert_eq!(parse("1000 Mi").unwrap(), 1000 * 1024 * 1024);
+        assert_eq!(parse_optional("100").unwrap(), 100);
+        assert_eq!(parse_optional(" 200  ").unwrap(), 200);
+        assert_eq!(parse_optional("100k").unwrap(), 100_000);
+        assert_eq!(parse_optional("100 k").unwrap(), 100_000);
+        assert_eq!(parse_optional("123 M").unwrap(), 123_000_000);
+        assert_eq!(parse_optional("0 T").unwrap(), 0);
+        assert_eq!(parse_optional("1ki").unwrap(), 1024);
+        assert_eq!(parse_optional("2 ki ").unwrap(), 2048);
+        assert_eq!(parse_optional("1000 Mi").unwrap(), 1000 * 1024 * 1024);
 
-        assert!(parse("Ti").is_err());
-        assert!(parse("100 i").is_err());
-        assert!(parse("-10 k").is_err());
-        assert!(parse("garbage").is_err());
-        assert!(parse("").is_err());
+        assert!(parse_optional("Ti").is_none());
+        assert!(parse_optional("100 i").is_none());
+        assert!(parse_optional("-10 k").is_none());
+        assert!(parse_optional("garbage").is_none());
+        assert!(parse_optional("").is_none());
     }
 }

@@ -48,7 +48,7 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
     let builder = Server::builder();
 
     // If gRPC TLS is enabled, configure the server accordingly
-    let mut builder = if ctx.info.user_config.tls_enable {
+    let mut builder = if !ctx.info.user_config.tls_disable {
         let tls_cert = std::fs::read(&ctx.info.user_config.tls_cert_file)
             .context("Could not read certificate file")?;
         let tls_key =
