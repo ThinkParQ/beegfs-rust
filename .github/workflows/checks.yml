@@ -9,26 +9,17 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    container:
-      image: rust
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup cargo cache
-        uses: actions/cache@v3
+      - name: Setup Rust
+        uses: moonrepo/setup-rust@v1
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/            
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install toolchains and tools
+          components: clippy
+      - name: Setup nightly toolchain and tools
         run: |
-          rustup component add clippy
           rustup toolchain install nightly
           rustup component add --toolchain nightly rustfmt
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Configure git
         # Make sure the runner has access to the protobuf repo using an access token
         run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
