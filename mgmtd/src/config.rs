@@ -173,6 +173,14 @@ impl Config {
     }
 }
 
+/// Constructs a version str from the `VERSION` environment variable at compile time
+const fn version_str() -> &'static str {
+    match option_env!("VERSION") {
+        Some(version) => version,
+        None => "undefined",
+    }
+}
+
 // Defines the Clap command line interface. Doc comment for the struct defines title and main help
 // text.
 //
@@ -180,7 +188,8 @@ impl Config {
 #[derive(Debug, Default, Parser)]
 #[command(
     author,
-    version,
+    // Output the version string provided by VERSION
+    version = version_str(),
     rename_all = "kebab-case",
     hide_possible_values = false
 )]

@@ -2,7 +2,7 @@
 
 1. Read through [Getting started with Rust]( https://github.com/ThinkParQ/developer-handbook/tree/main/getting_started/rust) and setup your environment as described.
 
-2. Clone the managment repository:
+2. Clone the management repository:
 
    ```shell
    git clone https://github.com/ThinkParQ/beegfs-rs
@@ -25,6 +25,12 @@
    ```
 
    Both ways are valid - down below, the first variant is used as it is quicker.
+
+## Setting the binaries version output
+
+One can define the output of the `--version` command at compile time by passing the `VERSION`
+environment to `cargo`. This can be set to a BeeGFS release version during a release build. Gets
+set to "unknown" if not given.
 
 # Run the management
 
@@ -52,7 +58,7 @@ The following can be used to setup a self signed certificate:
 default_bits       = 2048
 distinguished_name = req_distinguished_name
 req_extensions     = req_ext
-x509_extensions    = v3_ca # The extentions to add to the self signed cert
+x509_extensions    = v3_ca # The extensions to add to the self signed cert
 
 [ req_distinguished_name ]
 commonName                  = Common Name (eg, fully qualified host name)
@@ -107,4 +113,4 @@ RUST_LOG=debug cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=fals
 
 env_logger can be configured relatively fine grained using `RUST_LOG`, look up its documentation for more details.
 
-Remember that you can also provide these arguments (except for the `RUST_LOG` variable, of course) using a config file by specifiying `--config-file`.
+Remember that you can also provide these arguments (except for the `RUST_LOG` variable, of course) using a config file by specifying `--config-file`.
