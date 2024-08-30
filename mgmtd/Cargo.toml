@@ -2,8 +2,8 @@
 name = "mgmtd"
 description = "BeeGFS management node Rust prototype"
 readme = "README.md"
-version.workspace = true
-license.workspace = true
+version = "0.0.0"
+license = ""
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true

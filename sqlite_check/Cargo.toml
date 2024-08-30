@@ -1,8 +1,6 @@
 [package]
 name = "sqlite_check"
 description = "SQLite query checker"
-version.workspace = true
-license.workspace = true
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true

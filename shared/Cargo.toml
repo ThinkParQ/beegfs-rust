@@ -1,8 +1,6 @@
 [package]
 name = "shared"
 description = "Provides shared code that can be reused by BeeGFS Rust projects"
-version.workspace = true
-license.workspace = true
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true
