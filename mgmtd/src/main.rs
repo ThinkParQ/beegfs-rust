@@ -62,7 +62,7 @@ fn inner_main() -> Result<()> {
                 user_config.auth_file
             )
         })?;
-        Some(AuthSecret::from_bytes(secret))
+        Some(AuthSecret::hash_from_bytes(secret))
     } else {
         None
     };
