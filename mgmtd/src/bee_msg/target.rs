@@ -59,22 +59,41 @@ impl HandleWithResponse for RegisterTarget {
     type Response = RegisterTargetResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        if !ctx.info.user_config.registration_enable {
-            bail!("Registration of new targets is not allowed");
-        }
+        let ctx2 = ctx.clone();
 
-        let id = ctx
+        let (id, is_new) = ctx
             .db
             .op(move |tx| {
-                db::target::insert_storage(
+                // Do not do anything if the target already exists
+                if let Some(id) = try_resolve_num_id(
                     tx,
-                    self.target_id,
-                    Some(format!("target_{}", std::str::from_utf8(&self.alias)?).try_into()?),
-                )
+                    EntityType::Target,
+                    NodeType::Storage,
+                    self.target_id.into(),
+                )? {
+                    return Ok((id.num_id().try_into()?, false));
+                }
+
+                if !ctx2.info.user_config.registration_enable {
+                    bail!("Registration of new targets is not allowed");
+                }
+
+                Ok((
+                    db::target::insert_storage(
+                        tx,
+                        self.target_id,
+                        Some(format!("target_{}", std::str::from_utf8(&self.alias)?).try_into()?),
+                    )?,
+                    true,
+                ))
             })
             .await?;
 
-        log::info!("Registered storage target {id}");
+        if is_new {
+            log::info!("Registered new storage target with Id {id}");
+        } else {
+            log::debug!("Re-registered existing storage target with Id {id}");
+        }
 
         Ok(RegisterTargetResp { id })
     }
@@ -86,8 +105,7 @@ impl HandleWithResponse for MapTargets {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
-        let updated = ctx
-            .db
+        ctx.db
             .op(move |tx| {
                 // Check node Id exists
                 let node = LegacyId {
@@ -95,24 +113,22 @@ impl HandleWithResponse for MapTargets {
                     num_id: self.node_id,
                 }
                 .resolve(tx, EntityType::Node)?;
-
                 // Check all target Ids exist
                 db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
-
-                let updated =
-                    db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
-
-                Ok(updated)
+                // Due to the check above, this must always match all the given ids
+                db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
+                Ok(())
             })
             .await?;
 
+        // At this point, all mappings must have been successful
+
         log::info!(
-            "Mapped {} storage targets to node {}",
-            updated,
+            "Mapped storage targets with Ids {:?} to node {}",
+            self.target_ids.keys(),
             self.node_id
         );
 
-        // TODO only do it with successful ones
         notify_nodes(
             ctx,
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
@@ -124,13 +140,10 @@ impl HandleWithResponse for MapTargets {
         )
         .await;
 
-        // Storage server expects a separate status code for each target map requested.
-        // For simplicity we just do an all-or-nothing approach: If all mappings succeed, we
-        // return success. If at least one fails, we fail the whole operation and send back
-        // an empty result (see below). The storage handles this as errors.
-        // This mechanism is supposed to go away later anyway, so this
-        // solution is fine.
-
+        // Storage server expects a separate status code for each target map requested. We, however,
+        // do a all-or-nothing approach. If e.g. one target id doesn't exist (which is an
+        // exceptional error and should usually not happen anyway), we fail the whole
+        // operation. Therefore we can just send a list of successes.
         let resp = MapTargetsResp {
             results: self
                 .target_ids
@@ -182,7 +195,7 @@ impl HandleWithResponse for SetStorageTargetInfo {
             })
             .await?;
 
-        log::info!("Updated {:?} target info", node_type,);
+        log::debug!("Updated {:?} target info", node_type,);
 
         // in the old mgmtd, a notice to refresh cap pools is sent out here if a cap pool
         // changed I consider this being to expensive to check here and just don't
@@ -235,7 +248,7 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
             })
             .await?;
 
-        log::info!(
+        log::debug!(
             "Updated target consistency states for {:?} nodes",
             self.node_type
         );

@@ -48,7 +48,7 @@ impl Pool {
         node_uid: Uid,
         msg: &M,
     ) -> Result<R> {
-        log::debug!(target: "msg", "REQUEST to {:?}: {:?}", node_uid, msg);
+        log::trace!("REQUEST to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
@@ -58,14 +58,14 @@ impl Pool {
 
         self.store.push_buf(buf);
 
-        log::debug!(target: "msg", "RESPONSE RECEIVED from {:?}: {:?}", node_uid, resp);
+        log::trace!("RESPONSE RECEIVED from {:?}: {:?}", node_uid, resp);
 
         Ok(resp)
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
     pub async fn send<M: Msg + Serializable>(&self, node_uid: Uid, msg: &M) -> Result<()> {
-        log::debug!(target: "msg", "SEND to {:?}: {:?}", node_uid, msg);
+        log::trace!("SEND to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();
 

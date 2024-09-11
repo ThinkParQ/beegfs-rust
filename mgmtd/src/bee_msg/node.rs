@@ -159,7 +159,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
     let msg2 = msg.clone();
     let info = ctx.info;
 
-    let (node_uid, node_id, meta_root) = ctx
+    let (node_uid, node_id, meta_root, is_new) = ctx
         .db
         .op(move |tx| {
             let node = if msg.node_id == 0 {
@@ -170,7 +170,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
                 try_resolve_num_id(tx, EntityType::Node, msg.node_type, msg.node_id)?
             };
 
-            let (node_id, node_uid) = if let Some(node) = node {
+            let (node_id, node_uid) = if let Some(ref node) = node {
                 // Existing node, update data
                 db::node::update(tx, node.uid, msg.port)?;
 
@@ -247,6 +247,7 @@ client version < 8.0)"
                     NodeType::Meta => db::misc::get_meta_root(tx)?,
                     _ => MetaRoot::Unknown,
                 },
+                node.is_none(),
             ))
         })
         .await?;
@@ -260,12 +261,22 @@ client version < 8.0)"
             .collect::<Arc<_>>(),
     );
 
-    log::info!(
-        "Processed {:?} node info with numeric node id {} (Requested: {})",
-        msg2.node_type,
-        node_id,
-        msg2.node_id,
-    );
+    if is_new {
+        log::info!(
+            "Registered new {:?} node (Requested Id: {}, Assigned Id: {}, Assigned Uid: {})",
+            msg2.node_type,
+            msg2.node_id,
+            node_id,
+            node_uid,
+        );
+    } else {
+        log::debug!(
+            "Updated {:?} node (Numeric Id: {}, Uid: {})",
+            msg2.node_type,
+            node_id,
+            node_uid,
+        );
+    }
 
     // notify all nodes
     notify_nodes(

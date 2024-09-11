@@ -73,7 +73,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
                             )
                         })?;
 
-                        log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
+                        log::trace!("INCOMING from {:?}: {:?}", req.addr(), des);
 
                         let res = des.handle(ctx, &mut req).await;
                         dispatch_msg!(@HANDLE res, $msg_type => $r, $ctx_str)
@@ -91,7 +91,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
                 <$msg_type>::error_response()
             });
 
-            log::debug!("PROCESSED from {:?}. Responding: {:?}", req.addr(), resp);
+            log::trace!("PROCESSED from {:?}. Responding: {:?}", req.addr(), resp);
             req.respond(&resp).await
         }};
 
@@ -101,7 +101,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
                 log::error!("{}: {err:#}", stringify!($ctx_str));
             });
 
-            log::debug!("PROCESSED from {:?}", req.addr());
+            log::trace!("PROCESSED from {:?}", req.addr());
             Ok(())
         }};
     }
@@ -140,7 +140,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
 
 async fn handle_unspecified_msg(req: impl Request) -> Result<()> {
     log::warn!(
-        "UNHANDLED INCOMING from {:?} with ID {}",
+        "Unhandled msg INCOMING from {:?} with ID {}",
         req.addr(),
         req.msg_id()
     );
@@ -162,8 +162,7 @@ pub async fn notify_nodes<M: Msg + Serializable>(
     node_types: &'static [NodeType],
     msg: &M,
 ) {
-    log::debug!(target: "mgmtd::msg", "NOTIFICATION to {:?}: {:?}",
-            node_types, msg);
+    log::trace!("NOTIFICATION to {:?}: {:?}", node_types, msg);
 
     if let Err(err) = async {
         for t in node_types {

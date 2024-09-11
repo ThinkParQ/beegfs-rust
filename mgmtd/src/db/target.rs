@@ -112,7 +112,7 @@ pub(crate) fn insert_meta(
     Ok(())
 }
 
-/// Inserts a new storage target if it doesn't exist yet.
+/// Inserts a new storage target which may not exist yet.
 ///
 /// Providing 0 for `target_id` chooses the ID automatically.
 ///
@@ -239,13 +239,6 @@ pub(crate) fn update_storage_node_mappings(
         updated += stmt.execute(params![new_node_id, target_id])?;
     }
 
-    if updated != target_ids.len() {
-        bail!(
-            "Tried to map {} targets but only {updated} entries were updated",
-            target_ids.len()
-        );
-    }
-
     Ok(updated)
 }
 
@@ -358,7 +351,10 @@ mod test {
 
             super::update_storage_node_mappings(tx, &[new_target_id, 1000], 1).unwrap();
 
-            super::update_storage_node_mappings(tx, &[9999, 1], 1).unwrap_err();
+            assert_eq!(
+                1,
+                super::update_storage_node_mappings(tx, &[9999, 1], 1).unwrap()
+            );
 
             let targets = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
