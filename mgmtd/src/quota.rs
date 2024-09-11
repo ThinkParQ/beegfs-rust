@@ -9,7 +9,6 @@ use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
 };
 use shared::bee_msg::OpsErr;
-use shared::log_error_chain;
 use shared::types::{NodeType, NodeTypeServer, QuotaId};
 use sqlite::ConnectionExt;
 use std::collections::HashSet;
@@ -102,9 +101,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             // Log immediately so there is no delay if other tasks have to wait and get joined
             // first
             if let Err(ref err) = resp {
-                log_error_chain!(
-                    err,
-                    "Fetching user quota info for storage target {:?} failed",
+                log::error!(
+                    "Fetching user quota info for storage target {:?} failed: {err:#}",
                     t.target_id
                 );
             }
@@ -127,9 +125,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             // Log immediately so there is no delay if other tasks have to wait and get joined
             // first
             if let Err(ref err) = resp {
-                log_error_chain!(
-                    err,
-                    "Fetching group quota info for storage target {:?} failed",
+                log::error!(
+                    "Fetching group quota info for storage target {:?} failed: {err:#}",
                     t.target_id
                 );
             }
