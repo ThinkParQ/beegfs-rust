@@ -74,7 +74,7 @@ impl HandleWithResponse for RegisterTarget {
                     return Ok((id.num_id().try_into()?, false));
                 }
 
-                if !ctx2.info.user_config.registration_enable {
+                if ctx2.info.user_config.registration_disable {
                     bail!("Registration of new targets is not allowed");
                 }
 
