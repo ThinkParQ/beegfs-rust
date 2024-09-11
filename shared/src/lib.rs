@@ -10,6 +10,8 @@ mod impl_macros;
 pub mod bee_msg;
 pub mod bee_serde;
 pub mod conn;
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod journald_logger;
 pub mod parser;
 pub mod shutdown;

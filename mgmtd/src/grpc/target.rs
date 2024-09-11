@@ -98,7 +98,7 @@ pub(crate) async fn get(
             ))
         })
         .await
-        .map_err(|e| Status::new(Code::Internal, error_chain!(e, "Getting targets failed")))?;
+        .status_code(Code::Internal)?;
 
     let cap_pool_meta_calc = CapPoolCalculator::new(
         ctx.info.user_config.cap_pool_meta_limits.clone(),

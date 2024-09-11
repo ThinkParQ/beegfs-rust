@@ -1091,6 +1091,8 @@ dependencies = [
  "serde",
  "thiserror",
  "tokio",
+ "tokio-stream",
+ "tonic",
 ]
 
 [[package]]

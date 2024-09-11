@@ -1,7 +1,7 @@
 use super::*;
 use anyhow::{bail, Result};
 use core::hash::Hash;
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 use protobuf::beegfs as pb;
 use regex::Regex;
 use std::fmt::{Debug, Display};
@@ -22,7 +22,7 @@ impl_enum_user_str! {EntityType,
     EntityType::BuddyGroup => "buddy group"
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {EntityType => pb::EntityType,
     unspecified => pb::EntityType::Unspecified,
     EntityType::Node => pb::EntityType::Node,
@@ -93,7 +93,7 @@ impl Display for LegacyId {
     }
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl TryFrom<pb::LegacyId> for LegacyId {
     type Error = anyhow::Error;
 
@@ -111,7 +111,7 @@ impl TryFrom<pb::LegacyId> for LegacyId {
     }
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl From<LegacyId> for pb::LegacyId {
     fn from(value: LegacyId) -> Self {
         Self {
@@ -138,7 +138,7 @@ impl Display for EntityId {
     }
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl TryFrom<pb::EntityIdSet> for EntityId {
     type Error = anyhow::Error;
 
@@ -180,7 +180,7 @@ impl Display for EntityIdSet {
     }
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl From<EntityIdSet> for pb::EntityIdSet {
     fn from(value: EntityIdSet) -> Self {
         Self {

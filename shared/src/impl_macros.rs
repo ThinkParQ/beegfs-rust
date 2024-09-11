@@ -58,7 +58,7 @@ macro_rules! impl_enum_user_str {
     };
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 macro_rules! impl_enum_protobuf_traits {
     ($type:ty => $proto_type:ty, unspecified => $proto_unspec_variant:path, $($variant:path => $proto_variant:path),+ $(,)?) => {
         impl TryFrom<$proto_type> for $type {
