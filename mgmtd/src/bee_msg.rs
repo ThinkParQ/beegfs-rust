@@ -10,9 +10,8 @@ use crate::types::*;
 use anyhow::{bail, Context as AContext, Result};
 use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
 use shared::bee_msg::{Msg, OpsErr};
-use shared::bee_serde::Serializable;
+use shared::bee_serde::{Deserializable, Serializable};
 use shared::conn::msg_dispatch::*;
-use shared::log_error_chain;
 use shared::types::*;
 use sqlite::{ConnectionExt, TransactionExt};
 use sqlite_check::sql;
@@ -25,11 +24,23 @@ mod quota;
 mod storage_pool;
 mod target;
 
-/// To handle a message, implement this and add it to the dispatch list. If the message
-/// should return a response, set `Response` accordingly, otherwise set it to ();
-trait Handler {
-    type Response;
-    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Self::Response;
+/// Msg request handler for requests where no response is expected.
+/// To handle a message, implement this and add it to the dispatch list with `=> _`.
+trait HandleNoResponse: Msg + Deserializable {
+    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Result<()>;
+}
+
+/// Msg request handler for requests where a response is expected.
+/// To handle a message, implement this and add it to the dispatch list with `=> R`.
+trait HandleWithResponse: Msg + Deserializable {
+    type Response: Msg + Serializable;
+    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Result<Self::Response>;
+
+    /// Defines the message to send back on an error during `handle()`. Defaults to
+    /// `Response::default()`.
+    fn error_response() -> Self::Response {
+        Self::Response::default()
+    }
 }
 
 /// Takes a generic request, deserialized the message and dispatches it to the handler in the
@@ -39,115 +50,111 @@ trait Handler {
 /// within this function like this:
 /// ```ignore
 /// ...
-/// def::SomeMessage => def::SomeRespMessage,
+/// {path::to::Msg => R, "Message context"}
 /// ...
 /// ```
-/// The `=> def::SomeRespMessage` is optional and only required if a response shall be sent after
-/// handling. In this case, the `Response` associated type must be set to the respective response
-/// message.
-///
-/// If the function returns nothing (`()`), no response will be sent. Make sure this matches the
-/// expecation of the requester.
-pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> anyhow::Result<()> {
-    /// This macro creates the dispatching match statement
-    ///
-    /// Expects a comma separated list of dispatch directives in the following form:
-    /// ```ignore
-    /// dispatch_msg!(
-    ///     path::to::IncomingMsg => path::to::ResponseMsg,
-    ///     path::to::AnotherMsg, // No response
-    /// );
-    /// ```
+/// The `=> R` tells the macro that this message handler returns a response. For non-response
+/// messages, put a `=> _` there. Implement the appropriate handler trait for that message or you
+/// will get errors
+pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Result<()> {
+    /// Creates the dispatching match statement
     macro_rules! dispatch_msg {
-        ($($msg_type:path $(=> $resp_msg_type:path)?),* $(,)?) => {
+        ($({$msg_type:path => $r:tt, $ctx_str:literal})*) => {
             // Match on the message ID provided by the request
             match req.msg_id() {
                 $(
                     <$msg_type>::ID => {
-                        // Messages with and without a response need separate handling
-                        dispatch_msg!(@HANDLE $msg_type, $($resp_msg_type)?);
+                        let des: $msg_type = req.deserialize_msg().with_context(|| {
+                            format!(
+                                "{} ({}) from {:?}",
+                                stringify!($msg_type),
+                                req.msg_id(),
+                                req.addr()
+                            )
+                        })?;
+
+                        log::trace!("INCOMING from {:?}: {:?}", req.addr(), des);
+
+                        let res = des.handle(ctx, &mut req).await;
+                        dispatch_msg!(@HANDLE res, $msg_type => $r, $ctx_str)
                     }
                 ),*
 
-                // Handle unspecified msg IDs
-                id => {
-                    log::warn!("UNHANDLED INCOMING from {:?} with ID {id}", req.addr());
-
-                    // Signal to the caller that the msg is not handled. The generic response
-                    // doesnt have a code for this case, so we just send `TRY_AGAIN` with an
-                    // appropriate description.
-                    req.respond(&GenericResponse {
-                        code: TRY_AGAIN,
-                        description: "Unhandled msg".into(),
-                    }).await?;
-
-                    Ok(())
-                }
+                _ => handle_unspecified_msg(req).await
             }
         };
 
-        // Handle messages with a response
-        (@HANDLE $msg_type:path, $resp_msg_type:path) => {
-            // Deserialize into the specified BeeGFS message
-            let des: $msg_type = req.deserialize_msg().with_context(|| format!("{} from {:?}", stringify!($msg_type), req.addr()))?;
-            log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
+        // Handler result with a response
+        (@HANDLE $res:ident, $msg_type:path => R, $ctx_str:literal) => {{
+            let resp = $res.unwrap_or_else(|err| {
+                log::error!("{}: {err:#}", stringify!($ctx_str));
+                <$msg_type>::error_response()
+            });
 
-            // Call the specified handler and receive the response
-            let response: $resp_msg_type = des.handle(ctx, &mut req).await;
+            log::trace!("PROCESSED from {:?}. Responding: {:?}", req.addr(), resp);
+            req.respond(&resp).await
+        }};
 
-            log::debug!("PROCESSED from {:?}. Responding: {:?}", req.addr(), response);
+        // Handler result without a response
+        (@HANDLE $res:ident, $msg_type:path => _, $ctx_str:literal) => {{
+            $res.unwrap_or_else(|err| {
+                log::error!("{}: {err:#}", stringify!($ctx_str));
+            });
 
-            // Process the response
-            return req.respond(&response).await;
-        };
-
-        // Handle messages without a response
-        (@HANDLE $msg_type:path,) => {
-            // Deserialize into the specified BeeGFS message
-            let des: $msg_type = req.deserialize_msg().with_context(|| format!("{} from {:?}", stringify!($msg_type), req.addr()))?;
-            log::debug!("INCOMING from {:?}: {:?}", req.addr(), des);
-
-            // No response
-            des.handle(ctx, &mut req).await;
-
-            log::debug!("PROCESSED from {:?}", req.addr());
-
-            return Ok(());
-        };
+            log::trace!("PROCESSED from {:?}", req.addr());
+            Ok(())
+        }};
     }
 
     use shared::bee_msg::*;
 
-    // Defines the concrete message to be handled by which handler. See function description for
-    // details.
-    dispatch_msg!(
-        buddy_group::GetMirrorBuddyGroups => buddy_group::GetMirrorBuddyGroupsResp,
-        buddy_group::GetStatesAndBuddyGroups => buddy_group::GetStatesAndBuddyGroupsResp,
-        buddy_group::SetMetadataMirroring => buddy_group::SetMetadataMirroringResp,
-        buddy_group::SetMirrorBuddyGroupResp,
-        misc::Ack,
-        misc::AuthenticateChannel,
-        misc::GetNodeCapacityPools => misc::GetNodeCapacityPoolsResp,
-        misc::PeerInfo,
-        misc::RefreshCapacityPools => misc::Ack,
-        misc::SetChannelDirect,
-        node::GetNodes => node::GetNodesResp,
-        node::Heartbeat => misc::Ack,
-        node::HeartbeatRequest => node::Heartbeat,
-        node::RegisterNode => node::RegisterNodeResp,
-        node::RemoveNode => node::RemoveNodeResp,
-        node::RemoveNodeResp,
-        quota::RequestExceededQuota => quota::RequestExceededQuotaResp,
-        storage_pool::GetStoragePools => storage_pool::GetStoragePoolsResp,
-        target::ChangeTargetConsistencyStates => target::ChangeTargetConsistencyStatesResp,
-        target::GetTargetMappings => target::GetTargetMappingsResp,
-        target::GetTargetStates => target::GetTargetStatesResp,
-        target::MapTargetsResp,
-        target::MapTargets => target::MapTargetsResp,
-        target::RegisterTarget => target::RegisterTargetResp,
-        target::SetStorageTargetInfo => target::SetStorageTargetInfoResp,
-        target::SetTargetConsistencyStates => target::SetTargetConsistencyStatesResp,
-    )
+    // Creates the match block for message dispatching
+    dispatch_msg! {
+        {buddy_group::GetMirrorBuddyGroups => R, "Get buddy groups"}
+        {buddy_group::GetStatesAndBuddyGroups => R, "Get states and buddy groups"}
+        {buddy_group::SetMirrorBuddyGroupResp => _, "SetMirrorBuddyGroupResp"}
+        {misc::Ack => _, "Ack"}
+        {misc::AuthenticateChannel => _, "Authenticate connection"}
+        {misc::GetNodeCapacityPools => R, "Get capacity pools"}
+        {misc::PeerInfo => _, "PeerInfo"}
+        {misc::RefreshCapacityPools => R, "Refresh capacity pools"}
+        {misc::SetChannelDirect => _, "SetChannelDirect"}
+        {node::GetNodes => R, "Get nodes"}
+        {node::Heartbeat => R, "Heartbeat"}
+        {node::HeartbeatRequest => R, "Request heartbeat"}
+        {node::RegisterNode => R, "Register node"}
+        {node::RemoveNode => R, "Remove node"}
+        {node::RemoveNodeResp => _, "RemoveNodeResp"}
+        {quota::RequestExceededQuota => R, "Request exceeded quota"}
+        {storage_pool::GetStoragePools => R, "Get storage pools"}
+        {target::ChangeTargetConsistencyStates => R, "Change target consistency states"}
+        {target::GetTargetMappings => R, "Get target mappings"}
+        {target::GetTargetStates => R, "Get target states"}
+        {target::MapTargetsResp => _, "MapTargetsResp"}
+        {target::MapTargets => R, "Map targets"}
+        {target::RegisterTarget => R, "Register target"}
+        {target::SetStorageTargetInfo => R, "Set storage target info"}
+        {target::SetTargetConsistencyStates => R, "Set target consistency states"}
+    }
+}
+
+async fn handle_unspecified_msg(req: impl Request) -> Result<()> {
+    log::warn!(
+        "Unhandled msg INCOMING from {:?} with ID {}",
+        req.addr(),
+        req.msg_id()
+    );
+
+    // Signal to the caller that the msg is not handled. The generic response
+    // doesnt have a code for this case, so we just send `TRY_AGAIN` with an
+    // appropriate description.
+    req.respond(&GenericResponse {
+        code: TRY_AGAIN,
+        description: "Unhandled msg".into(),
+    })
+    .await?;
+
+    Ok(())
 }
 
 pub async fn notify_nodes<M: Msg + Serializable>(
@@ -155,8 +162,7 @@ pub async fn notify_nodes<M: Msg + Serializable>(
     node_types: &'static [NodeType],
     msg: &M,
 ) {
-    log::debug!(target: "mgmtd::msg", "NOTIFICATION to {:?}: {:?}",
-            node_types, msg);
+    log::trace!("NOTIFICATION to {:?}: {:?}", node_types, msg);
 
     if let Err(err) = async {
         for t in node_types {
@@ -171,9 +177,6 @@ pub async fn notify_nodes<M: Msg + Serializable>(
     }
     .await
     {
-        log_error_chain!(
-            err,
-            "Notification msg could not be send to all nodes: {msg:?}"
-        );
+        log::error!("Notification could not be send to all nodes: {err:#}");
     }
 }

@@ -48,7 +48,7 @@ impl Pool {
         node_uid: Uid,
         msg: &M,
     ) -> Result<R> {
-        log::debug!(target: "msg", "REQUEST to {:?}: {:?}", node_uid, msg);
+        log::trace!("REQUEST to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
@@ -58,14 +58,14 @@ impl Pool {
 
         self.store.push_buf(buf);
 
-        log::debug!(target: "msg", "RESPONSE RECEIVED from {:?}: {:?}", node_uid, resp);
+        log::trace!("RESPONSE RECEIVED from {:?}: {:?}", node_uid, resp);
 
         Ok(resp)
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
     pub async fn send<M: Msg + Serializable>(&self, node_uid: Uid, msg: &M) -> Result<()> {
-        log::debug!(target: "msg", "SEND to {:?}: {:?}", node_uid, msg);
+        log::trace!("SEND to {:?}: {:?}", node_uid, msg);
 
         let mut buf = self.store.pop_buf().unwrap_or_default();
 
@@ -211,50 +211,4 @@ impl Pool {
     pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
         self.store.replace_node_addrs(node_uid, new_addrs)
     }
-}
-
-/// Sends a msg to a node by [SocketAddr] and receives the response.
-///
-/// Does not use stored connections.
-pub async fn request_by_addr<M: Msg + Serializable, R: Msg + Deserializable>(
-    dest: &SocketAddr,
-    msg: &M,
-    auth_secret: Option<AuthSecret>,
-) -> Result<R> {
-    let mut stream = Stream::connect_tcp(dest).await?;
-    let mut buf = MsgBuf::default();
-
-    if let Some(auth_secret) = auth_secret {
-        buf.serialize_msg(&AuthenticateChannel { auth_secret })?;
-        buf.write_to_stream(&mut stream).await?;
-    }
-
-    buf.serialize_msg(msg)?;
-    buf.write_to_stream(&mut stream).await?;
-    buf.read_from_stream(&mut stream).await?;
-    let resp = buf.deserialize_msg()?;
-
-    Ok(resp)
-}
-
-/// Sends a msg to a node by [SocketAddr] without receiving a response.
-///
-/// Does not use stored connections.
-pub async fn send_by_addr<M: Msg + Serializable>(
-    dest: &SocketAddr,
-    msg: &M,
-    auth_secret: Option<AuthSecret>,
-) -> Result<()> {
-    let mut stream = Stream::connect_tcp(dest).await?;
-    let mut buf = MsgBuf::default();
-
-    if let Some(auth_secret) = auth_secret {
-        buf.serialize_msg(&AuthenticateChannel { auth_secret })?;
-        buf.write_to_stream(&mut stream).await?;
-    }
-
-    buf.serialize_msg(msg)?;
-    buf.write_to_stream(&mut stream).await?;
-
-    Ok(())
 }

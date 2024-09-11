@@ -4,119 +4,108 @@ use crate::types::ResolveEntityId;
 use shared::bee_msg::target::*;
 use std::time::Duration;
 
-impl Handler for GetTargetMappings {
+impl HandleWithResponse for GetTargetMappings {
     type Response = GetTargetMappingsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let mapping = ctx
             .db
             .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
-            .await
-        {
-            Ok(res) => GetTargetMappingsResp {
-                mapping: res
-                    .into_iter()
-                    .map(|e| (e.target_id, e.node_id))
-                    .collect::<HashMap<_, _>>(),
-            },
-            Err(err) => {
-                log_error_chain!(err, "Getting target mappings failed");
-                GetTargetMappingsResp {
-                    mapping: HashMap::new(),
-                }
-            }
-        }
+            .await?;
+
+        let resp = GetTargetMappingsResp {
+            mapping: mapping
+                .into_iter()
+                .map(|e| (e.target_id, e.node_id))
+                .collect::<HashMap<_, _>>(),
+        };
+
+        Ok(resp)
     }
 }
 
-impl Handler for GetTargetStates {
+impl HandleWithResponse for GetTargetStates {
     type Response = GetTargetStatesResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        match ctx
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let res = ctx
             .db
             .op(move |tx| db::target::get_with_type(tx, self.node_type.try_into()?))
-            .await
-        {
-            Ok(res) => {
-                let mut targets = Vec::with_capacity(res.len());
-                let mut reachability_states = Vec::with_capacity(res.len());
-                let mut consistency_states = Vec::with_capacity(res.len());
+            .await?;
+        let mut targets = Vec::with_capacity(res.len());
+        let mut reachability_states = Vec::with_capacity(res.len());
+        let mut consistency_states = Vec::with_capacity(res.len());
 
-                for e in res {
-                    targets.push(e.target_id);
-                    reachability_states.push(calc_reachability_state(
-                        e.last_contact,
-                        ctx.info.user_config.node_offline_timeout,
-                    ));
-                    consistency_states.push(e.consistency);
-                }
-
-                GetTargetStatesResp {
-                    targets,
-                    reachability_states,
-                    consistency_states,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(
-                    err,
-                    "Getting target states for {:?} nodes failed",
-                    self.node_type,
-                );
-
-                GetTargetStatesResp {
-                    targets: vec![],
-                    reachability_states: vec![],
-                    consistency_states: vec![],
-                }
-            }
+        for e in res {
+            targets.push(e.target_id);
+            reachability_states.push(calc_reachability_state(
+                e.last_contact,
+                ctx.info.user_config.node_offline_timeout,
+            ));
+            consistency_states.push(e.consistency);
         }
+
+        let resp = GetTargetStatesResp {
+            targets,
+            reachability_states,
+            consistency_states,
+        };
+
+        Ok(resp)
     }
 }
 
-impl Handler for RegisterTarget {
+impl HandleWithResponse for RegisterTarget {
     type Response = RegisterTargetResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let res = async move {
-            if !ctx.info.user_config.registration_enable {
-                bail!("Registration of new targets is not allowed");
-            }
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let ctx2 = ctx.clone();
 
-            ctx.db
-                .op(move |tx| {
+        let (id, is_new) = ctx
+            .db
+            .op(move |tx| {
+                // Do not do anything if the target already exists
+                if let Some(id) = try_resolve_num_id(
+                    tx,
+                    EntityType::Target,
+                    NodeType::Storage,
+                    self.target_id.into(),
+                )? {
+                    return Ok((id.num_id().try_into()?, false));
+                }
+
+                if !ctx2.info.user_config.registration_enable {
+                    bail!("Registration of new targets is not allowed");
+                }
+
+                Ok((
                     db::target::insert_storage(
                         tx,
                         self.target_id,
                         Some(format!("target_{}", std::str::from_utf8(&self.alias)?).try_into()?),
-                    )
-                })
-                .await
-        }
-        .await;
+                    )?,
+                    true,
+                ))
+            })
+            .await?;
 
-        match res {
-            Ok(id) => {
-                log::info!("Registered storage target {id}");
-                RegisterTargetResp { id }
-            }
-            Err(err) => {
-                log_error_chain!(err, "Registering storage target {} failed", self.target_id);
-                RegisterTargetResp { id: 0 }
-            }
+        if is_new {
+            log::info!("Registered new storage target with Id {id}");
+        } else {
+            log::debug!("Re-registered existing storage target with Id {id}");
         }
+
+        Ok(RegisterTargetResp { id })
     }
 }
 
-impl Handler for MapTargets {
+impl HandleWithResponse for MapTargets {
     type Response = MapTargetsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
-        let res = ctx
-            .db
+        ctx.db
             .op(move |tx| {
                 // Check node Id exists
                 let node = LegacyId {
@@ -124,78 +113,69 @@ impl Handler for MapTargets {
                     num_id: self.node_id,
                 }
                 .resolve(tx, EntityType::Node)?;
-
                 // Check all target Ids exist
                 db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
-
-                let updated =
-                    db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
-
-                Ok(updated)
+                // Due to the check above, this must always match all the given ids
+                db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
+                Ok(())
             })
-            .await;
+            .await?;
 
-        match res {
-            Ok(updated) => {
-                log::info!(
-                    "Mapped {} storage targets to node {}",
-                    updated,
-                    self.node_id
-                );
+        // At this point, all mappings must have been successful
 
-                // TODO only do it with successful ones
-                notify_nodes(
-                    ctx,
-                    &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                    &MapTargets {
-                        target_ids: self.target_ids.clone(),
-                        node_id: self.node_id,
-                        ack_id: "".into(),
-                    },
-                )
-                .await;
+        log::info!(
+            "Mapped storage targets with Ids {:?} to node {}",
+            self.target_ids.keys(),
+            self.node_id
+        );
 
-                // Storage server expects a separate status code for each target map requested.
-                // For simplicity we just do an all-or-nothing approach: If all mappings succeed, we
-                // return success. If at least one fails, we fail the whole operation and send back
-                // an empty result (see below). The storage handles this as errors.
-                // This mechanism is supposed to go away later anyway, so this
-                // solution is fine.
-                MapTargetsResp {
-                    results: self
-                        .target_ids
-                        .into_iter()
-                        .map(|e| (e.0, OpsErr::SUCCESS))
-                        .collect(),
-                }
-            }
-            Err(err) => {
-                log_error_chain!(err, "Mapping storage targets failed");
+        notify_nodes(
+            ctx,
+            &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+            &MapTargets {
+                target_ids: self.target_ids.clone(),
+                node_id: self.node_id,
+                ack_id: "".into(),
+            },
+        )
+        .await;
 
-                MapTargetsResp {
-                    results: HashMap::new(),
-                }
-            }
-        }
+        // Storage server expects a separate status code for each target map requested. We, however,
+        // do a all-or-nothing approach. If e.g. one target id doesn't exist (which is an
+        // exceptional error and should usually not happen anyway), we fail the whole
+        // operation. Therefore we can just send a list of successes.
+        let resp = MapTargetsResp {
+            results: self
+                .target_ids
+                .into_iter()
+                .map(|e| (e.0, OpsErr::SUCCESS))
+                .collect(),
+        };
+
+        Ok(resp)
     }
 }
 
-impl Handler for MapTargetsResp {
-    type Response = ();
-
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Self::Response {
+impl HandleNoResponse for MapTargetsResp {
+    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
         // This is sent from the nodes as a result of the MapTargets notification after
         // map_targets was called. We just ignore it.
+        Ok(())
     }
 }
 
-impl Handler for SetStorageTargetInfo {
+impl HandleWithResponse for SetStorageTargetInfo {
     type Response = SetStorageTargetInfoResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
+    fn error_response() -> Self::Response {
+        SetStorageTargetInfoResp {
+            result: OpsErr::INTERNAL,
+        }
+    }
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let node_type = self.node_type;
-        match ctx
-            .db
+        ctx.db
             .op(move |tx| {
                 db::target::get_and_update_capacities(
                     tx,
@@ -213,39 +193,35 @@ impl Handler for SetStorageTargetInfo {
                     self.node_type.try_into()?,
                 )
             })
-            .await
-        {
-            Ok(_) => {
-                log::info!("Updated {:?} target info", node_type,);
+            .await?;
 
-                // in the old mgmtd, a notice to refresh cap pools is sent out here if a cap pool
-                // changed I consider this being to expensive to check here and just don't
-                // do it. Nodes refresh their cap pool every two minutes (by default) anyway
+        log::debug!("Updated {:?} target info", node_type,);
 
-                SetStorageTargetInfoResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
+        // in the old mgmtd, a notice to refresh cap pools is sent out here if a cap pool
+        // changed I consider this being to expensive to check here and just don't
+        // do it. Nodes refresh their cap pool every two minutes (by default) anyway
 
-            Err(err) => {
-                log_error_chain!(err, "Updating {:?} target info failed", node_type);
-                SetStorageTargetInfoResp {
-                    result: OpsErr::INTERNAL,
-                }
-            }
-        }
+        Ok(SetStorageTargetInfoResp {
+            result: OpsErr::SUCCESS,
+        })
     }
 }
 
-impl Handler for ChangeTargetConsistencyStates {
+impl HandleWithResponse for ChangeTargetConsistencyStates {
     type Response = ChangeTargetConsistencyStatesResp;
 
-    async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Self::Response {
+    fn error_response() -> Self::Response {
+        ChangeTargetConsistencyStatesResp {
+            result: OpsErr::INTERNAL,
+        }
+    }
+
+    async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Result<Self::Response> {
         // self.old_states is currently completely ignored. If something reports a non-GOOD state, I
         // see no apparent reason to that the old state matches before setting. We have the
         // authority, whatever nodes think their old state was doesn't matter.
 
-        let res = ctx
+        let changed = ctx
             .db
             .op(move |tx| {
                 let node_type = self.node_type.try_into()?;
@@ -270,100 +246,72 @@ impl Handler for ChangeTargetConsistencyStates {
 
                 Ok(affected > 0)
             })
-            .await;
+            .await?;
 
-        match res {
-            Ok(changed) => {
-                log::info!(
-                    "Updated target consistency states for {:?} nodes",
-                    self.node_type
-                );
+        log::debug!(
+            "Updated target consistency states for {:?} nodes",
+            self.node_type
+        );
 
-                if changed {
-                    notify_nodes(
-                        ctx,
-                        &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                        &RefreshTargetStates { ack_id: "".into() },
-                    )
-                    .await;
-                }
-
-                ChangeTargetConsistencyStatesResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
-            Err(err) => {
-                log_error_chain!(
-                    err,
-                    "Updating target consistency states for {:?} nodes failed",
-                    self.node_type
-                );
-
-                ChangeTargetConsistencyStatesResp {
-                    result: OpsErr::INTERNAL,
-                }
-            }
-        }
-    }
-}
-
-impl Handler for SetTargetConsistencyStates {
-    type Response = SetTargetConsistencyStatesResp;
-
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let res = async {
-            let node_type = self.node_type.try_into()?;
-            let msg = self.clone();
-
-            ctx.db
-                .op(move |tx| {
-                    // Check given target Ids exist
-                    db::target::validate_ids(tx, &msg.target_ids, node_type)?;
-
-                    if msg.set_online > 0 {
-                        db::node::update_last_contact_for_targets(tx, &msg.target_ids, node_type)?;
-                    }
-
-                    db::target::update_consistency_states(
-                        tx,
-                        msg.target_ids
-                            .into_iter()
-                            .zip(msg.states.iter().copied().map(TargetConsistencyState::from)),
-                        node_type,
-                    )
-                })
-                .await?;
-
+        if changed {
             notify_nodes(
                 ctx,
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &RefreshTargetStates { ack_id: "".into() },
             )
             .await;
-
-            Ok(()) as Result<()>
         }
+
+        Ok(ChangeTargetConsistencyStatesResp {
+            result: OpsErr::SUCCESS,
+        })
+    }
+}
+
+impl HandleWithResponse for SetTargetConsistencyStates {
+    type Response = SetTargetConsistencyStatesResp;
+
+    fn error_response() -> Self::Response {
+        SetTargetConsistencyStatesResp {
+            result: OpsErr::INTERNAL,
+        }
+    }
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let node_type = self.node_type.try_into()?;
+        let msg = self.clone();
+
+        ctx.db
+            .op(move |tx| {
+                // Check given target Ids exist
+                db::target::validate_ids(tx, &msg.target_ids, node_type)?;
+
+                if msg.set_online > 0 {
+                    db::node::update_last_contact_for_targets(tx, &msg.target_ids, node_type)?;
+                }
+
+                db::target::update_consistency_states(
+                    tx,
+                    msg.target_ids
+                        .into_iter()
+                        .zip(msg.states.iter().copied().map(TargetConsistencyState::from)),
+                    node_type,
+                )
+            })
+            .await?;
+
+        log::info!("Set consistency state for targets {:?}", self.target_ids,);
+
+        notify_nodes(
+            ctx,
+            &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+            &RefreshTargetStates { ack_id: "".into() },
+        )
         .await;
 
-        match res {
-            Ok(_) => {
-                log::info!("Set consistency state for targets {:?}", self.target_ids,);
-                SetTargetConsistencyStatesResp {
-                    result: OpsErr::SUCCESS,
-                }
-            }
-
-            Err(err) => {
-                log_error_chain!(
-                    err,
-                    "Setting consistency state for targets {:?} failed",
-                    self.target_ids
-                );
-                SetTargetConsistencyStatesResp {
-                    result: OpsErr::INTERNAL,
-                }
-            }
-        }
+        Ok(SetTargetConsistencyStatesResp {
+            result: OpsErr::SUCCESS,
+        })
     }
 }
 

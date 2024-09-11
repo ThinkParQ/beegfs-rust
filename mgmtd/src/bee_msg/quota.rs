@@ -2,11 +2,18 @@ use super::*;
 use crate::db::quota_usage::PoolOrTargetId;
 use shared::bee_msg::quota::*;
 
-impl Handler for RequestExceededQuota {
+impl HandleWithResponse for RequestExceededQuota {
     type Response = RequestExceededQuotaResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Self::Response {
-        let res = ctx
+    fn error_response() -> Self::Response {
+        RequestExceededQuotaResp {
+            result: OpsErr::INTERNAL,
+            inner: SetExceededQuota::default(),
+        }
+    }
+
+    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let inner = ctx
             .db
             .op(move |tx| {
                 let exceeded_ids = db::quota_usage::exceeded_quota_ids(
@@ -27,25 +34,11 @@ impl Handler for RequestExceededQuota {
                     exceeded_quota_ids: exceeded_ids,
                 })
             })
-            .await;
+            .await?;
 
-        match res {
-            Ok(inner) => RequestExceededQuotaResp {
-                result: OpsErr::SUCCESS,
-                inner,
-            },
-            Err(err) => {
-                log_error_chain!(
-                    err,
-                    "Fetching exceeded quota ids for storage pool {} or target {} failed",
-                    self.pool_id,
-                    self.target_id
-                );
-                RequestExceededQuotaResp {
-                    result: OpsErr::INTERNAL,
-                    inner: SetExceededQuota::default(),
-                }
-            }
-        }
+        Ok(RequestExceededQuotaResp {
+            result: OpsErr::SUCCESS,
+            inner,
+        })
     }
 }

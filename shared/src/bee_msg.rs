@@ -21,7 +21,7 @@ pub type MsgId = u16;
 ///
 /// A struct that implements `Msg` represents a BeeGFS message that is compatible with other C/C++
 /// based BeeGFS components.
-pub trait Msg: std::fmt::Debug + Clone + Send + Sync + 'static {
+pub trait Msg: std::fmt::Debug + Default + Clone + Send + Sync + 'static {
     /// Message type as defined in NetMessageTypes.h
     const ID: MsgId;
 }

@@ -5,7 +5,6 @@ use crate::db::{self};
 use crate::license::LicensedFeature;
 use crate::quota::update_and_distribute;
 use shared::bee_msg::target::RefreshTargetStates;
-use shared::log_error_chain;
 use shared::shutdown::Shutdown;
 use shared::types::NodeType;
 use sqlite::ConnectionExt;
@@ -44,7 +43,7 @@ async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
                     log::info!("Deleted {} stale clients", affected);
                 }
             }
-            Err(err) => log_error_chain!(err, "Deleting stale clients failed"),
+            Err(err) => log::error!("Deleting stale clients failed: {err:#}"),
         }
 
         tokio::select! {
@@ -61,7 +60,7 @@ async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
     loop {
         match update_and_distribute(&ctx).await {
             Ok(_) => {}
-            Err(err) => log_error_chain!(err, "Updating quota failed"),
+            Err(err) => log::error!("Updating quota failed: {err:#}"),
         }
 
         tokio::select! {
@@ -105,7 +104,7 @@ async fn switchover(ctx: Context, mut shutdown: Shutdown) {
                     .await;
                 }
             }
-            Err(err) => log_error_chain!(err, "Switchover check failed"),
+            Err(err) => log::error!("Switchover check failed: {err:#}"),
         }
     }
 

@@ -10,6 +10,8 @@ mod impl_macros;
 pub mod bee_msg;
 pub mod bee_serde;
 pub mod conn;
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod journald_logger;
 pub mod parser;
 pub mod shutdown;
@@ -56,33 +58,4 @@ pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr
     }
 
     Ok(filtered_nics)
-}
-
-/// Stringifies any Error that implements `AsRef<&dyn std::error::Error>` with additional context
-/// and its sources.
-#[macro_export]
-macro_rules! error_chain {
-    ($err:expr, $fmt:expr $(,$arg:expr)* $(,)?) => {{
-        use std::fmt::Write;
-
-        let mut err_string = String::new();
-        write!(err_string, "{}", format_args!($fmt, $($arg,)*)).ok();
-
-        let mut current_source: Option<&dyn std::error::Error> = Some($err.as_ref());
-        while let Some(source) = current_source {
-            write!(err_string, ": {}", source).ok();
-            current_source = source.source();
-        }
-
-        err_string
-    }};
-}
-
-/// Logs any error that implements `AsRef<&dyn std::error::Error>` with additional context and its
-/// sources.
-#[macro_export]
-macro_rules! log_error_chain {
-    ($err:expr, $fmt:expr $(,$arg:expr)* $(,)?) => {
-        log::error!("{}", $crate::error_chain!($err, $fmt, $($arg,)*));
-    };
 }

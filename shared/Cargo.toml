@@ -25,9 +25,11 @@ tokio = { workspace = true, features = [
     "time",
     "rt-multi-thread",
 ] }
+tokio-stream = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
 
 [features]
-protobuf = ["dep:protobuf"]
+grpc = ["dep:protobuf", "dep:tonic", "dep:tokio-stream"]
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"

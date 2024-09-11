@@ -4,7 +4,7 @@ use crate::bee_serde::*;
 use anyhow::{anyhow, Result};
 use bee_serde_derive::BeeSerde;
 use core::hash::Hash;
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 use protobuf::beegfs as pb;
 use std::fmt::Debug;
 
@@ -53,7 +53,7 @@ impl_enum_user_str! {NodeType,
     NodeType::Management => "management"
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {NodeType => pb::NodeType,
     unspecified => pb::NodeType::Unspecified,
     NodeType::Meta => pb::NodeType::Meta,
@@ -97,7 +97,7 @@ impl From<NodeTypeServer> for NodeType {
     }
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl TryFrom<pb::NodeType> for NodeTypeServer {
     type Error = anyhow::Error;
 
@@ -112,7 +112,7 @@ impl TryFrom<pb::NodeType> for NodeTypeServer {
         }
     }
 }
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl From<NodeTypeServer> for pb::NodeType {
     fn from(value: NodeTypeServer) -> Self {
         match value {
@@ -137,7 +137,7 @@ impl_enum_user_str! {NicType,
     NicType::Rdma => "rdma",
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {NicType => pb::NicType,
     unspecified => pb::NicType::Unspecified,
     NicType::Ethernet => pb::NicType::Ethernet,
@@ -170,7 +170,7 @@ impl_enum_user_str! {CapacityPool,
     CapacityPool::Emergency=> "emergency",
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {CapacityPool => pb::CapacityPool,
     unspecified => pb::CapacityPool::Unspecified,
     CapacityPool::Normal => pb::CapacityPool::Normal,
@@ -199,7 +199,7 @@ impl_enum_user_str! {TargetConsistencyState,
     TargetConsistencyState::Bad => "bad",
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {TargetConsistencyState => pb::ConsistencyState,
     unspecified => pb::ConsistencyState::Unspecified,
     TargetConsistencyState::Good => pb::ConsistencyState::Good,
@@ -239,7 +239,7 @@ impl_enum_user_str! {QuotaIdType,
     QuotaIdType::Group => "group",
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {QuotaIdType=> pb::QuotaIdType,
     unspecified => pb::QuotaIdType::Unspecified,
     QuotaIdType::User => pb::QuotaIdType::User,
@@ -264,7 +264,7 @@ impl_enum_user_str! {QuotaType,
     QuotaType::Inode => "inode",
 }
 
-#[cfg(feature = "protobuf")]
+#[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
     unspecified => pb::QuotaType::Unspecified,
     QuotaType::Space=> pb::QuotaType::Space,
