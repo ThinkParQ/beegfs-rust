@@ -74,7 +74,7 @@ impl HandleWithResponse for Heartbeat {
     type Response = Ack;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let _ = update_node(
+        update_node(
             RegisterNode {
                 instance_version: self.instance_version,
                 nic_list_version: self.nic_list_version,
@@ -89,7 +89,7 @@ impl HandleWithResponse for Heartbeat {
             },
             ctx,
         )
-        .await;
+        .await?;
 
         Ok(Ack {
             ack_id: self.ack_id,
