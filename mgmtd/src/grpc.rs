@@ -178,13 +178,39 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
 
     let serve_addr = SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.grpc_port);
 
+    let service = pm::management_server::ManagementServer::with_interceptor(
+        ManagementService { ctx: ctx.clone() },
+        move |req: Request<()>| {
+            // If authentication is enabled, require the secret passed with every request
+            if let Some(required_secret) = ctx.info.auth_secret {
+                let check = || -> Result<()> {
+                    let Some(request_secret) = req.metadata().get("auth-secret") else {
+                        bail!("Request requires authentication but no secret was provided")
+                    };
+
+                    let request_secret = AuthSecret::try_from_bytes(request_secret.as_bytes())?;
+
+                    if request_secret != required_secret {
+                        bail!("Request requires authentication but provided secret doesn't match",);
+                    }
+
+                    Ok(())
+                };
+
+                if let Err(err) = check() {
+                    return Err(Status::unauthenticated(err.to_string()));
+                }
+            }
+
+            Ok(req)
+        },
+    );
+
     log::info!("Serving gRPC requests on {serve_addr}");
 
     tokio::spawn(async move {
         builder
-            .add_service(pm::management_server::ManagementServer::new(
-                ManagementService { ctx },
-            ))
+            .add_service(service)
             // Provide our shutdown handle to automatically shutdown the server gracefully when
             // requested
             .serve_with_shutdown(serve_addr, shutdown.wait())

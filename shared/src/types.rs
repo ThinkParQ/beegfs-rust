@@ -1,12 +1,13 @@
 //! Various BeeGFS type definitions, mainly for use by BeeMsg.
 
 use crate::bee_serde::*;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use bee_serde_derive::BeeSerde;
 use core::hash::Hash;
 #[cfg(feature = "grpc")]
 use protobuf::beegfs as pb;
 use std::fmt::Debug;
+use std::str::FromStr;
 
 mod entity;
 pub use entity::*;
@@ -278,14 +279,35 @@ impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
 pub struct AuthSecret(i64);
 
 impl AuthSecret {
-    pub fn from_bytes(str: impl AsRef<[u8]>) -> Self {
-        let (high, low) = str.as_ref().split_at(str.as_ref().len() / 2);
+    /// Generates / hashes the secret from the input byte slice. Accepts arbitrary input.
+    pub fn hash_from_bytes(input: impl AsRef<[u8]>) -> Self {
+        let (high, low) = input.as_ref().split_at(input.as_ref().len() / 2);
         let high = hsieh::hash(high) as i64;
         let low = hsieh::hash(low) as i64;
 
         let hash = (high << 32) | low;
 
         Self(hash)
+    }
+
+    /// Extracts the secret from the input byte slice. Not to be confused with hash_from_bytes(),
+    /// which hashes arbitrary input. This function expects a certain format, currently a
+    /// stringified i64. Returns None if operation fails.
+    pub fn try_from_bytes(input: impl AsRef<[u8]>) -> Result<Self> {
+        let str = std::str::from_utf8(input.as_ref())?;
+        let value = str.parse()?;
+
+        Ok(Self(value))
+    }
+}
+
+impl FromStr for AuthSecret {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(Self(s.parse().with_context(|| {
+            format!("{s} does not represent a valid authentication secret string")
+        })?))
     }
 }
 
@@ -296,8 +318,8 @@ mod test {
     #[test]
     fn test_auth_secret() {
         let expect = ((hsieh::hash(b"hhhhh") as u64) << 32) | hsieh::hash(b"lllll") as u64;
-        assert_eq!(expect as i64, AuthSecret::from_bytes(b"hhhhhlllll").0);
+        assert_eq!(expect as i64, AuthSecret::hash_from_bytes(b"hhhhhlllll").0);
         let expect = ((hsieh::hash(b"hhhh") as u64) << 32) | hsieh::hash(b"lllll") as u64;
-        assert_eq!(expect as i64, AuthSecret::from_bytes(b"hhhhlllll").0);
+        assert_eq!(expect as i64, AuthSecret::hash_from_bytes(b"hhhhlllll").0);
     }
 }
