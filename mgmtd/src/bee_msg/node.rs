@@ -74,7 +74,7 @@ impl HandleWithResponse for Heartbeat {
     type Response = Ack;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let _ = update_node(
+        update_node(
             RegisterNode {
                 instance_version: self.instance_version,
                 nic_list_version: self.nic_list_version,
@@ -89,7 +89,7 @@ impl HandleWithResponse for Heartbeat {
             },
             ctx,
         )
-        .await;
+        .await?;
 
         Ok(Ack {
             ack_id: self.ack_id,
@@ -180,7 +180,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
 
                 // Check node registration is allowed. This should ignore registering client
                 // nodes.
-                if msg.node_type != NodeType::Client && !info.user_config.registration_enable {
+                if msg.node_type != NodeType::Client && info.user_config.registration_disable {
                     bail!("Registration of new nodes is not allowed");
                 }
 

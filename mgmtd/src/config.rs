@@ -40,7 +40,7 @@ pub struct Config {
     pub log_target: LogTarget,
     pub log_level: LevelFilter,
     pub db_file: PathBuf,
-    pub registration_enable: bool,
+    pub registration_disable: bool,
     pub node_offline_timeout: Duration,
     pub client_auto_remove_timeout: Duration,
     pub license_cert_file: PathBuf,
@@ -91,7 +91,7 @@ impl Default for Config {
             log_target: LogTarget::Journald,
             log_level: LevelFilter::Warn,
             db_file: "/var/lib/beegfs/mgmtd.sqlite".into(),
-            registration_enable: true,
+            registration_disable: false,
             node_offline_timeout: Duration::from_secs(180),
             client_auto_remove_timeout: Duration::from_secs(30 * 60),
             license_cert_file: "/etc/beegfs/license.pem".into(),
@@ -268,6 +268,12 @@ struct CommandLineArgs {
     /// Sqlite database file location [default: /var/lib/beegfs/mgmtd.sqlite]
     #[arg(long)]
     db_file: Option<PathBuf>,
+    #[arg(long, default_missing_value = "true", num_args = 0..=1)]
+    registration_disable: Option<bool>,
+    #[arg(long, value_parser = integer_with_time_unit::parse)]
+    node_offline_timeout: Option<Duration>,
+    #[arg(long, value_parser = integer_with_time_unit::parse)]
+    client_auto_remove_timeout: Option<Duration>,
     /// The BeeGFS license certificate file [default: /etc/beegfs/license.crt]
     #[arg(long)]
     license_cert_file: Option<PathBuf>,
@@ -305,7 +311,7 @@ struct ConfigFileArgs {
     log_target: Option<LogTarget>,
     log_level: Option<LogLevel>,
     db_file: Option<PathBuf>,
-    registration_enable: Option<bool>,
+    registration_disable: Option<bool>,
     #[serde(with = "integer_with_time_unit::optional")]
     node_offline_timeout: Option<Duration>,
     #[serde(with = "integer_with_time_unit::optional")]
@@ -387,6 +393,15 @@ impl Config {
         if let Some(v) = args.db_file {
             self.db_file = v;
         }
+        if let Some(v) = args.registration_disable {
+            self.registration_disable = v;
+        }
+        if let Some(v) = args.node_offline_timeout {
+            self.node_offline_timeout = v;
+        }
+        if let Some(v) = args.client_auto_remove_timeout {
+            self.client_auto_remove_timeout = v;
+        }
         if let Some(v) = args.license_cert_file {
             self.license_cert_file = v;
         }
@@ -450,8 +465,8 @@ impl Config {
         if let Some(v) = args.db_file {
             self.db_file = v;
         }
-        if let Some(v) = args.registration_enable {
-            self.registration_enable = v;
+        if let Some(v) = args.registration_disable {
+            self.registration_disable = v;
         }
         if let Some(v) = args.node_offline_timeout {
             self.node_offline_timeout = v;

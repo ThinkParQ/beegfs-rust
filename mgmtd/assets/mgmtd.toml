@@ -44,12 +44,14 @@
 # Log target to use
 # log-target = "journald"
 
+# Log level to use (valid are "error", "warn", "info", "debug", "trace")
+# log-level = "warn"
 
 
 ### Generic ###
 
-# Allows registration of new nodes and targets
-# registration-enable = true
+# Disallows registration of new nodes and targets
+# registration-disable = false
 
 # The time after server nodes that send no updates are considered offline.
 # node-offline-timeout = "180s"

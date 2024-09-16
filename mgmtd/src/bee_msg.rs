@@ -87,7 +87,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
         // Handler result with a response
         (@HANDLE $res:ident, $msg_type:path => R, $ctx_str:literal) => {{
             let resp = $res.unwrap_or_else(|err| {
-                log::error!("{}: {err:#}", stringify!($ctx_str));
+                log::error!("{}: {err:#}", $ctx_str);
                 <$msg_type>::error_response()
             });
 
@@ -98,7 +98,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
         // Handler result without a response
         (@HANDLE $res:ident, $msg_type:path => _, $ctx_str:literal) => {{
             $res.unwrap_or_else(|err| {
-                log::error!("{}: {err:#}", stringify!($ctx_str));
+                log::error!("{}: {err:#}", $ctx_str);
             });
 
             log::trace!("PROCESSED from {:?}", req.addr());
