@@ -8,7 +8,6 @@ use shared::bee_msg::target::RefreshTargetStates;
 use shared::shutdown::Shutdown;
 use shared::types::NodeType;
 use sqlite::ConnectionExt;
-use std::time::Duration;
 use tokio::time::{sleep, MissedTickBehavior};
 
 /// Starts the timed tasks.
@@ -31,6 +30,8 @@ pub(crate) fn start_tasks(ctx: Context, shutdown: Shutdown) {
 /// Deletes client nodes from the database which haven't responded for the configured time.
 async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
     loop {
+        log::debug!("Running stale client deleter");
+
         let timeout = ctx.info.user_config.client_auto_remove_timeout;
 
         match ctx
@@ -58,6 +59,8 @@ async fn delete_stale_clients(ctx: Context, mut shutdown: Shutdown) {
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
 async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
     loop {
+        log::debug!("Running quota update");
+
         match update_and_distribute(&ctx).await {
             Ok(_) => {}
             Err(err) => log::error!("Updating quota failed: {err:#}"),
@@ -74,14 +77,27 @@ async fn update_quota(ctx: Context, mut shutdown: Shutdown) {
 
 /// Finds buddy groups with switchover condition, swaps them and notifies nodes.
 async fn switchover(ctx: Context, mut shutdown: Shutdown) {
-    let mut timer = tokio::time::interval(Duration::from_secs(10));
+    // On the other nodes / old management, the interval in which the switchover checks are done
+    // is determined by "1/6 sysTargetOfflineTimeoutSecs".
+    // This is also the interval the target states are being pushed to management. To avoid an
+    // accidental switchover after management shutdown in case a secondary reports in first but an
+    // up-and-running primary doesn't because of their timing, this value should be the same as on
+    // the nodes. If we delay the initial check by that time, then a running primary has enough time
+    // to report in and update the last contact time before the check happens.
+    let interval = ctx.info.user_config.node_offline_timeout / 6;
+    let mut timer = tokio::time::interval(interval);
     timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    // First call of tick completes immediately
+    timer.tick().await;
 
     loop {
         tokio::select! {
             _ = timer.tick() => {}
             _ = shutdown.wait() => { break; }
         }
+
+        log::debug!("Running switchover check");
 
         let timeout = ctx.info.user_config.node_offline_timeout;
 
