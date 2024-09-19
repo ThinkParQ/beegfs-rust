@@ -201,10 +201,16 @@ pub(crate) fn update_storage_pools(
 ///
 /// # Conditions for a swap
 /// A swap happens, if
-/// * primaries last contact was more than `timeout` ago OR primaries consistency state is
-///   `needs_resync`
+/// * primaries last contact was more than `timeout` ago
 /// * AND secondaries consistency state is `good`
 /// * AND secondaries last contact was less than `timeout / 2` ago
+///
+/// Note that old management also switched primary and secondary on the primary node being `needs
+/// resync`. A switchover under that condition (without it being known as offline in the whole
+/// system first) is actually dangerous, although it most likely only happened if the primary
+/// crashed while the secondary was still good. This allowed the user to immediately restart the
+/// primary and not having to wait for a resync due to the primary being offlined.
+/// We decided to leave this out for now and can still re-add it later if there are problems.
 ///
 /// # Return value
 /// Returns a Vec containing tuples with the ID and the node type of buddy groups which have been
@@ -220,11 +226,7 @@ pub(crate) fn check_and_swap_buddies(
             INNER JOIN nodes AS p_n ON p_n.node_uid = p_t.node_uid
             INNER JOIN all_targets_v AS s_t ON s_t.target_uid = s_target_uid
             INNER JOIN nodes AS s_n ON s_n.node_uid = s_t.node_uid
-            WHERE (
-                (STRFTIME('%s', 'now') - STRFTIME('%s', p_n.last_contact)) >= ?1
-                OR
-                p_t.consistency == 2
-            )
+            WHERE (STRFTIME('%s', 'now') - STRFTIME('%s', p_n.last_contact)) >= ?1
                 AND s_t.consistency == 1
                 AND (STRFTIME('%s', 'now') - STRFTIME('%s', s_n.last_contact)) < (?1 / 2)"
         ),
@@ -370,44 +372,6 @@ mod test {
         assert_eq!(2, meta_groups[0].secondary_target_id);
         assert_eq!(1, storage_groups[0].primary_target_id);
         assert_eq!(5, storage_groups[0].secondary_target_id);
-    }
-
-    /// Test swapping primary and secondary member (switchover) when primary is needs_resync
-    #[test]
-    fn swap_buddies_on_needs_resync() {
-        with_test_data(|tx| {
-            target::update_consistency_states(
-                tx,
-                [(1, TargetConsistencyState::NeedsResync)],
-                NodeTypeServer::Meta,
-            )
-            .unwrap();
-
-            target::update_consistency_states(
-                tx,
-                [(1, TargetConsistencyState::NeedsResync)],
-                NodeTypeServer::Storage,
-            )
-            .unwrap();
-
-            let swaps = super::check_and_swap_buddies(tx, Duration::from_secs(10000)).unwrap();
-
-            assert_eq!(2, swaps.len());
-            assert!(swaps
-                .iter()
-                .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Meta));
-            assert!(swaps
-                .iter()
-                .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Storage));
-
-            ensure_swapped_buddies(tx);
-
-            assert!(
-                buddy_group::check_and_swap_buddies(tx, Duration::from_secs(99999))
-                    .unwrap()
-                    .is_empty()
-            );
-        })
     }
 
     /// Test swapping primary and secondary member (switchover) when primary runs into timeout
