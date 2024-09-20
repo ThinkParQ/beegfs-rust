@@ -3,8 +3,8 @@ use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{start, StaticInfo};
+use shared::journald_logger;
 use shared::types::AuthSecret;
-use shared::{journald_logger, shutdown};
 use std::backtrace::Backtrace;
 use std::panic;
 use std::path::Path;
@@ -74,8 +74,6 @@ fn inner_main() -> Result<()> {
     // signatures or not behaving as expected will lead to undefined behavior.
     let lic = unsafe { LicenseVerifier::new(&user_config.license_lib_file) };
 
-    let (shutdown, shutdown_control) = shutdown::new();
-
     // Ensure the program ends if a task panics
     panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::capture();
@@ -97,18 +95,20 @@ fn inner_main() -> Result<()> {
             .load_and_verify_cert(user_config.license_cert_file.as_path())
             .await
         {
-            log::warn!("Initializing licensing library failed. Licensed features will be unavailable: {err}");
+            log::warn!(
+                "Initializing licensing library failed.\
+                Licensed features will be unavailable: {err}"
+            );
         }
 
         // Start the actual daemon
-        start(
+        let run = start(
             StaticInfo {
                 user_config,
                 auth_secret,
                 network_addrs,
             },
             lic,
-            shutdown,
         )
         .await?;
 
@@ -116,23 +116,7 @@ fn inner_main() -> Result<()> {
         // notification that the service has completed startup and is ready for serving
         let _ = sd_notify::notify(true, &[sd_notify::NotifyState::Ready]);
 
-        // Wait for a SIGINT. When received, notify the holders of shutdown handles
-        log::info!("Waiting for SIGINT / Ctrl-C ...");
-
-        let _ = ctrl_c().await;
-
-        log::warn!("Received SIGINT. Waiting for all tasks to complete ...");
-
-        tokio::select! {
-            // Wait for all tasks to complete
-            _ = shutdown_control.shutdown() => {
-                log::warn!("Shutdown completed");
-            }
-            // When receiving another SIGINT, end the program immediately
-            _ = ctrl_c() => {
-                log::warn!("Shutdown forced");
-            }
-        }
+        run.wait_for_shutdown(ctrl_c).await;
 
         Ok(())
     })

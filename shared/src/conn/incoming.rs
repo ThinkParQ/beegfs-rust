@@ -5,7 +5,7 @@ use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::Msg;
-use crate::shutdown::Shutdown;
+use crate::run_state::RunStateHandle;
 use anyhow::{bail, Result};
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
@@ -35,7 +35,7 @@ pub async fn listen_tcp(
     listen_addr: SocketAddr,
     dispatch: impl DispatchRequest,
     stream_authentication_required: bool,
-    mut shutdown: Shutdown,
+    mut run_state: RunStateHandle,
 ) -> Result<()> {
     let listener = TcpListener::bind(listen_addr).await?;
     log::info!("Listening for BeeGFS connections on {listen_addr}");
@@ -62,10 +62,11 @@ pub async fn listen_tcp(
                         stream.into(),
                         dispatch.clone(),
                         stream_authentication_required,
+                        run_state.clone(),
                     ));
                 }
 
-                _ = shutdown.wait() =>{ break; }
+                _ = run_state.wait_for_shutdown() =>{ break; }
             }
         }
 
@@ -80,6 +81,7 @@ async fn stream_loop(
     mut stream: Stream,
     dispatch: impl DispatchRequest,
     stream_authentication_required: bool,
+    mut run_state: RunStateHandle,
 ) {
     log::debug!("Accepted incoming stream from {:?}", stream.addr());
 
@@ -87,10 +89,17 @@ async fn stream_loop(
     let mut buf = MsgBuf::default();
 
     loop {
-        // Wait for available data
-        if let Err(err) = stream.readable().await {
-            log::debug!("Closed stream from {:?}: {err:#}", stream.addr());
-            return;
+        // Wait for available data or shutdown signal
+        tokio::select! {
+            res = stream.readable() => {
+                if let Err(err) = res {
+                    log::debug!("Closed stream from {:?}: {err:#}", stream.addr());
+                    return;
+                }
+            }
+            _ = run_state.wait_for_shutdown() => {
+                return;
+            }
         }
 
         if let Err(err) = read_stream(
@@ -163,7 +172,7 @@ async fn read_stream(
 pub fn recv_udp(
     sock: Arc<UdpSocket>,
     dispatch: impl DispatchRequest,
-    mut shutdown: Shutdown,
+    mut run_state: RunStateHandle,
 ) -> Result<()> {
     log::info!("Receiving BeeGFS datagrams on {}", sock.local_addr()?);
 
@@ -179,7 +188,7 @@ pub fn recv_udp(
                     }
                 }
 
-                _ = shutdown.wait() => { break; }
+                _ = run_state.wait_for_shutdown() => { break; }
             }
         }
 
