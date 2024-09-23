@@ -19,7 +19,7 @@ pub(crate) fn start_tasks(ctx: Context, shutdown: Shutdown) {
     tokio::spawn(switchover(ctx.clone(), shutdown.clone()));
 
     if ctx.info.user_config.quota_enable {
-        if let Err(err) = ctx.lic.verify_feature(LicensedFeature::Quota) {
+        if let Err(err) = ctx.license.verify_feature(LicensedFeature::Quota) {
             log::error!("Quota is enabled in the config, but the feature could not be verified. Continuing without quota support: {err}");
         } else {
             tokio::spawn(update_quota(ctx, shutdown));

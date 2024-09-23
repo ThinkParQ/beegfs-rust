@@ -223,7 +223,7 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
 
 /// Checks if the given license feature is enabled or fails with "Unauthenticated" if not
 fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<()> {
-    ctx.lic
+    ctx.license
         .verify_feature(feature)
         .status_code(Code::Unauthenticated)
 }

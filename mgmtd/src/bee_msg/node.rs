@@ -161,7 +161,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
     let msg2 = msg.clone();
     let info = ctx.info;
 
-    let licensed_machines = match ctx.lic.get_num_machines() {
+    let licensed_machines = match ctx.license.get_num_machines() {
         Ok(n) => n,
         Err(e) => {
             log::warn!("Error while parsing number of licensed servers: {}", e);
