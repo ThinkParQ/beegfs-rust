@@ -86,6 +86,11 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
             states,
         };
 
+        // If it's a client that requested it, notify the run controller that it pulled states
+        if self.requested_by_client_id != 0 {
+            ctx.notify_client_pulled_state(self.node_type, self.requested_by_client_id);
+        }
+
         Ok(resp)
     }
 }
