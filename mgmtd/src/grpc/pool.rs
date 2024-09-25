@@ -135,6 +135,7 @@ pub(crate) async fn create(
     req: pm::CreatePoolRequest,
 ) -> Result<pm::CreatePoolResponse> {
     needs_license(&ctx, LicensedFeature::Storagepool)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     if req.node_type() != pb::NodeType::Storage {
         bail!("node type must be storage");
@@ -181,6 +182,7 @@ pub(crate) async fn assign(
     req: pm::AssignPoolRequest,
 ) -> Result<pm::AssignPoolResponse> {
     needs_license(&ctx, LicensedFeature::Storagepool)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     let pool: EntityId = required_field(req.pool)?.try_into()?;
 
@@ -273,6 +275,7 @@ pub(crate) async fn delete(
     req: pm::DeletePoolRequest,
 ) -> Result<pm::DeletePoolResponse> {
     needs_license(&ctx, LicensedFeature::Storagepool)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     let pool: EntityId = required_field(req.pool)?.try_into()?;
     let execute: bool = required_field(req.execute)?;

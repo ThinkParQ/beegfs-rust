@@ -5,7 +5,7 @@ use crate::context::Context;
 use crate::db;
 use crate::license::LicensedFeature;
 use crate::types::{ResolveEntityId, SqliteEnumExt};
-use anyhow::{bail, Context as AContext, Result};
+use anyhow::{anyhow, bail, Context as AContext, Result};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{params, OptionalExtension, Transaction};
 use shared::grpc::*;
@@ -226,4 +226,13 @@ fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<()> {
     ctx.license
         .verify_feature(feature)
         .status_code(Code::Unauthenticated)
+}
+
+/// Checks if the management is in pre shutdown state
+fn fail_on_pre_shutdown(ctx: &Context) -> Result<()> {
+    if ctx.run_state.pre_shutdown() {
+        return Err(anyhow!("Management is shutting down")).status_code(Code::Unavailable);
+    }
+
+    Ok(())
 }

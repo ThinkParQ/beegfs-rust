@@ -9,6 +9,7 @@ pub(crate) async fn set_default_quota_limits(
     req: pm::SetDefaultQuotaLimitsRequest,
 ) -> Result<pm::SetDefaultQuotaLimitsResponse> {
     needs_license(&ctx, LicensedFeature::Quota)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     if !ctx.info.user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
@@ -83,6 +84,7 @@ pub(crate) async fn set_quota_limits(
     req: pm::SetQuotaLimitsRequest,
 ) -> Result<pm::SetQuotaLimitsResponse> {
     needs_license(&ctx, LicensedFeature::Quota)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     if !ctx.info.user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);

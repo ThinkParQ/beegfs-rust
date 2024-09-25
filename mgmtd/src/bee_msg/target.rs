@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::target::TargetCapacities;
 use crate::types::ResolveEntityId;
+use rusqlite::Transaction;
 use shared::bee_msg::target::*;
 use std::time::Duration;
 
@@ -30,32 +31,18 @@ impl HandleWithResponse for GetTargetStates {
     type Response = GetTargetStatesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let pre_shutdown = ctx.run_state.pre_shutdown();
         let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
 
-        let targets: Vec<(TargetId, TargetConsistencyState, TargetReachabilityState)> = ctx
+        let targets = ctx
             .db
             .op(move |tx| {
-                tx.query_map_collect(
-                    sql!(
-                        "SELECT target_id, consistency,
-                        (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact))
-                        FROM all_targets_v AS t
-                        INNER JOIN nodes AS n USING(node_uid)
-                        WHERE t.node_type = ?1"
-                    ),
-                    [self.node_type.sql_variant()],
-                    |row| {
-                        Ok((
-                            row.get(0)?,
-                            TargetConsistencyState::from_row(row, 1)?,
-                            calc_reachability_state(
-                                Duration::from_secs(row.get(2)?),
-                                node_offline_timeout,
-                            ),
-                        ))
-                    },
+                get_targets_with_states(
+                    tx,
+                    pre_shutdown,
+                    self.node_type.try_into()?,
+                    node_offline_timeout,
                 )
-                .map_err(Into::into)
             })
             .await?;
 
@@ -79,10 +66,46 @@ impl HandleWithResponse for GetTargetStates {
     }
 }
 
+pub(crate) fn get_targets_with_states(
+    tx: &Transaction,
+    pre_shutdown: bool,
+    node_type: NodeTypeServer,
+    node_offline_timeout: Duration,
+) -> Result<Vec<(TargetId, TargetConsistencyState, TargetReachabilityState)>> {
+    let targets = tx.query_map_collect(
+        sql!(
+            "SELECT t.target_id, t.consistency,
+                (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact)),
+                COALESCE(mg.s_target_id, sg.s_target_id) AS s_target_id
+            FROM all_targets_v AS t
+            INNER JOIN nodes AS n USING(node_uid)
+            LEFT JOIN meta_buddy_groups AS mg ON mg.s_target_id = t.target_id
+            LEFT JOIN storage_buddy_groups AS sg ON sg.s_target_id = t.target_id
+            WHERE t.node_type = ?1"
+        ),
+        [node_type.sql_variant()],
+        |row| {
+            Ok((
+                row.get(0)?,
+                TargetConsistencyState::from_row(row, 1)?,
+                if !pre_shutdown || row.get::<_, Option<TargetId>>(3)?.is_some() {
+                    calc_reachability_state(Duration::from_secs(row.get(2)?), node_offline_timeout)
+                } else {
+                    TargetReachabilityState::ProbablyOffline
+                },
+            ))
+        },
+    )?;
+
+    Ok(targets)
+}
+
 impl HandleWithResponse for RegisterTarget {
     type Response = RegisterTargetResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let ctx2 = ctx.clone();
 
         let (id, is_new) = ctx
@@ -127,6 +150,8 @@ impl HandleWithResponse for MapTargets {
     type Response = MapTargetsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
         ctx.db
@@ -198,6 +223,8 @@ impl HandleWithResponse for SetStorageTargetInfo {
     }
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let node_type = self.node_type;
         ctx.db
             .op(move |tx| {
@@ -241,6 +268,8 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
     }
 
     async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         // self.old_states is currently completely ignored. If something reports a non-GOOD state, I
         // see no apparent reason to that the old state matches before setting. We have the
         // authority, whatever nodes think their old state was doesn't matter.
@@ -302,6 +331,8 @@ impl HandleWithResponse for SetTargetConsistencyStates {
     }
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let node_type = self.node_type.try_into()?;
         let msg = self.clone();
 

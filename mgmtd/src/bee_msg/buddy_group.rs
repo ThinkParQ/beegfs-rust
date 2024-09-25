@@ -1,8 +1,6 @@
-use super::target::calc_reachability_state;
 use super::*;
 use shared::bee_msg::buddy_group::*;
-use shared::bee_msg::target::TargetReachabilityState;
-use std::time::Duration;
+use target::get_targets_with_states;
 
 impl HandleWithResponse for GetMirrorBuddyGroups {
     type Response = GetMirrorBuddyGroupsResp;
@@ -55,32 +53,19 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let node_type: NodeTypeServer = self.node_type.try_into()?;
+
+        let pre_shutdown = ctx.run_state.pre_shutdown();
         let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
 
         let (targets, groups) = ctx
             .db
             .op(move |tx| {
-                let targets: Vec<(TargetId, TargetConsistencyState, TargetReachabilityState)> = tx
-                    .query_map_collect(
-                        sql!(
-                            "SELECT t.target_id, t.consistency,
-                            (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact))
-                            FROM all_targets_v AS t
-                            INNER JOIN nodes AS n USING(node_uid)
-                            WHERE t.node_type = ?1"
-                        ),
-                        [node_type.sql_variant()],
-                        |row| {
-                            Ok((
-                                row.get(0)?,
-                                TargetConsistencyState::from_row(row, 1)?,
-                                calc_reachability_state(
-                                    Duration::from_secs(row.get(2)?),
-                                    node_offline_timeout,
-                                ),
-                            ))
-                        },
-                    )?;
+                let targets = get_targets_with_states(
+                    tx,
+                    pre_shutdown,
+                    self.node_type.try_into()?,
+                    node_offline_timeout,
+                )?;
 
                 let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = tx.query_map_collect(
                     sql!(

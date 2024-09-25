@@ -74,6 +74,8 @@ impl HandleWithResponse for Heartbeat {
     type Response = Ack;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         update_node(
             RegisterNode {
                 instance_version: self.instance_version,
@@ -148,6 +150,8 @@ impl HandleWithResponse for RegisterNode {
     type Response = RegisterNodeResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let node_id = update_node(self, ctx).await?;
 
         Ok(RegisterNodeResp {
@@ -353,6 +357,8 @@ impl HandleWithResponse for RemoveNode {
     }
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let node = ctx
             .db
             .op(move |tx| {

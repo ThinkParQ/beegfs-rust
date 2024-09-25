@@ -89,6 +89,7 @@ pub(crate) async fn create(
     req: pm::CreateBuddyGroupRequest,
 ) -> Result<pm::CreateBuddyGroupResponse> {
     needs_license(&ctx, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     let node_type: NodeTypeServer = req.node_type().try_into()?;
     let alias: Alias = required_field(req.alias)?.try_into()?;
@@ -153,6 +154,7 @@ pub(crate) async fn delete(
     req: pm::DeleteBuddyGroupRequest,
 ) -> Result<pm::DeleteBuddyGroupResponse> {
     needs_license(&ctx, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     let group: EntityId = required_field(req.group)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
@@ -229,6 +231,7 @@ pub(crate) async fn mirror_root_inode(
     _req: pm::MirrorRootInodeRequest,
 ) -> Result<pm::MirrorRootInodeResponse> {
     needs_license(&ctx, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(&ctx)?;
 
     let meta_root = ctx
         .db

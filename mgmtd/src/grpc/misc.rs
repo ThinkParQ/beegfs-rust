@@ -6,6 +6,8 @@ pub(crate) async fn set_alias(
     ctx: Context,
     req: pm::SetAliasRequest,
 ) -> Result<pm::SetAliasResponse> {
+    fail_on_pre_shutdown(&ctx)?;
+
     // Parse proto msg
     let entity_type: EntityType = req.entity_type().try_into()?;
     let entity_id: EntityId = required_field(req.entity_id)?.try_into()?;

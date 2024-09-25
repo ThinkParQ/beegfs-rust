@@ -23,19 +23,21 @@ pub(crate) async fn get(
     _req: pm::GetTargetsRequest,
 ) -> Result<pm::GetTargetsResponse> {
     let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
+    let pre_shutdown = ctx.run_state.pre_shutdown();
 
-    // Query all targets which have a node assigned
     let targets_q = sql!(
         "SELECT t.target_uid, t.alias, t.target_id, t.node_type,
             n.node_uid, n.alias, n.node_id,
             sp.pool_uid, e_sp.alias, sp.pool_id,
-            t.consistency, (STRFTIME('%s', 'now') - STRFTIME('%s', last_contact)),
-            t.free_space, t.free_inodes, t.total_space, t.total_inodes
+            t.consistency, (UNIXEPOCH('now') - UNIXEPOCH(last_contact)),
+            t.free_space, t.free_inodes, t.total_space, t.total_inodes,
+            COALESCE(mg.s_target_id, sg.s_target_id) AS s_target_id
         FROM all_targets_v AS t
         INNER JOIN all_nodes_v AS n USING(node_uid)
         LEFT JOIN storage_pools AS sp USING(pool_id)
         LEFT JOIN entities AS e_sp ON e_sp.uid = sp.pool_uid
-        WHERE n.node_id IS NOT NULL"
+        LEFT JOIN meta_buddy_groups AS mg ON mg.s_target_id = t.target_id
+        LEFT JOIN storage_buddy_groups AS sg ON sg.s_target_id = t.target_id"
     );
 
     let targets_f = move |row: &rusqlite::Row| {
@@ -72,11 +74,12 @@ pub(crate) async fn get(
                 None
             },
 
-            reachability_state: calc_reachability_state(
-                Duration::from_secs(row.get(11)?),
-                node_offline_timeout,
-            )
-            .into(),
+            reachability_state: if !pre_shutdown || row.get::<_, Option<TargetId>>(16)?.is_some() {
+                calc_reachability_state(Duration::from_secs(row.get(11)?), node_offline_timeout)
+                    .into()
+            } else {
+                pb::ReachabilityState::Poffline.into()
+            },
             consistency_state: TargetConsistencyState::from_row(row, 10)?.into_proto_i32(),
             last_contact_s: row.get(11)?,
             free_space_bytes: row.get(12)?,
@@ -157,6 +160,8 @@ pub(crate) async fn delete(
     ctx: Context,
     req: pm::DeleteTargetRequest,
 ) -> Result<pm::DeleteTargetResponse> {
+    fail_on_pre_shutdown(&ctx)?;
+
     let target: EntityId = required_field(req.target)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
@@ -230,6 +235,8 @@ pub(crate) async fn set_state(
     ctx: Context,
     req: pm::SetTargetStateRequest,
 ) -> Result<pm::SetTargetStateResponse> {
+    fail_on_pre_shutdown(&ctx)?;
+
     let state: TargetConsistencyState = req.consistency_state().try_into()?;
     let target: EntityId = required_field(req.target)?.try_into()?;
 
