@@ -5,39 +5,6 @@ use itertools::Itertools;
 use std::cmp::Ordering;
 use std::time::Duration;
 
-/// Represents a buddy group entry.
-#[derive(Clone, Debug)]
-pub(crate) struct BuddyGroup {
-    pub id: BuddyGroupId,
-    pub primary_target_id: TargetId,
-    pub secondary_target_id: TargetId,
-    #[allow(unused)]
-    pub pool_id: Option<PoolId>,
-}
-
-/// Retrieve a list of nodes filtered by node type.
-pub(crate) fn get_with_type(
-    tx: &Transaction,
-    node_type: NodeTypeServer,
-) -> Result<Vec<BuddyGroup>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT group_id, p_target_id, s_target_id, pool_id
-            FROM all_buddy_groups_v
-            WHERE node_type = ?1;"
-        ),
-        [node_type.sql_variant()],
-        |row| {
-            Ok(BuddyGroup {
-                id: row.get(0)?,
-                primary_target_id: row.get(1)?,
-                secondary_target_id: row.get(2)?,
-                pool_id: row.get(3)?,
-            })
-        },
-    )?)
-}
-
 /// Ensures that the list of given buddy groups actually exists and returns an appropriate error if
 /// not.
 pub(crate) fn validate_ids(
@@ -304,6 +271,20 @@ pub(crate) fn delete_storage(tx: &Transaction, group_id: BuddyGroupId) -> Result
 mod test {
     use super::*;
 
+    type GetWithTypeRes = Result<Vec<(BuddyGroupId, TargetId, TargetId, Option<PoolId>)>>;
+
+    fn get_with_type(tx: &Transaction, node_type: NodeTypeServer) -> GetWithTypeRes {
+        tx.query_map_collect(
+            sql!(
+                "SELECT group_id, p_target_id, s_target_id, pool_id FROM all_buddy_groups_v
+                WHERE node_type = ?1"
+            ),
+            [node_type.sql_variant()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(Into::into)
+    }
+
     /// Test inserting and getting buddy groups
     #[test]
     fn insert_and_get_with_type() {
@@ -327,12 +308,12 @@ mod test {
             )
             .unwrap_err();
 
-            let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
-            let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
+            let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
+            let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
             assert_eq!(2, meta_groups.len());
             assert_eq!(2, storage_groups.len());
-            assert!(meta_groups.iter().any(|e| e.id == 1234));
+            assert!(meta_groups.iter().any(|e| e.0 == 1234));
         })
     }
 
@@ -343,35 +324,32 @@ mod test {
             super::update_storage_pools(tx, 2, &[1]).unwrap();
             super::update_storage_pools(tx, 99, &[1]).unwrap_err();
 
-            let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
+            let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-            assert_eq!(
-                Some(2),
-                storage_groups.iter().find(|e| e.id == 1).unwrap().pool_id
-            );
+            assert_eq!(Some(2), storage_groups.iter().find(|e| e.0 == 1).unwrap().3);
         })
     }
 
     /// Makes sure targets of buddy groups 1 (meta and storage) have been swapped
     fn ensure_swapped_buddies(tx: &Transaction) {
-        let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
-        let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
+        let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
+        let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-        assert_eq!(2, meta_groups[0].primary_target_id);
-        assert_eq!(1, meta_groups[0].secondary_target_id);
-        assert_eq!(5, storage_groups[0].primary_target_id);
-        assert_eq!(1, storage_groups[0].secondary_target_id);
+        assert_eq!(2, meta_groups[0].1);
+        assert_eq!(1, meta_groups[0].2);
+        assert_eq!(5, storage_groups[0].1);
+        assert_eq!(1, storage_groups[0].2);
     }
 
     /// Makes sure targets of buddy groups 1 (meta and storage) have not been swapped
     fn ensure_no_swapped_buddies(tx: &Transaction) {
-        let meta_groups = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
-        let storage_groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
+        let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
+        let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-        assert_eq!(1, meta_groups[0].primary_target_id);
-        assert_eq!(2, meta_groups[0].secondary_target_id);
-        assert_eq!(1, storage_groups[0].primary_target_id);
-        assert_eq!(5, storage_groups[0].secondary_target_id);
+        assert_eq!(1, meta_groups[0].1);
+        assert_eq!(2, meta_groups[0].2);
+        assert_eq!(1, storage_groups[0].1);
+        assert_eq!(5, storage_groups[0].2);
     }
 
     /// Test swapping primary and secondary member (switchover) when primary runs into timeout
@@ -473,7 +451,7 @@ mod test {
         with_test_data(|tx| {
             super::delete_storage(tx, 1).unwrap();
 
-            let groups = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
+            let groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
             assert_eq!(1, groups.len());
         })
     }

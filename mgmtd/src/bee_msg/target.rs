@@ -8,17 +8,19 @@ impl HandleWithResponse for GetTargetMappings {
     type Response = GetTargetMappingsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let mapping = ctx
+        let mapping: HashMap<TargetId, NodeId> = ctx
             .db
-            .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+            .op(move |tx| {
+                tx.query_map_collect(
+                    sql!("SELECT target_id, node_id FROM all_targets_v WHERE node_type = ?1"),
+                    [NodeType::Storage.sql_variant()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(Into::into)
+            })
             .await?;
 
-        let resp = GetTargetMappingsResp {
-            mapping: mapping
-                .into_iter()
-                .map(|e| (e.target_id, e.node_id))
-                .collect::<HashMap<_, _>>(),
-        };
+        let resp = GetTargetMappingsResp { mapping };
 
         Ok(resp)
     }
@@ -28,27 +30,49 @@ impl HandleWithResponse for GetTargetStates {
     type Response = GetTargetStatesResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let res = ctx
-            .db
-            .op(move |tx| db::target::get_with_type(tx, self.node_type.try_into()?))
-            .await?;
-        let mut targets = Vec::with_capacity(res.len());
-        let mut reachability_states = Vec::with_capacity(res.len());
-        let mut consistency_states = Vec::with_capacity(res.len());
+        let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
 
-        for e in res {
-            targets.push(e.target_id);
-            reachability_states.push(calc_reachability_state(
-                e.last_contact,
-                ctx.info.user_config.node_offline_timeout,
-            ));
-            consistency_states.push(e.consistency);
+        let targets: Vec<(TargetId, TargetConsistencyState, TargetReachabilityState)> = ctx
+            .db
+            .op(move |tx| {
+                tx.query_map_collect(
+                    sql!(
+                        "SELECT target_id, consistency,
+                        (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact))
+                        FROM all_targets_v AS t
+                        INNER JOIN nodes AS n USING(node_uid)
+                        WHERE t.node_type = ?1"
+                    ),
+                    [self.node_type.sql_variant()],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            TargetConsistencyState::from_row(row, 1)?,
+                            calc_reachability_state(
+                                Duration::from_secs(row.get(2)?),
+                                node_offline_timeout,
+                            ),
+                        ))
+                    },
+                )
+                .map_err(Into::into)
+            })
+            .await?;
+
+        let mut target_ids = Vec::with_capacity(targets.len());
+        let mut reachability_states = Vec::with_capacity(targets.len());
+        let mut consistency_states = Vec::with_capacity(targets.len());
+
+        for e in targets {
+            target_ids.push(e.0);
+            consistency_states.push(e.1);
+            reachability_states.push(e.2);
         }
 
         let resp = GetTargetStatesResp {
-            targets,
-            reachability_states,
+            targets: target_ids,
             consistency_states,
+            reachability_states,
         };
 
         Ok(resp)

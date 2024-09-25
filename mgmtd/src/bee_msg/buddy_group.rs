@@ -1,24 +1,36 @@
 use super::target::calc_reachability_state;
 use super::*;
 use shared::bee_msg::buddy_group::*;
+use shared::bee_msg::target::TargetReachabilityState;
+use std::time::Duration;
 
 impl HandleWithResponse for GetMirrorBuddyGroups {
     type Response = GetMirrorBuddyGroupsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let groups = ctx
+        let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = ctx
             .db
-            .op(move |tx| db::buddy_group::get_with_type(tx, self.node_type.try_into()?))
+            .op(move |tx| {
+                tx.query_map_collect(
+                    sql!(
+                        "SELECT group_id, p_target_id, s_target_id FROM all_buddy_groups_v
+                        WHERE node_type = ?1"
+                    ),
+                    [self.node_type.sql_variant()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .map_err(Into::into)
+            })
             .await?;
 
-        let mut buddy_groups = vec![];
-        let mut primary_targets = vec![];
-        let mut secondary_targets = vec![];
+        let mut buddy_groups = Vec::with_capacity(groups.len());
+        let mut primary_targets = Vec::with_capacity(groups.len());
+        let mut secondary_targets = Vec::with_capacity(groups.len());
 
         for g in groups {
-            buddy_groups.push(g.id);
-            primary_targets.push(g.primary_target_id);
-            secondary_targets.push(g.secondary_target_id);
+            buddy_groups.push(g.0);
+            primary_targets.push(g.1);
+            secondary_targets.push(g.2);
         }
 
         let resp = GetMirrorBuddyGroupsResp {
@@ -42,13 +54,42 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
     type Response = GetStatesAndBuddyGroupsResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        let node_type: NodeTypeServer = self.node_type.try_into()?;
+        let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
+
         let (targets, groups) = ctx
             .db
             .op(move |tx| {
-                let node_type = self.node_type.try_into()?;
+                let targets: Vec<(TargetId, TargetConsistencyState, TargetReachabilityState)> = tx
+                    .query_map_collect(
+                        sql!(
+                            "SELECT t.target_id, t.consistency,
+                            (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact))
+                            FROM all_targets_v AS t
+                            INNER JOIN nodes AS n USING(node_uid)
+                            WHERE t.node_type = ?1"
+                        ),
+                        [node_type.sql_variant()],
+                        |row| {
+                            Ok((
+                                row.get(0)?,
+                                TargetConsistencyState::from_row(row, 1)?,
+                                calc_reachability_state(
+                                    Duration::from_secs(row.get(2)?),
+                                    node_offline_timeout,
+                                ),
+                            ))
+                        },
+                    )?;
 
-                let targets = db::target::get_with_type(tx, node_type)?;
-                let groups = db::buddy_group::get_with_type(tx, node_type)?;
+                let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = tx.query_map_collect(
+                    sql!(
+                        "SELECT group_id, p_target_id, s_target_id FROM all_buddy_groups_v
+                        WHERE node_type = ?1"
+                    ),
+                    [node_type.sql_variant()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )?;
 
                 Ok((targets, groups))
             })
@@ -58,13 +99,10 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
             .into_iter()
             .map(|e| {
                 (
-                    e.target_id,
+                    e.0,
                     CombinedTargetState {
-                        reachability: calc_reachability_state(
-                            e.last_contact,
-                            ctx.info.user_config.node_offline_timeout,
-                        ),
-                        consistency: e.consistency,
+                        reachability: e.2,
+                        consistency: e.1,
                     },
                 )
             })
@@ -75,10 +113,10 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
                 .into_iter()
                 .map(|e| {
                     (
-                        e.id,
+                        e.0,
                         BuddyGroup {
-                            primary_target_id: e.primary_target_id,
-                            secondary_target_id: e.secondary_target_id,
+                            primary_target_id: e.1,
+                            secondary_target_id: e.2,
                         },
                     )
                 })
