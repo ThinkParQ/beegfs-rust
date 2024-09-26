@@ -30,9 +30,8 @@ impl HandleWithResponse for GetStoragePools {
             .op(move |tx| {
                 let pools: Vec<(PoolId, String)> = tx.query_map_collect(
                     sql!(
-                        "SELECT p.pool_id, e.alias
-                        FROM storage_pools AS p
-                        INNER JOIN entities AS e ON e.uid = p.pool_uid"
+                        "SELECT pool_id, alias FROM storage_pools
+                        INNER JOIN entities ON uid = pool_uid"
                     ),
                     [],
                     |row| Ok((row.get(0)?, row.get(1)?)),
@@ -41,8 +40,8 @@ impl HandleWithResponse for GetStoragePools {
                 let targets: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
                     sql!(
                         "SELECT target_id, node_id, pool_id, free_space, free_inodes
-                        FROM all_targets_v
-                        WHERE node_type == 2
+                        FROM storage_targets
+                        WHERE node_id IS NOT NULL
                             AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
                     ),
                     [],
@@ -59,14 +58,15 @@ impl HandleWithResponse for GetStoragePools {
 
                 let buddy_groups: Vec<TargetOrBuddyGroup> = tx.query_map_collect(
                     sql!(
-                        "SELECT group_id, pool_id,
+                        "SELECT group_id, g.pool_id,
                             MIN(p_t.free_space, s_t.free_space),
                             MIN(p_t.free_inodes, s_t.free_inodes)
-                        FROM all_buddy_groups_v AS g
-                        INNER JOIN targets AS p_t ON p_t.target_uid = g.p_target_uid
-                        INNER JOIN targets AS s_t ON s_t.target_uid = g.s_target_uid
-                        WHERE g.node_type = 2
-                            AND p_t.free_space IS NOT NULL
+                        FROM storage_buddy_groups AS g
+                        INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_id
+                            AND p_t.node_type = g.node_type
+                        INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_id
+                            AND s_t.node_type = g.node_type
+                        WHERE p_t.free_space IS NOT NULL
                             AND s_t.free_space IS NOT NULL
                             AND p_t.free_inodes IS NOT NULL
                             AND s_t.free_inodes IS NOT NULL"

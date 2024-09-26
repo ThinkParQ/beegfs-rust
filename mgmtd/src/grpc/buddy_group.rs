@@ -20,13 +20,12 @@ pub(crate) async fn get(
                     "SELECT group_uid, group_id, bg.alias, bg.node_type,
                         p_target_uid, p_t.target_id, p_t.alias,
                         s_target_uid, s_t.target_id, s_t.alias,
-                        sp.pool_uid, bg.pool_id, e_sp.alias,
+                        p.pool_uid, bg.pool_id, p.alias,
                         p_t.consistency, s_t.consistency
-                    FROM all_buddy_groups_v AS bg
-                    INNER JOIN all_targets_v AS p_t ON p_t.target_uid = p_target_uid
-                    INNER JOIN all_targets_v AS s_t ON s_t.target_uid = s_target_uid
-                    LEFT JOIN storage_pools AS sp ON sp.pool_id = bg.pool_id
-                    LEFT JOIN entities AS e_sp ON e_sp.uid = sp.pool_uid"
+                    FROM buddy_groups_ext AS bg
+                    INNER JOIN targets_ext AS p_t ON p_t.target_uid = p_target_uid
+                    INNER JOIN targets_ext AS s_t ON s_t.target_uid = s_target_uid
+                    LEFT JOIN pools_ext AS p USING(node_type, pool_id)"
                 ),
                 [],
                 |row| {
@@ -245,9 +244,10 @@ pub(crate) async fn mirror_root_inode(
             let count = tx.query_row(
                 sql!(
                     "SELECT COUNT(*) FROM root_inode AS ri
-                    INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id"
+                    INNER JOIN buddy_groups AS mg
+                        ON mg.p_target_id = ri.target_id AND mg.node_type = ?1"
                 ),
-                [],
+                [NodeType::Meta.sql_variant()],
                 |row| row.get::<_, i64>(0),
             )?;
 

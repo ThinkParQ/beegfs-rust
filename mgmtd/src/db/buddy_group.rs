@@ -12,19 +12,14 @@ pub(crate) fn validate_ids(
     group_ids: &[BuddyGroupId],
     node_type: NodeTypeServer,
 ) -> Result<()> {
-    let stmt = match node_type {
-        NodeTypeServer::Meta => {
-            sql!("SELECT COUNT(*) FROM meta_buddy_groups WHERE group_id IN rarray(?1)")
-        }
-        NodeTypeServer::Storage => {
-            sql!("SELECT COUNT(*) FROM storage_buddy_groups WHERE group_id IN rarray(?1)")
-        }
-    };
-
-    let count: usize =
-        tx.query_row_cached(stmt, [&rarray_param(group_ids.iter().copied())], |row| {
-            row.get(0)
-        })?;
+    let count: usize = tx.query_row_cached(
+        sql!("SELECT COUNT(*) FROM buddy_groups WHERE node_type = ?1 AND group_id IN rarray(?2)"),
+        params![
+            node_type.sql_variant(),
+            &rarray_param(group_ids.iter().copied()),
+        ],
+        |row| row.get(0),
+    )?;
 
     match count.cmp(&group_ids.len()) {
         Ordering::Less => Err(anyhow!(TypedError::value_not_found(
@@ -55,12 +50,7 @@ pub(crate) fn insert(
     s_target_id: TargetId,
 ) -> Result<(Uid, BuddyGroupId)> {
     let group_id = if group_id == 0 {
-        misc::find_new_id(
-            tx,
-            &format!("{}_buddy_groups", node_type.sql_table_str()),
-            "group_id",
-            1..=0xFFFF,
-        )?
+        misc::find_new_id(tx, "buddy_groups", "group_id", node_type.into(), 1..=0xFFFF)?
     } else if try_resolve_num_id(
         tx,
         EntityType::BuddyGroup,
@@ -80,7 +70,7 @@ pub(crate) fn insert(
     // Check that both given target IDs are not assigned to any buddy group
     if tx.query_row(
         sql!(
-            "SELECT COUNT(*) FROM all_buddy_groups_v
+            "SELECT COUNT(*) FROM buddy_groups_ext
              WHERE node_type = ?1
              AND (p_target_id IN (?2, ?3) OR s_target_id IN (?2, ?3))"
         ),
@@ -111,33 +101,31 @@ pub(crate) fn insert(
     // Insert entity
     let new_uid = entity::insert(tx, EntityType::BuddyGroup, alias)?;
 
+    let pool_id: Option<PoolId> = if matches!(node_type, NodeTypeServer::Storage) {
+        tx.query_row(
+            sql!("SELECT pool_id FROM storage_targets WHERE target_id = ?1"),
+            [p_target_id],
+            |row| row.get(0),
+        )?
+    } else {
+        None
+    };
+
     // Insert generic buddy group
     tx.execute(
-        sql!("INSERT INTO buddy_groups (group_uid, node_type) VALUES (?1, ?2)"),
-        params![new_uid, node_type.sql_variant()],
-    )?;
-
-    // Insert type specific buddy group
-    tx.execute(
-        match node_type {
-            NodeTypeServer::Meta => {
-                sql!(
-                    "INSERT INTO meta_buddy_groups
-                    (group_id, group_uid, p_target_id, s_target_id)
-                    VALUES (?1, ?2, ?3, ?4)"
-                )
-            }
-            NodeTypeServer::Storage => {
-                sql!(
-                    "INSERT INTO storage_buddy_groups
-                    (group_id, group_uid, p_target_id, s_target_id, pool_id)
-                    VALUES (?1, ?2, ?3, ?4,
-                        (SELECT pool_id FROM storage_targets WHERE target_id = ?3)
-                    )"
-                )
-            }
-        },
-        params![group_id, new_uid, p_target_id, s_target_id],
+        sql!(
+            "INSERT INTO buddy_groups
+            (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        ),
+        params![
+            new_uid,
+            node_type.sql_variant(),
+            group_id,
+            p_target_id,
+            s_target_id,
+            pool_id
+        ],
     )?;
 
     Ok((new_uid, group_id))
@@ -154,8 +142,14 @@ pub(crate) fn update_storage_pools(
     validate_ids(tx, group_ids, NodeTypeServer::Storage)?;
 
     tx.execute_cached(
-        sql!("UPDATE storage_buddy_groups SET pool_id = ?1 WHERE group_id IN rarray(?2)"),
-        params![new_pool_id, rarray_param(group_ids.iter().copied())],
+        sql!(
+            "UPDATE buddy_groups SET pool_id = ?1 WHERE group_id IN rarray(?2) AND node_type = ?3"
+        ),
+        params![
+            new_pool_id,
+            rarray_param(group_ids.iter().copied()),
+            NodeType::Storage.sql_variant()
+        ],
     )?;
 
     Ok(())
@@ -186,36 +180,29 @@ pub(crate) fn check_and_swap_buddies(
     tx: &Transaction,
     timeout: Duration,
 ) -> Result<Vec<(BuddyGroupId, NodeTypeServer)>> {
-    let affected_groups = tx.query_map_collect(
+    let affected_groups: Vec<(BuddyGroupId, NodeTypeServer)> = tx.query_map_collect(
         sql!(
-            "SELECT g.group_id, g.node_type FROM all_buddy_groups_v AS g
-            INNER JOIN all_targets_v AS p_t ON p_t.target_uid = p_target_uid
+            "SELECT g.group_id, g.node_type FROM buddy_groups_ext AS g
+            INNER JOIN targets_ext AS p_t ON p_t.target_uid = p_target_uid
             INNER JOIN nodes AS p_n ON p_n.node_uid = p_t.node_uid
-            INNER JOIN all_targets_v AS s_t ON s_t.target_uid = s_target_uid
+            INNER JOIN targets_ext AS s_t ON s_t.target_uid = s_target_uid
             INNER JOIN nodes AS s_n ON s_n.node_uid = s_t.node_uid
-            WHERE (STRFTIME('%s', 'now') - STRFTIME('%s', p_n.last_contact)) >= ?1
+            WHERE (UNIXEPOCH('now') - UNIXEPOCH(p_n.last_contact)) >= ?1
                 AND s_t.consistency == 1
-                AND (STRFTIME('%s', 'now') - STRFTIME('%s', s_n.last_contact)) < (?1 / 2)"
+                AND (UNIXEPOCH('now') - UNIXEPOCH(s_n.last_contact)) < (?1 / 2)"
         ),
         [timeout.as_secs()],
         |row| Ok((row.get(0)?, NodeTypeServer::from_row(row, 1)?)),
     )?;
 
-    for &(id, node_type) in &affected_groups {
+    for g in &affected_groups {
         let affected = tx.execute(
-            match node_type {
-                NodeTypeServer::Meta => sql!(
-                    "UPDATE meta_buddy_groups
-                    SET p_target_id = s_target_id, s_target_id = p_target_id
-                    WHERE group_id = ?1"
-                ),
-                NodeTypeServer::Storage => sql!(
-                    "UPDATE storage_buddy_groups
-                    SET p_target_id = s_target_id, s_target_id = p_target_id
-                    WHERE group_id = ?1"
-                ),
-            },
-            [id],
+            sql!(
+                "UPDATE buddy_groups
+                SET p_target_id = s_target_id, s_target_id = p_target_id
+                WHERE group_id = ?1 AND node_type = ?2"
+            ),
+            params![g.0, g.1.sql_variant()],
         )?;
 
         check_affected_rows(affected, [1])?;
@@ -260,8 +247,8 @@ pub(crate) fn prepare_storage_deletion(tx: &Transaction, id: BuddyGroupId) -> Re
 /// groups deleted.
 pub(crate) fn delete_storage(tx: &Transaction, group_id: BuddyGroupId) -> Result<()> {
     let affected = tx.execute(
-        sql!("DELETE FROM storage_buddy_groups WHERE group_id = ?1"),
-        [group_id],
+        sql!("DELETE FROM buddy_groups WHERE group_id = ?1 AND node_type = ?2"),
+        params![group_id, NodeType::Storage.sql_variant()],
     )?;
 
     check_affected_rows(affected, [1])
@@ -276,7 +263,7 @@ mod test {
     fn get_with_type(tx: &Transaction, node_type: NodeTypeServer) -> GetWithTypeRes {
         tx.query_map_collect(
             sql!(
-                "SELECT group_id, p_target_id, s_target_id, pool_id FROM all_buddy_groups_v
+                "SELECT group_id, p_target_id, s_target_id, pool_id FROM buddy_groups_ext
                 WHERE node_type = ?1"
             ),
             [node_type.sql_variant()],
@@ -437,8 +424,11 @@ mod test {
     #[test]
     fn prepare_storage_deletion_returns_correct_node_uids() {
         with_test_data(|tx| {
-            tx.execute("DELETE FROM nodes WHERE node_type = 3", [])
-                .unwrap();
+            tx.execute(
+                "DELETE FROM nodes WHERE node_type = ?1",
+                [NodeType::Client.sql_variant()],
+            )
+            .unwrap();
 
             let res = super::prepare_storage_deletion(tx, 1).unwrap();
 

@@ -21,10 +21,6 @@ pub(crate) trait SqliteEnumExt {
     }
 }
 
-pub(crate) trait SqliteTableStrExt {
-    fn sql_table_str(&self) -> &str;
-}
-
 /// Implements SqliteStr for an enum
 macro_rules! impl_enum_sqlite {
     ($type:ty, $($variant:path=> $text:literal),+ $(,)?) => {
@@ -66,29 +62,9 @@ impl_enum_sqlite! {NodeType,
     NodeType::Management => 4
 }
 
-impl SqliteTableStrExt for NodeType {
-    fn sql_table_str(&self) -> &str {
-        match self {
-            NodeType::Meta => "meta",
-            NodeType::Storage => "storage",
-            NodeType::Client => "client",
-            NodeType::Management => "management",
-        }
-    }
-}
-
 impl_enum_sqlite! {NodeTypeServer,
     NodeTypeServer::Meta => 1,
     NodeTypeServer::Storage => 2,
-}
-
-impl SqliteTableStrExt for NodeTypeServer {
-    fn sql_table_str(&self) -> &str {
-        match self {
-            NodeTypeServer::Meta => "meta",
-            NodeTypeServer::Storage => "storage",
-        }
-    }
 }
 
 impl_enum_sqlite! {NicType,

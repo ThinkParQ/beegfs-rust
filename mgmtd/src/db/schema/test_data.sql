@@ -22,46 +22,23 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (103004, 1, "client_node_4")
 ;
 
-INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES
-    (101001, 1, 8005, DATETIME("NOW")),
-    (101002, 1, 8005, DATETIME("NOW")),
-    (101003, 1, 8005, DATETIME("NOW")),
-    (101004, 1, 8005, DATETIME("NOW")),
+INSERT INTO nodes (node_uid, node_id, node_type, port, last_contact) VALUES
+    (101001, 1, 1, 8005, DATETIME("NOW")),
+    (101002, 2, 1, 8005, DATETIME("NOW")),
+    (101003, 3, 1, 8005, DATETIME("NOW")),
+    (101004, 4, 1, 8005, DATETIME("NOW")),
 
-    (101099, 1, 8005, DATETIME("NOW")),
+    (101099, 99, 1, 8005, DATETIME("NOW")),
 
-    (102001, 2, 8003, DATETIME("NOW")),
-    (102002, 2, 8003, DATETIME("NOW")),
-    (102003, 2, 8003, DATETIME("NOW")),
-    (102004, 2, 8003, DATETIME("NOW")),
+    (102001, 1, 2, 8003, DATETIME("NOW")),
+    (102002, 2, 2, 8003, DATETIME("NOW")),
+    (102003, 3, 2, 8003, DATETIME("NOW")),
+    (102004, 4, 2, 8003, DATETIME("NOW")),
 
-    (103001, 3, 8008, DATETIME("NOW")),
-    (103002, 3, 8008, DATETIME("NOW")),
-    (103003, 3, 8008, DATETIME("NOW")),
-    (103004, 3, 8008, DATETIME("NOW"))
-;
-
-INSERT INTO meta_nodes (node_id, node_uid) VALUES
-    (1, 101001),
-    (2, 101002),
-    (3, 101003),
-    (4, 101004),
-
-    (99, 101099)
-;
-
-INSERT INTO storage_nodes (node_id, node_uid) VALUES
-    (1, 102001),
-    (2, 102002),
-    (3, 102003),
-    (4, 102004)
-;
-
-INSERT INTO client_nodes (node_id, node_uid) VALUES
-    (1, 103001),
-    (2, 103002),
-    (3, 103003),
-    (4, 103004)
+    (103001, 1, 3, 8008, DATETIME("NOW")),
+    (103002, 2, 3, 8008, DATETIME("NOW")),
+    (103003, 3, 3, 8008, DATETIME("NOW")),
+    (103004, 4, 3, 8008, DATETIME("NOW"))
 ;
 
 INSERT INTO node_nics (node_uid, nic_type, addr, name) VALUES
@@ -95,10 +72,10 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (401004, 3, "storage_pool_4")
 ;
 
-INSERT INTO storage_pools (pool_id, pool_uid) VALUES
-    (2, 401002),
-    (3, 401003),
-    (4, 401004)
+INSERT INTO pools (node_type, pool_id, pool_uid) VALUES
+    (2, 2, 401002),
+    (2, 3, 401003),
+    (2, 4, 401004)
 ;
 
 INSERT INTO entities (uid, entity_type, alias) VALUES
@@ -127,59 +104,31 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (202099, 2, "storage_target_unmapped")
 ;
 
-INSERT INTO targets (target_uid, node_type, total_space, total_inodes, free_space, free_inodes,
+INSERT INTO targets (target_uid, node_type, target_id, node_id, pool_id, total_space, total_inodes, free_space, free_inodes,
     consistency) VALUES
-    (201001, 1, 1000000, 1000000, 450000, 450000, 1),
-    (201002, 1, 1000000, 1000000, 550000, 550000, 1),
-    (201003, 1, 1000000, 1000000, 550000, 550000, 1),
-    (201004, 1, 1000000, 1000000, 450000, 450000, 1),
+    (201001, 1, 1, 1, NULL, 1000000, 1000000, 450000, 450000, 1),
+    (201002, 1, 2, 2, NULL, 1000000, 1000000, 550000, 550000, 1),
+    (201003, 1, 3, 3, NULL, 1000000, 1000000, 550000, 550000, 1),
+    (201004, 1, 4, 4, NULL, 1000000, 1000000, 450000, 450000, 1),
 
-    (202001, 2, 1000000, 1000000, 450000, 450000, 1),
-    (202002, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202003, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202004, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202005, 2, 1000000, 1000000, 450000, 450000, 1),
-    (202006, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202007, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202008, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202009, 2, 1000000, 1000000, 550000, 550000, 1),
-    (202010, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202011, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202012, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202013, 2, 1000000, 1000000, 550000, 550000, 1),
-    (202014, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202015, 2, 1000000, 1000000, 500000, 500000, 1),
-    (202016, 2, 1000000, 1000000, 500000, 500000, 1),
+    (202001, 2, 1, 1, 1, 1000000, 1000000, 450000, 450000, 1),
+    (202002, 2, 2, 1, 2, 1000000, 1000000, 500000, 500000, 1),
+    (202003, 2, 3, 1, 3, 1000000, 1000000, 500000, 500000, 1),
+    (202004, 2, 4, 1, 4, 1000000, 1000000, 500000, 500000, 1),
+    (202005, 2, 5, 2, 1, 1000000, 1000000, 450000, 450000, 1),
+    (202006, 2, 6, 2, 2, 1000000, 1000000, 500000, 500000, 1),
+    (202007, 2, 7, 2, 3, 1000000, 1000000, 500000, 500000, 1),
+    (202008, 2, 8, 2, 4, 1000000, 1000000, 500000, 500000, 1),
+    (202009, 2, 9, 3, 1, 1000000, 1000000, 550000, 550000, 1),
+    (202010, 2, 10, 3, 2, 1000000, 1000000, 500000, 500000, 1),
+    (202011, 2, 11, 3, 3, 1000000, 1000000, 500000, 500000, 1),
+    (202012, 2, 12, 3, 4, 1000000, 1000000, 500000, 500000, 1),
+    (202013, 2, 13, 4, 1, 1000000, 1000000, 550000, 550000, 1),
+    (202014, 2, 14, 4, 2, 1000000, 1000000, 500000, 500000, 1),
+    (202015, 2, 15, 4, 3, 1000000, 1000000, 500000, 500000, 1),
+    (202016, 2, 16, 4, 4, 1000000, 1000000, 500000, 500000, 1),
 
-    (202099, 2, NULL, NULL, NULL, NULL, 1)
-;
-
-INSERT INTO meta_targets (target_id, target_uid, node_id) VALUES
-    (1, 201001, 1),
-    (2, 201002, 2),
-    (3, 201003, 3),
-    (4, 201004, 4)
-;
-
-INSERT INTO storage_targets (target_id, target_uid, node_id, pool_id) VALUES
-    (1, 202001, 1, 1),
-    (2, 202002, 1, 2),
-    (3, 202003, 1, 3),
-    (4, 202004, 1, 4),
-    (5, 202005, 2, 1),
-    (6, 202006, 2, 2),
-    (7, 202007, 2, 3),
-    (8, 202008, 2, 4),
-    (9, 202009, 3, 1),
-    (10, 202010, 3, 2),
-    (11, 202011, 3, 3),
-    (12, 202012, 3, 4),
-    (13, 202013, 4, 1),
-    (14, 202014, 4, 2),
-    (15, 202015, 4, 3),
-    (16, 202016, 4, 4),
-
-    (99, 202099, NULL, 1)
+    (202099, 2, 99, NULL, 1, NULL, NULL, NULL, NULL, 1)
 ;
 
 INSERT INTO entities (uid, entity_type, alias) VALUES
@@ -188,22 +137,12 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (302002, 4, "storage_buddy_group_2")
 ;
 
-INSERT INTO buddy_groups (group_uid, node_type) VALUES
-    (301001, 1),
-    (302001, 2),
-    (302002, 2)
+INSERT INTO buddy_groups (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id) VALUES
+    (301001, 1, 1, 1, 2, NULL),
+    (302001, 2, 1, 1, 5, 1),
+    (302002, 2, 2, 9, 13, 1)
 ;
 
-INSERT INTO meta_buddy_groups (group_id, group_uid, p_target_id, s_target_id)
-VALUES
-    (1, 301001, 1, 2)
-;
-
-INSERT INTO storage_buddy_groups (group_id, group_uid, p_target_id, s_target_id, pool_id)
-VALUES
-    (1, 302001, 1, 5, 1),
-    (2, 302002, 9, 13, 1)
-;
 
 INSERT INTO root_inode (_only_one_row, target_id, group_id) VALUES
     (1, 1, NULL)

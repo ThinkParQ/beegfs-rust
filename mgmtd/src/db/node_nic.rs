@@ -83,7 +83,7 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Arc
             WHERE n.node_type = ?1
             ORDER BY nn.node_uid ASC"
         ),
-        params![node_type.sql_variant()],
+        [node_type.sql_variant()],
         NodeNic::from_row,
     )?)
 }

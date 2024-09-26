@@ -30,7 +30,7 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Vec
     Ok(tx.query_map_collect(
         sql!(
             "SELECT node_uid, node_id, node_type, alias, port
-            FROM all_nodes_v
+            FROM nodes_ext
             WHERE node_type = ?1"
         ),
         [node_type.sql_variant()],
@@ -43,7 +43,7 @@ pub(crate) fn get_by_alias(tx: &Transaction, alias: &str) -> Result<Node> {
     Ok(tx.query_row(
         sql!(
             "SELECT node_uid, node_id, node_type, alias, port
-            FROM all_nodes_v
+            FROM nodes_ext
             WHERE alias = ?1"
         ),
         [alias],
@@ -60,9 +60,9 @@ pub(crate) fn delete_stale_clients(tx: &Transaction, timeout: Duration) -> Resul
         let mut stmt = tx.prepare_cached(sql!(
             "DELETE FROM nodes
             WHERE DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
-                AND node_uid IN (SELECT node_uid FROM client_nodes)"
+            AND node_type = ?2"
         ))?;
-        stmt.execute(params![timeout.as_secs()])?
+        stmt.execute(params![timeout.as_secs(), NodeType::Client.sql_variant()])?
     };
 
     Ok(affected)
@@ -85,6 +85,7 @@ pub(crate) fn insert(
             // from the bottom part of the range. This implements the same behavior.
             let last_id: u32 = config::get(tx, config::Config::CounterLastClientID)?.unwrap_or(0);
             let min_id = if last_id == u32::MAX { 1 } else { last_id + 1 };
+
             // Generally the new_id will always be last_id+1. However after the u32 wraps it is
             // theoretically possible (though highly unlikely) we encounter an ID that is already in
             // use. The use of find_lowest_unused_id avoids ever assigning an already in use ID to a
@@ -93,17 +94,15 @@ pub(crate) fn insert(
             // client that no longer exists. This is HIGHLY unlikely as it would mean a client had
             // BeeGFS mounted for a REALLY long time and that client just happened to be unmounted
             // right before another client mount happened.
-            let new_id = misc::find_new_id(tx, "client_nodes", "node_id", min_id..=u32::MAX)?;
+            let new_id =
+                misc::find_new_id(tx, "nodes", "node_id", NodeType::Client, min_id..=u32::MAX)?;
+
             config::set(tx, config::Config::CounterLastClientID, new_id)?;
+
             new_id
         } else {
             // All other node types:
-            misc::find_new_id(
-                tx,
-                &format!("{}_nodes", node_type.sql_table_str()),
-                "node_id",
-                1..=0xFFFF,
-            )?
+            misc::find_new_id(tx, "nodes", "node_id", node_type, 1..=0xFFFF)?
         }
     } else {
         if let Some(node) = try_resolve_num_id(tx, EntityType::Node, node_type, node_id)? {
@@ -116,25 +115,17 @@ pub(crate) fn insert(
     let alias = if let Some(alias) = alias {
         alias
     } else {
-        format!("node_{}_{}", node_type.sql_table_str(), node_id).try_into()?
+        format!("node_{}_{}", node_type.user_str(), node_id).try_into()?
     };
 
     let uid = entity::insert(tx, EntityType::Node, &alias)?;
 
     tx.execute_cached(
         sql!(
-            "INSERT INTO nodes (node_uid, node_type, port, last_contact)
-            VALUES (?1, ?2, ?3, DATETIME('now'))"
+            "INSERT INTO nodes (node_uid, node_type, node_id, port, last_contact)
+            VALUES (?1, ?2, ?3, ?4, DATETIME('now'))"
         ),
-        params![uid, node_type.sql_variant(), port],
-    )?;
-
-    tx.execute_cached(
-        &format!(
-            "INSERT INTO {}_nodes (node_id, node_uid) VALUES (?1, ?2)",
-            node_type.sql_table_str()
-        ),
-        params![node_id, uid],
+        params![uid, node_type.sql_variant(), node_id, port],
     )?;
 
     Ok((uid, node_id))
@@ -214,7 +205,7 @@ pub(crate) fn update_last_contact_for_targets(
         sql!(
             "UPDATE nodes AS n SET last_contact = DATETIME('now')
             WHERE n.node_uid IN (
-            SELECT DISTINCT node_uid FROM all_targets_v
+            SELECT DISTINCT node_uid FROM targets_ext
             WHERE target_id IN rarray(?1) AND node_type = ?2)"
         ),
         params![
@@ -226,10 +217,7 @@ pub(crate) fn update_last_contact_for_targets(
 
 /// Delete a node from the database.
 pub(crate) fn delete(tx: &Transaction, node_uid: Uid) -> Result<()> {
-    let affected = tx.execute_cached(
-        sql!("DELETE FROM nodes WHERE node_uid = ?1"),
-        params![node_uid],
-    )?;
+    let affected = tx.execute_cached(sql!("DELETE FROM nodes WHERE node_uid = ?1"), [node_uid])?;
 
     check_affected_rows(affected, [1])
 }

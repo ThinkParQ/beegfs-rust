@@ -91,18 +91,16 @@ impl ResolveEntityId for Alias {
 fn resolve_sql_from(entity_type: EntityType) -> &'static str {
     match entity_type {
         EntityType::Node => {
-            sql!("SELECT node_uid AS uid, alias, node_type, node_id AS id FROM all_nodes_v")
+            sql!("SELECT node_uid AS uid, alias, node_type, node_id AS id FROM nodes_ext")
         }
         EntityType::Target => {
-            sql!("SELECT target_uid AS uid, alias, node_type, target_id AS id FROM all_targets_v")
+            sql!("SELECT target_uid AS uid, alias, node_type, target_id AS id FROM targets_ext")
         }
         EntityType::BuddyGroup => {
-            sql!(
-                "SELECT group_uid AS uid, alias, node_type, group_id AS id FROM all_buddy_groups_v"
-            )
+            sql!("SELECT group_uid AS uid, alias, node_type, group_id AS id FROM buddy_groups_ext")
         }
         EntityType::Pool => {
-            sql!("SELECT pool_uid AS uid, alias, 2 AS node_type, pool_id AS id FROM all_pools_v")
+            sql!("SELECT pool_uid AS uid, alias, 2 AS node_type, pool_id AS id FROM pools_ext")
         }
     }
 }

@@ -81,19 +81,16 @@ CREATE TABLE nodes (
     node_uid INTEGER PRIMARY KEY,
     node_type INTEGER NOT NULL
         REFERENCES node_types (node_type) ON DELETE RESTRICT,
-    port INTEGER NOT NULL
-        CHECK(port BETWEEN 0 AND 0xFFFF),
-    last_contact TEXT NOT NULL,
-
+    node_id INTEGER NOT NULL,
     entity_type INTEGER GENERATED ALWAYS AS (1)
         REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
+    port INTEGER NOT NULL
+        CHECK(port BETWEEN 0 AND 0xFFFF),
+    last_contact TEXT NOT NULL,
     machine_uuid TEXT,
 
-    -- Required to allow being referenced on a foreign key. Also creates an index on both fields.
-    -- node_type being first is intended as the index can then be used for selects filtered
-    -- by node_type.
-    UNIQUE(node_type, node_uid),
+    UNIQUE (node_type, node_id),
     FOREIGN KEY (node_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
 
@@ -103,89 +100,12 @@ BEGIN
     DELETE FROM entities WHERE uid = OLD.node_uid;
 END;
 
-
-
-CREATE TABLE meta_nodes (
-    node_id INTEGER PRIMARY KEY
-        CHECK(node_id BETWEEN 1 AND 0xFFFF),
-    node_uid INTEGER UNIQUE NOT NULL,
-
-    node_type INTEGER GENERATED ALWAYS AS (1)
-        REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-) STRICT;
-
-CREATE TRIGGER auto_delete_node_after_meta AFTER DELETE ON meta_nodes
-FOR EACH ROW
-BEGIN
-    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
-END;
-
-
-
-CREATE TABLE storage_nodes (
-    node_id INTEGER PRIMARY KEY
-        CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
-    node_uid INTEGER UNIQUE NOT NULL,
-
-    node_type INTEGER GENERATED ALWAYS AS (2)
-        REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-) STRICT;
-
-CREATE TRIGGER auto_delete_node_after_storage AFTER DELETE ON storage_nodes
-FOR EACH ROW
-BEGIN
-    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
-END;
-
-
-
-CREATE TABLE client_nodes (
-    node_id INTEGER PRIMARY KEY
-        CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
-    node_uid INTEGER UNIQUE NOT NULL,
-
-    node_type INTEGER GENERATED ALWAYS AS (3)
-        REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-) STRICT;
-
-CREATE TRIGGER auto_delete_node_after_client AFTER DELETE ON client_nodes
-FOR EACH ROW
-BEGIN
-    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
-END;
-
-
-
-CREATE TABLE management_nodes (
-    node_id INTEGER PRIMARY KEY
-        CHECK(node_id BETWEEN 1 AND 0xFFFFFFFF),
-    node_uid INTEGER UNIQUE NOT NULL,
-
-    node_type INTEGER GENERATED ALWAYS AS (4)
-        REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (node_uid, node_type) REFERENCES nodes (node_uid, node_type) ON DELETE CASCADE
-) STRICT;
-
-CREATE TRIGGER auto_delete_node_after_management AFTER DELETE ON management_nodes
-FOR EACH ROW
-BEGIN
-    DELETE FROM nodes WHERE node_uid = OLD.node_uid;
-END;
-
 -- Default / local management node
 INSERT INTO entities VALUES (1, 1, "management");
-INSERT INTO nodes (node_uid, node_type, port, last_contact) VALUES (1, 4, 0, "");
-INSERT INTO management_nodes (node_id, node_uid) VALUES (1, 1);
+INSERT INTO nodes (node_uid, node_id, node_type, port, last_contact) VALUES (1, 1, 4, 0, "");
 
-CREATE TRIGGER keep_default_management_node BEFORE DELETE ON management_nodes
-FOR EACH ROW WHEN OLD.node_id == 1
+CREATE TRIGGER keep_default_management_node BEFORE DELETE ON nodes
+FOR EACH ROW WHEN OLD.node_uid == 1
 BEGIN
     SELECT RAISE (ABORT, "Deleting the management node is not allowed");
 END;
@@ -212,7 +132,12 @@ CREATE TABLE targets (
     target_uid INTEGER PRIMARY KEY,
     node_type INTEGER NOT NULL
         REFERENCES node_types (node_type) ON DELETE RESTRICT,
+    target_id INTEGER NOT NULL,
+    entity_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
+    node_id INTEGER,
+    pool_id INTEGER,
     total_space INTEGER
         CHECK(total_space >= 0),
     total_inodes INTEGER
@@ -224,11 +149,11 @@ CREATE TABLE targets (
     consistency INTEGER NOT NULL DEFAULT 1
         REFERENCES consistency_types (consistency_type) ON DELETE RESTRICT,
 
-    entity_type INTEGER GENERATED ALWAYS AS (2)
-        REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
-    UNIQUE(node_type, target_uid),
-    FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
+    UNIQUE (node_type, target_id),
+    FOREIGN KEY (target_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE,
+    FOREIGN KEY (node_type, node_id) REFERENCES nodes (node_type, node_id) ON DELETE RESTRICT
+    FOREIGN KEY (node_type, pool_id) REFERENCES pools (node_type, pool_id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TRIGGER auto_delete_entity_after_target AFTER DELETE ON targets
@@ -238,70 +163,20 @@ BEGIN
 END;
 
 
-
-CREATE TABLE meta_targets (
-    target_id INTEGER PRIMARY KEY
-        -- BeeGFS does technically support meta targets. Usually they actually refer to meta nodes,
-        -- and respective IDs are used interchangably. Therefore, here, we them to exactly one per
-        -- node and enforce it to have that same ID.
-        REFERENCES meta_nodes (node_id) ON DELETE RESTRICT
-        CHECK(target_id BETWEEN 1 AND 0xFFFF),
-    target_uid INTEGER UNIQUE NOT NULL,
-
-    node_id INTEGER NOT NULL
-        REFERENCES meta_nodes (node_id) ON DELETE RESTRICT,
-
-    node_type INTEGER GENERATED ALWAYS AS (1)
+CREATE TABLE pools (
+    pool_uid INTEGER PRIMARY KEY,
+    node_type INTEGER NOT NULL
         REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
-) STRICT;
-
-CREATE TRIGGER auto_delete_target_after_meta AFTER DELETE ON meta_targets
-FOR EACH ROW
-BEGIN
-    DELETE FROM targets WHERE target_uid = OLD.target_uid;
-END;
-
-
-
-CREATE TABLE storage_targets (
-    target_id INTEGER PRIMARY KEY
-        CHECK(target_id BETWEEN 1 AND 0xFFFF),
-    target_uid INTEGER UNIQUE NOT NULL,
-
-    -- NULL means the target is "unmapped", meaning it is not assigned to a node
-    node_id INTEGER
-        REFERENCES storage_nodes (node_id) ON DELETE RESTRICT,
-    pool_id INTEGER NOT NULL DEFAULT 1
-        REFERENCES storage_pools (pool_id) ON DELETE RESTRICT,
-
-    node_type INTEGER GENERATED ALWAYS AS (2)
-        REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (target_uid, node_type) REFERENCES targets (target_uid, node_type) ON DELETE CASCADE
-) STRICT;
-
-CREATE TRIGGER auto_delete_target_after_storage AFTER DELETE ON storage_targets
-FOR EACH ROW
-BEGIN
-    DELETE FROM targets WHERE target_uid = OLD.target_uid;
-END;
-
-
-
-CREATE TABLE storage_pools (
-    pool_id INTEGER PRIMARY KEY
+    pool_id INTEGER
         CHECK(pool_id BETWEEN 1 AND 0xFFFF),
-    pool_uid INTEGER UNIQUE NOT NULL,
-
     entity_type INTEGER GENERATED ALWAYS AS (3)
         REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
+    UNIQUE (node_type, pool_id),
     FOREIGN KEY (pool_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TRIGGER auto_delete_entity_after_pool AFTER DELETE ON storage_pools
+CREATE TRIGGER auto_delete_entity_after_pool AFTER DELETE ON pools
 FOR EACH ROW
 BEGIN
     DELETE FROM entities WHERE uid = OLD.pool_uid;
@@ -309,12 +184,12 @@ END;
 
 -- Default storage pool
 INSERT INTO entities VALUES (2, 3, "storage_pool_default");
-INSERT INTO storage_pools (pool_id, pool_uid) VALUES (1, 2);
+INSERT INTO pools (pool_uid, node_type, pool_id) VALUES (2, 2, 1);
 
-CREATE TRIGGER keep_default_pool BEFORE DELETE ON storage_pools
-FOR EACH ROW WHEN OLD.pool_id == 1
+CREATE TRIGGER keep_default_storage_pool BEFORE DELETE ON pools
+FOR EACH ROW WHEN OLD.pool_uid == 2
 BEGIN
-    SELECT RAISE (ABORT, "Deleting the default pool is not allowed");
+    SELECT RAISE (ABORT, "Deleting the default storage pool is not allowed");
 END;
 
 
@@ -323,12 +198,19 @@ CREATE TABLE buddy_groups (
     group_uid INTEGER PRIMARY KEY,
     node_type INTEGER NOT NULL
         REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
+    group_id INTEGER,
     entity_type INTEGER GENERATED ALWAYS AS (4)
         REFERENCES entity_types (entity_type) ON DELETE RESTRICT,
 
-    UNIQUE(node_type, group_uid),
-    FOREIGN KEY (group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE
+    p_target_id INTEGER NOT NULL,
+    s_target_id INTEGER NOT NULL,
+    pool_id INTEGER,
+
+    UNIQUE(node_type, group_id),
+    FOREIGN KEY (group_uid, entity_type) REFERENCES entities (uid, entity_type) ON DELETE CASCADE,
+    FOREIGN KEY (node_type, p_target_id) REFERENCES targets (node_type, target_id) ON DELETE RESTRICT,
+    FOREIGN KEY (node_type, s_target_id) REFERENCES targets (node_type, target_id) ON DELETE RESTRICT,
+    FOREIGN KEY (node_type, pool_id) REFERENCES pools (node_type, pool_id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TRIGGER auto_delete_entity_after_buddy_group AFTER DELETE ON buddy_groups
@@ -339,71 +221,21 @@ END;
 
 
 
-CREATE TABLE meta_buddy_groups (
-    group_id INTEGER PRIMARY KEY
-        CHECK(group_id BETWEEN 1 AND 0xFFFF),
-    group_uid INTEGER UNIQUE NOT NULL
-        REFERENCES buddy_groups (group_uid) ON DELETE CASCADE,
+CREATE TABLE root_inode (
+    target_id INTEGER,
+    group_id INTEGER,
 
-    p_target_id INTEGER UNIQUE NOT NULL
-        REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
-    s_target_id INTEGER UNIQUE NOT NULL
-        REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
-
+    _only_one_row INTEGER PRIMARY KEY DEFAULT 1
+        CHECK(_only_one_row = 1),
     node_type INTEGER GENERATED ALWAYS AS (1)
         REFERENCES node_types (node_type) ON DELETE RESTRICT,
 
-    FOREIGN KEY (group_uid, node_type) REFERENCES buddy_groups (group_uid, node_type)
-) STRICT;
-
-CREATE TRIGGER auto_delete_buddy_group_after_meta AFTER DELETE ON meta_buddy_groups
-FOR EACH ROW
-BEGIN
-    DELETE FROM buddy_groups WHERE group_uid = OLD.group_uid;
-END;
-
-
-
-CREATE TABLE storage_buddy_groups (
-    group_id INTEGER PRIMARY KEY
-        CHECK(group_id BETWEEN 1 AND 0xFFFF),
-    group_uid INTEGER UNIQUE NOT NULL
-        REFERENCES buddy_groups (group_uid) ON DELETE CASCADE,
-
-    p_target_id INTEGER UNIQUE NOT NULL
-        REFERENCES storage_targets (target_id) ON DELETE RESTRICT,
-    s_target_id INTEGER UNIQUE NOT NULL
-        REFERENCES storage_targets (target_id) ON DELETE RESTRICT,
-
-    pool_id INTEGER NOT NULL
-        REFERENCES storage_pools (pool_id) ON DELETE RESTRICT,
-
-    node_type INTEGER GENERATED ALWAYS AS (2)
-        REFERENCES node_types (node_type) ON DELETE RESTRICT,
-
-    FOREIGN KEY (group_uid, node_type) REFERENCES buddy_groups (group_uid, node_type)
-) STRICT;
-
-CREATE TRIGGER auto_delete_buddy_group_after_storage AFTER DELETE ON storage_buddy_groups
-FOR EACH ROW
-BEGIN
-    DELETE FROM buddy_groups WHERE group_uid = OLD.group_uid;
-END;
-
-
-
-CREATE TABLE root_inode (
-    _only_one_row INTEGER PRIMARY KEY DEFAULT 1
-        CHECK(_only_one_row = 1),
-
-    target_id INTEGER
-        REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
-    group_id INTEGER
-        REFERENCES meta_buddy_groups (group_id) ON DELETE RESTRICT,
-
     -- Ensure that one and only one of target_id or group_id is set
     CHECK (target_id IS NOT NULL OR group_id IS NOT NULL),
-    CHECK (target_id IS NULL OR group_id IS NULL)
+    CHECK (target_id IS NULL OR group_id IS NULL),
+    
+    FOREIGN KEY (node_type, target_id) REFERENCES targets (node_type, target_id) ON DELETE RESTRICT,
+    FOREIGN KEY (node_type, group_id) REFERENCES buddy_groups (node_type, group_id) ON DELETE RESTRICT
 ) STRICT;
 
 
@@ -415,11 +247,14 @@ CREATE TABLE quota_default_limits (
         REFERENCES quota_id_types (quota_id_type) ON DELETE RESTRICT,
     quota_type INTEGER NOT NULL
         REFERENCES quota_types (quota_type) ON DELETE RESTRICT,
-    pool_id INTEGER NOT NULL
-        REFERENCES storage_pools (pool_id) ON DELETE CASCADE,
+    pool_id INTEGER NOT NULL,
     value INTEGER NOT NULL,
 
-    PRIMARY KEY (id_type, quota_type, pool_id)
+    node_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
+
+    PRIMARY KEY (id_type, quota_type, pool_id),
+    FOREIGN KEY (node_type, pool_id) REFERENCES pools (node_type, pool_id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
 
@@ -430,11 +265,14 @@ CREATE TABLE quota_limits (
         REFERENCES quota_id_types (quota_id_type) ON DELETE RESTRICT,
     quota_type INTEGER NOT NULL
         REFERENCES quota_types (quota_type) ON DELETE RESTRICT,
-    pool_id INTEGER NOT NULL
-        REFERENCES storage_pools (pool_id) ON DELETE CASCADE,
+    pool_id INTEGER NOT NULL,
     value INTEGER NOT NULL,
 
-    PRIMARY KEY (quota_id, id_type, quota_type, pool_id)
+    node_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
+
+    PRIMARY KEY (quota_id, id_type, quota_type, pool_id),
+    FOREIGN KEY (node_type, pool_id) REFERENCES pools (node_type, pool_id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
 
@@ -445,79 +283,78 @@ CREATE TABLE quota_usage (
         REFERENCES quota_id_types (quota_id_type) ON DELETE RESTRICT,
     quota_type INTEGER NOT NULL
         REFERENCES quota_types (quota_type) ON DELETE RESTRICT,
-    target_id INTEGER NOT NULL
-        REFERENCES storage_targets (target_id) ON DELETE CASCADE,
+    target_id INTEGER NOT NULL,
     value INTEGER NOT NULL,
 
-    PRIMARY KEY (quota_id, id_type, quota_type, target_id)
+    node_type INTEGER GENERATED ALWAYS AS (2)
+        REFERENCES node_types (node_type) ON DELETE RESTRICT,
+
+    PRIMARY KEY (quota_id, id_type, quota_type, target_id),
+    FOREIGN KEY (node_type, target_id) REFERENCES targets (node_type, target_id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
 
 
 -- Views
 
-CREATE VIEW all_nodes_v AS
-    SELECT
-        COALESCE(mn.node_id, sn.node_id, cn.node_id, man.node_id) AS node_id,
-        e.alias, n.*
+CREATE VIEW nodes_ext AS
+    SELECT e.alias, n.*
     FROM nodes AS n
     INNER JOIN entities AS e ON e.uid = n.node_uid
-
-    LEFT JOIN meta_nodes AS mn ON mn.node_uid = n.node_uid
-    LEFT JOIN storage_nodes AS sn ON sn.node_uid = n.node_uid
-    LEFT JOIN client_nodes AS cn ON cn.node_uid = n.node_uid
-    LEFT JOIN management_nodes AS man ON man.node_uid = n.node_uid
-
-    WHERE COALESCE(mn.node_id, sn.node_id, cn.node_id, man.node_id) IS NOT NULL
 ;
 
-CREATE VIEW all_targets_v AS
-    SELECT
-        COALESCE(mt.target_id, st.target_id) AS target_id,
-        e.alias, t.*, st.pool_id,
-        COALESCE(mt.node_id, st.node_id) AS node_id,
-        COALESCE(mn.node_uid, sn.node_uid) AS node_uid
+CREATE VIEW meta_nodes AS
+    SELECT * FROM nodes WHERE node_type = 1
+;
+
+CREATE VIEW storage_nodes AS
+    SELECT * FROM nodes WHERE node_type = 2
+;
+
+CREATE VIEW client_nodes AS
+    SELECT * FROM nodes WHERE node_type = 3
+;
+
+CREATE VIEW targets_ext AS
+    SELECT e.alias, t.*, n.node_uid
     FROM targets AS t
     INNER JOIN entities AS e ON e.uid = t.target_uid
-
-    LEFT JOIN meta_targets AS mt ON mt.target_uid = t.target_uid
-    LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
-
-    LEFT JOIN storage_targets AS st ON st.target_uid = t.target_uid
-    LEFT JOIN storage_nodes AS sn ON sn.node_id = st.node_id
-
-    WHERE COALESCE(mt.target_id, st.target_id) IS NOT NULL
     -- Exclude targets without an assigned node
-    AND COALESCE(mt.node_id, st.node_id) IS NOT NULL
+    INNER JOIN nodes AS n USING(node_type, node_id)
 ;
 
-CREATE VIEW all_pools_v AS
-    SELECT
-        e.alias, p.*
-    FROM storage_pools AS p
+CREATE VIEW meta_targets AS
+    SELECT * FROM targets WHERE node_type = 1
+;
+
+CREATE VIEW storage_targets AS
+    SELECT * FROM targets WHERE node_type = 2
+;
+
+CREATE VIEW pools_ext AS
+    SELECT e.alias, p.*
+    FROM pools AS p
     INNER JOIN entities AS e ON e.uid = p.pool_uid
 ;
 
-CREATE VIEW all_buddy_groups_v AS
+CREATE VIEW storage_pools AS
+    SELECT * FROM pools WHERE node_type = 2
+;
+
+CREATE VIEW buddy_groups_ext AS
     SELECT
-        COALESCE(mg.group_id, sg.group_id) AS group_id,
-        e.alias, g.*, sg.pool_id, sp.pool_uid,
-        COALESCE(mg.p_target_id, sg.p_target_id) AS p_target_id,
-        COALESCE(mg.s_target_id , sg.s_target_id ) AS s_target_id,
-        COALESCE(p_mt.target_uid, p_st.target_uid) AS p_target_uid,
-        COALESCE(s_mt.target_uid, s_st.target_uid) AS s_target_uid
+        e.alias, g.*, p.pool_uid, p_t.target_uid AS p_target_uid, s_t.target_uid AS s_target_uid
     FROM buddy_groups AS g
     INNER JOIN entities AS e ON e.uid = g.group_uid
+    INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_id AND p_t.node_type = g.node_type
+    INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_id AND s_t.node_type = g.node_type
+    LEFT JOIN pools AS p USING (node_type, pool_id)
+;
 
-    LEFT JOIN meta_buddy_groups AS mg ON mg.group_uid = g.group_uid
-    LEFT JOIN meta_targets AS p_mt ON p_mt.target_id = mg.p_target_id
-    LEFT JOIN meta_targets AS s_mt ON s_mt.target_id = mg.s_target_id
+CREATE VIEW meta_buddy_groups AS
+    SELECT * FROM buddy_groups WHERE node_type = 1
+;
 
-    LEFT JOIN storage_buddy_groups AS sg ON sg.group_uid = g.group_uid
-    LEFT JOIN storage_targets AS p_st ON p_st.target_id = sg.p_target_id
-    LEFT JOIN storage_targets AS s_st ON s_st.target_id = sg.s_target_id
-
-    LEFT JOIN storage_pools AS sp ON sp.pool_id = sg.pool_id
-
-    WHERE COALESCE(mg.group_id, sg.group_id) IS NOT NULL
+CREATE VIEW storage_buddy_groups AS
+    SELECT * FROM buddy_groups WHERE node_type = 2
 ;

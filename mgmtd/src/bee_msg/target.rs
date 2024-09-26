@@ -13,8 +13,12 @@ impl HandleWithResponse for GetTargetMappings {
             .db
             .op(move |tx| {
                 tx.query_map_collect(
-                    sql!("SELECT target_id, node_id FROM all_targets_v WHERE node_type = ?1"),
-                    [NodeType::Storage.sql_variant()],
+                    sql!(
+                        "SELECT target_id, node_id
+                        FROM storage_targets
+                        WHERE node_id IS NOT NULL"
+                    ),
+                    [],
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .map_err(Into::into)
@@ -75,12 +79,10 @@ pub(crate) fn get_targets_with_states(
     let targets = tx.query_map_collect(
         sql!(
             "SELECT t.target_id, t.consistency,
-                (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact)),
-                COALESCE(mg.s_target_id, sg.s_target_id) AS s_target_id
-            FROM all_targets_v AS t
-            INNER JOIN nodes AS n USING(node_uid)
-            LEFT JOIN meta_buddy_groups AS mg ON mg.s_target_id = t.target_id
-            LEFT JOIN storage_buddy_groups AS sg ON sg.s_target_id = t.target_id
+                (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact)), s_target_id
+            FROM targets AS t
+            INNER JOIN nodes AS n USING(node_type, node_id)
+            LEFT JOIN buddy_groups AS g ON g.s_target_id = t.target_id AND g.node_type = t.node_type
             WHERE t.node_type = ?1"
         ),
         [node_type.sql_variant()],

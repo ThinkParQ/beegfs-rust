@@ -36,7 +36,7 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
 
             // Fetch the node list
             let nodes: Vec<pm::get_nodes_response::Node> = tx.query_map_collect(
-                sql!("SELECT node_uid, node_id, node_type, alias, port FROM all_nodes_v"),
+                sql!("SELECT node_uid, node_id, node_type, alias, port FROM nodes_ext"),
                 [],
                 |row| {
                     let node_type = NodeType::from_row(row, 2)?.into_proto_i32();
@@ -68,12 +68,12 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
                         COALESCE(e.alias, e2.alias),
                         COALESCE(mn.node_id, mn2.node_id)
                         FROM root_inode as ri
-                        LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
-                        LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id
+                        LEFT JOIN targets AS mt USING(node_type, target_id)
+                        LEFT JOIN nodes AS mn ON mn.node_id = mt.node_id AND mn.node_type = mt.node_type
                         LEFT JOIN entities AS e ON e.uid = mn.node_uid
-                        LEFT JOIN meta_buddy_groups AS mg ON mg.group_id = ri.group_id
-                        LEFT JOIN meta_targets AS mt2 ON mt2.target_id = mg.p_target_id
-                        LEFT JOIN meta_nodes AS mn2 ON mn2.node_id = mt2.node_id
+                        LEFT JOIN buddy_groups AS mg USING(node_type, group_id)
+                        LEFT JOIN targets AS mt2 ON mt2.target_id = mg.p_target_id AND mt2.node_type = mg.node_type
+                        LEFT JOIN nodes AS mn2 ON mn2.node_id = mt2.node_id AND mn2.node_type = mg.node_type
                         LEFT JOIN entities AS e2 ON e2.uid = mn2.node_uid"
                     ),
                     [],
@@ -165,8 +165,8 @@ pub(crate) async fn delete(
 
                 // There should be exactly one meta target per meta node
                 let affected = tx.execute(
-                    sql!("DELETE FROM meta_targets WHERE node_id = ?1"),
-                    [node.num_id()],
+                    sql!("DELETE FROM targets WHERE node_id = ?1"),
+                    params![node.num_id(), NodeType::Meta.sql_variant()],
                 )?;
 
                 if affected != 1 {
@@ -174,7 +174,7 @@ pub(crate) async fn delete(
                 }
             } else {
                 let assigned_targets: usize = tx.query_row_cached(
-                    sql!("SELECT COUNT(*) FROM all_targets_v WHERE node_uid = ?1"),
+                    sql!("SELECT COUNT(*) FROM targets_ext WHERE node_uid = ?1"),
                     [node.uid],
                     |row| row.get(0),
                 )?;

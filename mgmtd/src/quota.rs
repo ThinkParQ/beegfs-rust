@@ -4,7 +4,6 @@ use crate::context::Context;
 use crate::db;
 use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
-use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
@@ -24,8 +23,13 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
         .db
         .op(move |tx| {
             tx.query_map_collect(
-                sql!("SELECT target_id, pool_id, node_uid FROM all_targets_v WHERE node_type = ?1"),
-                [NodeType::Storage.sql_variant()],
+                sql!(
+                    "SELECT target_id, pool_id, node_uid
+                    FROM storage_targets
+                    INNER JOIN nodes USING(node_type, node_id)
+                    WHERE node_id IS NOT NULL"
+                ),
+                [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(Into::into)

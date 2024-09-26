@@ -201,15 +201,16 @@ pub(crate) async fn get_quota_limits(
     }
 
     let sql = format!(
-        "SELECT l.quota_id, l.id_type, l.pool_id, e.alias, sp.pool_uid,
-            MAX(CASE WHEN l.quota_type = 1 THEN l.value END) AS space_limit,
-            MAX(CASE WHEN l.quota_type = 2 THEN l.value END) AS inode_limit
+        "SELECT l.quota_id, l.id_type, l.pool_id, sp.alias, sp.pool_uid,
+            MAX(CASE WHEN l.quota_type = {space} THEN l.value END) AS space_limit,
+            MAX(CASE WHEN l.quota_type = {inode} THEN l.value END) AS inode_limit
         FROM quota_limits AS l
-        INNER JOIN storage_pools AS sp USING(pool_id)
-        INNER JOIN entities AS e ON e.uid = sp.pool_uid
+        INNER JOIN pools_ext AS sp USING(node_type, pool_id)
         WHERE {where}
         GROUP BY l.quota_id, l.id_type, l.pool_id
-        LIMIT ?1, ?2"
+        LIMIT ?1, ?2",
+        space = QuotaType::Space.sql_variant(),
+        inode = QuotaType::Inode.sql_variant()
     );
 
     let stream = resp_stream(BUF_SIZE, move |stream| async move {
@@ -313,25 +314,26 @@ pub(crate) async fn get_quota_usage(
     }
 
     let sql = format!(
-        "SELECT u.quota_id, u.id_type, sp.pool_id, e.alias, sp.pool_uid,
-            MAX(CASE WHEN u.quota_type = 1 THEN
+        "SELECT u.quota_id, u.id_type, sp.pool_id, sp.alias, sp.pool_uid,
+            MAX(CASE WHEN u.quota_type = {space} THEN
                 COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
             END) AS space_limit,
-            MAX(CASE WHEN u.quota_type = 2 THEN
+            MAX(CASE WHEN u.quota_type = {inode} THEN
                 COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
             END) AS inode_limit,
-            SUM(CASE WHEN u.quota_type = 1 THEN u.value END) AS space_used,
-            SUM(CASE WHEN u.quota_type = 2 THEN u.value END) AS inode_used
+            SUM(CASE WHEN u.quota_type = {space} THEN u.value END) AS space_used,
+            SUM(CASE WHEN u.quota_type = {inode} THEN u.value END) AS inode_used
         FROM quota_usage AS u
-        INNER JOIN storage_targets AS st USING(target_id)
-        INNER JOIN storage_pools AS sp USING(pool_id)
-        INNER JOIN entities AS e ON e.uid = sp.pool_uid
+        INNER JOIN targets AS st USING(node_type, target_id)
+        INNER JOIN pools_ext AS sp USING(node_type, pool_id)
         LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
         LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
         WHERE {where}
         GROUP BY u.quota_id, u.id_type, st.pool_id
         HAVING {having}
-        LIMIT ?1, ?2"
+        LIMIT ?1, ?2",
+        space = QuotaType::Space.sql_variant(),
+        inode = QuotaType::Inode.sql_variant()
     );
 
     let stream = resp_stream(BUF_SIZE, move |stream| async move {

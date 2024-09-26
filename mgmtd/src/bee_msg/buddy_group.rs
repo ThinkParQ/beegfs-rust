@@ -11,7 +11,7 @@ impl HandleWithResponse for GetMirrorBuddyGroups {
             .op(move |tx| {
                 tx.query_map_collect(
                     sql!(
-                        "SELECT group_id, p_target_id, s_target_id FROM all_buddy_groups_v
+                        "SELECT group_id, p_target_id, s_target_id FROM buddy_groups_ext
                         WHERE node_type = ?1"
                     ),
                     [self.node_type.sql_variant()],
@@ -69,7 +69,7 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
 
                 let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = tx.query_map_collect(
                     sql!(
-                        "SELECT group_id, p_target_id, s_target_id FROM all_buddy_groups_v
+                        "SELECT group_id, p_target_id, s_target_id FROM buddy_groups_ext
                         WHERE node_type = ?1"
                     ),
                     [node_type.sql_variant()],
