@@ -96,8 +96,6 @@ pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<u64, D::Error> {
 }
 
 pub fn serialize<S: Serializer>(input: &u64, ser: S) -> Result<S::Ok, S::Error> {
-    // TODO atm we only serialize to u64, but for user facing output it might be
-    // nice to serialize to a prefix string instead
     ser.serialize_u64(*input)
 }
 

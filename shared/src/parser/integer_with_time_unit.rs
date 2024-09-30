@@ -77,8 +77,6 @@ pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Duration, D::Erro
 }
 
 pub fn serialize<S: Serializer>(input: &Duration, ser: S) -> Result<S::Ok, S::Error> {
-    // TODO atm we only serialize to u64 containing seconds, but for user facing
-    // output it might be nice to serialize to a prefix string instead
     ser.serialize_u64(input.as_secs())
 }
 

@@ -492,10 +492,10 @@ impl Config {
             self.quota_update_interval = v;
         }
 
-        // This (and more below) is actually an Option, so we just replace it
-        //
-        // TODO this does not allow to UNSET this option from command line when given in the config
-        // file. Maybe we should change that
+        // This (and more below) is actually an Option, so we just replace it. Note that this
+        // doesn't allow to UNSET this option from command line when given in the config
+        // file. But the detailed quota settings can only be set from config file anyway for now, so
+        // not a big deal.
         self.quota_user_system_ids_min = args.quota_user_system_ids_min;
         self.quota_user_ids_file = args.quota_user_ids_file;
         if let (Some(s), Some(e)) = (

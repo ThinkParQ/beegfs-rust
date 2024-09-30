@@ -96,7 +96,6 @@ pub(crate) struct ReplaceNic<'a> {
 }
 
 /// Replaces all node nics for the given node by UID.
-// TODO Accept fitting structure, so we don't have to provide unused port anymore
 pub(crate) fn replace<'a>(
     tx: &Transaction,
     node_uid: Uid,
