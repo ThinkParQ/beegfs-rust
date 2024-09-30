@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use log::LevelFilter;
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
@@ -28,11 +29,12 @@ fn inner_main() -> Result<()> {
     // Initialize logging
     match user_config.log_target {
         LogTarget::Std => Ok(env_logger::Builder::from_env(
-            env_logger::Env::default().default_filter_or(user_config.log_level.as_str()),
+            env_logger::Env::default()
+                .default_filter_or(LevelFilter::from(user_config.log_level.clone()).as_str()),
         )
         .format_target(false)
         .try_init()?),
-        LogTarget::Journald => journald_logger::init(user_config.log_level),
+        LogTarget::Journald => journald_logger::init(user_config.log_level.clone().into()),
     }
     .expect("Logger initialization failed");
 

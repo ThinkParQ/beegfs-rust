@@ -1,103 +1,114 @@
-# BeeGFS management configuration file
+# BeeGFS management service configuration file
 #
 # This file configures the BeeGFS management node and can be used as an alternative or together with
-# command line arguments. Arguments given to the CLI overwrite arguments specified here,
-# arguments specified here overwrite the defaults.
+# command line arguments. Command line arguments overwrite arguments specified here,
+# arguments specified here overwrite the internal defaults.
 # 
 # The command line help might have more information on a specific setting. Run the management
 # binary with `--help` to display it.
 
 
 
-### Connection and storage ###
-
-# TCP/UDP port to listen for incoming connections / messages using the old BeeMsg protocol
-# beemsg-port = 8008
-
-# TCP port for the gRPC server to listen on
-# grpc-port = 8010
-
-# Disables TLS for gRPC communication
-# tls-disable = false
-
-# The PEM encoded .X509 certificate file that provides the identity of the gRPC server
-# tls-cert-file = /etc/beegfs/cert.pem
-
-# The private key file belonging to the above certificate
-# tls-key-file = /etc/beegfs/key.pem
-
-# Network interfaces reported to other nodes. 
-# interfaces = ["eth0", "eth1"]
-
-# Maximum number of outgoing connections per node
-# connection-limit = 12
-
-# Disable authentication
-# auth-disable = false
-
-# Location of the file containing the authentication secret
-# auth-file = "/etc/beegfs/conn.auth"
-
-# Location of the SQLite database file
+# Managements database file location.
 # db-file = "/var/lib/beegfs/mgmtd.sqlite"
 
-# Log target to use
+# The log target to use (valid are "journald", "std").
 # log-target = "journald"
 
-# Log level to use (valid are "error", "warn", "info", "debug", "trace")
+# The log level to use (valid are "error", "warn", "info", "debug", "trace").
 # log-level = "warn"
+
+
+
+### Connection ###
+
+# Sets the BeeMsg / "classic" port (TCP and UDP) to listen on.
+# beemsg-port = 8008
+
+# Sets the gRPC port to listen on.
+# grpc-port = 8010
+
+# Disables TLS for gRPC communication.
+# tls-disable = false
+
+# The PEM encoded .X509 certificate file that provides the identity of the gRPC server.
+# tls-cert-file = /etc/beegfs/cert.pem
+
+# The private key file belonging to the above certificate.
+# tls-key-file = /etc/beegfs/key.pem
+
+# Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
+# Can be specified multiple times. If not given, all suitable interfaces can be used.
+# interfaces = ["eth0", "eth1"]
+
+# Maximum number of outgoing connections per node.
+# connection-limit = 12
+
+# Disables requiring authentication (BeeMsg and gRPC).
+# auth-disable = false
+
+# The authentication file location.
+# auth-file = "/etc/beegfs/conn.auth"
+
 
 
 ### Generic ###
 
-# Disallows registration of new nodes and targets
+# Disables registration of new nodes and targets (clients excluded).
 # registration-disable = false
 
-# The time after server nodes that send no updates are considered offline.
+# Defines after which time without contact a node/target is considered offline.
+# IMPORTANT: This setting must be the same on all nodes in the system, especially when using
+# mirroring.
 # node-offline-timeout = "180s"
 
-# The time after client nodes that send no updates are considered offline and removed from client
-# list.
+# Defines after which time without contact a client is considered gone and will be removed.
 # client-auto-remove-timeout = "30m"
 
+# The BeeGFS license certificate file.
+# license-cert-file = "/etc/beegfs/license.pem"
 
+# The BeeGFS license library file.
+# license-lib-file = "/opt/beegfs/lib/libbeegfs_license.so"
 
 ### Quota ###
 
-# Enables quota data collection and checks. Allows querying the state and setting limits (which do
-# nothing without enforcement being enabled). Causes higher system load.
+# Enables quota data collection and checks.
+# Allows querying the state and setting limits (which do nothing without enforcement being enabled).
+# Causes higher system load.
 # quota-enable = false
 
-# Enables quota enforcement, meaning that the exceeded IDs are calculated and pushed to the servers
-# on a regular basis.Requires quota_enable = true. Causes higher system load.
+# Enables quota enforcement.
+# Exceeded IDs are calculated and pushed to the servers on a regular basis. Requires quota_enable =
+# true. Causes higher system load.
 # quota-enforce = false
 
-# Update interval of quota information. Defines how often the management pulls the quota information
-# from all storage nodes, calculates the IDs that exceed the limits and reports them back to the
-# server nodes.
-# quota-update_interval = "30s"
+# Update interval of quota information.
+# Defines how often the management pulls the quota information from all storage nodes, calculates
+# the IDs that exceed the limits and reports them back to the server nodes.
+# quota-update-interval = 30
 
 # The following options specify the User/Group IDs to be fetched from storage services for quota
 # checking and enforcement. They are disabled by default and least one needs to be enabled for
 # quota enforcement having any effect. They can be mixed.
 
-# Use the local systems user IDs for the quota check, starting with the given ID.
+# Defines the minimum id of the existing system users to be quota checked and enforced.
+# Note that this uses the users from the local machine the management is running on.
 # quota-user-system-ids-min = 1000
 
-# File containing numeric user IDs to be used for the quota check. The file must only
-# contain numeric IDs separated by whitespaces.
+# Loads the user ids to be quota queried and enforced from a file.
+# Ids must be numeric only and separated by any whitespace.
 # quota-user-ids-file = ""
 
-# Range of user IDs to be used for the quota check.
-# quota-user-ids-range-start = 1000
-# quota-user-ids-range-end = 1000
+# Defines a range of user ids to be quota queried and enforced.
+# quota-user-ids-range = "1000-1100"
+
 
 # Same as above, but for group IDs
 
 # quota-group-system-ids-min = 1000
 # quota-group-ids-file = ""
-# quota-group-ids-range-start = 1000
-# quota-group-ids-range-end = 1000
+# quota-group-ids-range = "1000-1100"
 
 
 ### Capacity pools ### 
