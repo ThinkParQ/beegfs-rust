@@ -4,8 +4,8 @@
 
 use anyhow::{anyhow, Result};
 use regex::Regex;
-use serde::de::{Unexpected, Visitor};
-use serde::{Deserializer, Serializer};
+use serde::de::{Unexpected, Visitor as VisitorT};
+use serde::Deserializer;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -39,13 +39,15 @@ pub fn parse_optional(input: &str) -> Option<Duration> {
     Some(duration)
 }
 
+/// Parses a time string in the form `<int>[ns|us|ms|s|m|h|d]` into a [Duration]
 pub fn parse(input: &str) -> Result<Duration> {
     parse_optional(input).ok_or_else(|| anyhow!(EXPECT_STR))
 }
 
-struct ValueVisitor {}
+#[derive(Debug, Default)]
+struct Visitor {}
 
-impl<'a> Visitor<'a> for ValueVisitor {
+impl<'a> VisitorT<'a> for Visitor {
     type Value = Duration;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -59,7 +61,13 @@ impl<'a> Visitor<'a> for ValueVisitor {
         parse_optional(input).ok_or_else(|| E::invalid_value(Unexpected::Str(input), &self))
     }
 
-    // Need to parse signed integer since  the TOML parser always parses as i64
+    fn visit_u64<E>(self, input: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(Duration::from_secs(input))
+    }
+
     fn visit_i64<E>(self, input: i64) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
@@ -73,53 +81,7 @@ impl<'a> Visitor<'a> for ValueVisitor {
 }
 
 pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Duration, D::Error> {
-    de.deserialize_any(ValueVisitor {})
-}
-
-pub fn serialize<S: Serializer>(input: &Duration, ser: S) -> Result<S::Ok, S::Error> {
-    // TODO atm we only serialize to u64 containing seconds, but for user facing
-    // output it might be nice to serialize to a prefix string instead
-    ser.serialize_u64(input.as_secs())
-}
-
-/// (De)serialize an Option<Duration>
-pub mod optional {
-    use super::*;
-
-    struct OptionalValueVisitor {}
-
-    impl<'a> Visitor<'a> for OptionalValueVisitor {
-        type Value = Option<Duration>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str(EXPECT_STR)
-        }
-
-        fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'a>,
-        {
-            Ok(Some(deserializer.deserialize_any(ValueVisitor {})?))
-        }
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Duration>, D::Error> {
-        de.deserialize_option(OptionalValueVisitor {})
-    }
-
-    pub fn serialize<S: Serializer>(input: &Option<Duration>, ser: S) -> Result<S::Ok, S::Error> {
-        match input {
-            Some(input) => ser.serialize_some(input),
-            None => ser.serialize_none(),
-        }
-    }
+    de.deserialize_str(Visitor::default())
 }
 
 #[cfg(test)]

@@ -7,11 +7,11 @@ pub(crate) async fn get(
 ) -> Result<pm::GetLicenseResponse> {
     let reload: bool = required_field(req.reload)?;
     if reload {
-        ctx.lic
+        ctx.license
             .load_and_verify_cert(&ctx.info.user_config.license_cert_file)
             .await?;
     }
-    let cert_data = ctx.lic.get_cert_data()?;
+    let cert_data = ctx.license.get_cert_data()?;
     Ok(GetLicenseResponse {
         cert_data: Some(cert_data),
     })

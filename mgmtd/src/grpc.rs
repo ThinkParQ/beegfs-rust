@@ -5,12 +5,12 @@ use crate::context::Context;
 use crate::db;
 use crate::license::LicensedFeature;
 use crate::types::{ResolveEntityId, SqliteEnumExt};
-use anyhow::{bail, Context as AContext, Result};
+use anyhow::{anyhow, bail, Context as AContext, Result};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{params, OptionalExtension, Transaction};
 use shared::grpc::*;
 use shared::impl_grpc_handler;
-use shared::shutdown::Shutdown;
+use shared::run_state::RunStateHandle;
 use shared::types::*;
 use sqlite::{check_affected_rows, ConnectionExt, TransactionExt};
 use sqlite_check::sql;
@@ -151,7 +151,7 @@ impl pm::management_server::Management for ManagementService {
 }
 
 /// Serve gRPC requests on the `grpc_port` extracted from the config
-pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
+pub(crate) fn serve(ctx: Context, mut shutdown: RunStateHandle) -> Result<()> {
     let builder = Server::builder();
 
     // If gRPC TLS is enabled, configure the server accordingly
@@ -213,7 +213,7 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
             .add_service(service)
             // Provide our shutdown handle to automatically shutdown the server gracefully when
             // requested
-            .serve_with_shutdown(serve_addr, shutdown.wait())
+            .serve_with_shutdown(serve_addr, shutdown.wait_for_shutdown())
             .await
             .ok();
     });
@@ -223,7 +223,16 @@ pub(crate) fn serve(ctx: Context, mut shutdown: Shutdown) -> Result<()> {
 
 /// Checks if the given license feature is enabled or fails with "Unauthenticated" if not
 fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<()> {
-    ctx.lic
+    ctx.license
         .verify_feature(feature)
         .status_code(Code::Unauthenticated)
+}
+
+/// Checks if the management is in pre shutdown state
+fn fail_on_pre_shutdown(ctx: &Context) -> Result<()> {
+    if ctx.run_state.pre_shutdown() {
+        return Err(anyhow!("Management is shutting down")).status_code(Code::Unavailable);
+    }
+
+    Ok(())
 }

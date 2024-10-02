@@ -14,7 +14,7 @@ pub mod conn;
 pub mod grpc;
 pub mod journald_logger;
 pub mod parser;
-pub mod shutdown;
+pub mod run_state;
 pub mod types;
 
 use anyhow::{bail, Result};

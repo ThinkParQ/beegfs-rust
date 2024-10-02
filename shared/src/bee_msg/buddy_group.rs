@@ -45,11 +45,12 @@ pub struct BuddyGroup {
 
 /// Fetches a buddy group ids with their assigned targets and target ids with their states
 ///
-/// Used by old ctl, meta, storage
+/// Used by old ctl, meta, storage, client
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetStatesAndBuddyGroups {
-    #[bee_serde(as = Int<u32>)]
+    #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,
+    pub requested_by_client_id: NodeId,
 }
 
 impl Msg for GetStatesAndBuddyGroups {

@@ -7,7 +7,7 @@ use crate::context::Context;
 use crate::db;
 use crate::error::TypedError;
 use crate::types::*;
-use anyhow::{bail, Context as AContext, Result};
+use anyhow::{anyhow, bail, Context as AContext, Result};
 use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
 use shared::bee_msg::{Msg, OpsErr};
 use shared::bee_serde::{Deserializable, Serializable};
@@ -16,6 +16,7 @@ use shared::types::*;
 use sqlite::{ConnectionExt, TransactionExt};
 use sqlite_check::sql;
 use std::collections::HashMap;
+use std::fmt::Display;
 
 mod buddy_group;
 mod misc;
@@ -40,6 +41,15 @@ trait HandleWithResponse: Msg + Deserializable {
     /// `Response::default()`.
     fn error_response() -> Self::Response {
         Self::Response::default()
+    }
+}
+
+#[derive(Debug)]
+struct PreShutdownError();
+
+impl Display for PreShutdownError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Management is shutting down")
     }
 }
 
@@ -86,12 +96,25 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
 
         // Handler result with a response
         (@HANDLE $res:ident, $msg_type:path => R, $ctx_str:literal) => {{
-            let resp = $res.unwrap_or_else(|err| {
-                log::error!("{}: {err:#}", $ctx_str);
-                <$msg_type>::error_response()
-            });
+            let resp = match $res {
+                Ok(resp) => {
+                    log::trace!("PROCESSED from {:?}. Responding: {:?}", req.addr(), resp);
+                    resp
+                }
+                Err(err) => {
+                    if let Some(pse) = err.downcast_ref::<PreShutdownError>() {
+                    log::debug!("{}: {pse}", $ctx_str);
+                        return req.respond(&GenericResponse {
+                            code: TRY_AGAIN,
+                            description: pse.to_string().into_bytes(),
+                        }).await;
+                    }
 
-            log::trace!("PROCESSED from {:?}. Responding: {:?}", req.addr(), resp);
+                    log::error!("{}: {err:#}", $ctx_str);
+                    <$msg_type>::error_response()
+                }
+            };
+
             req.respond(&resp).await
         }};
 
@@ -153,6 +176,15 @@ async fn handle_unspecified_msg(req: impl Request) -> Result<()> {
         description: "Unhandled msg".into(),
     })
     .await?;
+
+    Ok(())
+}
+
+/// Checks if the management is in pre shutdown state
+fn fail_on_pre_shutdown(ctx: &Context) -> Result<()> {
+    if ctx.run_state.pre_shutdown() {
+        return Err(anyhow!(PreShutdownError {}));
+    }
 
     Ok(())
 }

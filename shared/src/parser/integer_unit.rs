@@ -4,8 +4,8 @@
 
 use anyhow::{anyhow, Result};
 use regex::Regex;
-use serde::de::{Unexpected, Visitor};
-use serde::{Deserializer, Serializer};
+use serde::de::{Unexpected, Visitor as VisitorT};
+use serde::Deserializer;
 use std::sync::LazyLock;
 
 static REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -51,13 +51,20 @@ pub fn parse_optional(input: &str) -> Option<u64> {
     Some(number)
 }
 
+/// Parses a string in the form `<int>[kMGTPE][i]<unit>` into an integer.
+///
+/// Takes the given integer and multiplies it according to the given SI suffix, using base 10
+/// (`10k` becomes 10000). When the `[i]` is given, base 2 is used (`10kiB` becomes 10240).
+///
+/// The `<unit>` suffix is ignored and can be anything or be omitted.
 pub fn parse(input: &str) -> Result<u64> {
     parse_optional(input).ok_or_else(|| anyhow!(EXPECT_STR))
 }
 
-struct CustomVisitor {}
+#[derive(Debug, Default)]
+struct Visitor {}
 
-impl<'a> Visitor<'a> for CustomVisitor {
+impl<'a> VisitorT<'a> for Visitor {
     type Value = u64;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -78,7 +85,6 @@ impl<'a> Visitor<'a> for CustomVisitor {
         Ok(input)
     }
 
-    // Need to parse signed integer since  the TOML parser always parses as i64
     fn visit_i64<E>(self, input: i64) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
@@ -92,13 +98,7 @@ impl<'a> Visitor<'a> for CustomVisitor {
 }
 
 pub fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<u64, D::Error> {
-    de.deserialize_any(CustomVisitor {})
-}
-
-pub fn serialize<S: Serializer>(input: &u64, ser: S) -> Result<S::Ok, S::Error> {
-    // TODO atm we only serialize to u64, but for user facing output it might be
-    // nice to serialize to a prefix string instead
-    ser.serialize_u64(*input)
+    de.deserialize_str(Visitor {})
 }
 
 #[cfg(test)]

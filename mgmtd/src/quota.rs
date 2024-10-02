@@ -4,13 +4,15 @@ use crate::context::Context;
 use crate::db;
 use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
-use anyhow::{anyhow, Context as AnyhowContext, Result};
+use crate::types::SqliteEnumExt;
+use anyhow::{Context as AnyhowContext, Result};
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
 };
 use shared::bee_msg::OpsErr;
-use shared::types::{NodeType, NodeTypeServer, QuotaId};
-use sqlite::ConnectionExt;
+use shared::types::{NodeType, PoolId, QuotaId, TargetId, Uid};
+use sqlite::{ConnectionExt, TransactionExt};
+use sqlite_check::sql;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -18,17 +20,26 @@ use std::path::Path;
 pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     // Fetch quota data from storage daemons
 
-    let targets = ctx
+    let targets: Vec<(TargetId, PoolId, Uid)> = ctx
         .db
-        .op(move |tx| db::target::get_with_type(tx, NodeTypeServer::Storage))
+        .op(move |tx| {
+            tx.query_map_collect(
+                sql!("SELECT target_id, pool_id, node_uid FROM all_targets_v WHERE node_type = ?1"),
+                [NodeType::Storage.sql_variant()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .map_err(Into::into)
+        })
         .await?;
 
-    if !targets.is_empty() {
-        log::info!(
-            "Fetching quota information for {:?}",
-            targets.iter().map(|t| t.target_id).collect::<Vec<_>>()
-        );
+    if targets.is_empty() {
+        return Ok(());
     }
+
+    log::info!(
+        "Fetching quota information for {} storage targets",
+        targets.len()
+    );
 
     // The to-be-queried IDs
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
@@ -80,11 +91,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     let mut tasks = vec![];
     // Sends one request per target to the respective owner node
     // Requesting is done concurrently.
-    for t in targets {
-        let pool_id = t
-            .pool_id
-            .ok_or_else(|| anyhow!("storage targets must have a storage pool assigned"))?;
-
+    for (target_id, pool_id, node_uid) in targets {
         let ctx2 = ctx.clone();
         let user_ids2 = user_ids.clone();
 
@@ -93,8 +100,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             let resp: Result<GetQuotaInfoResp> = ctx2
                 .conn
                 .request(
-                    t.node_uid,
-                    &GetQuotaInfo::with_user_ids(user_ids2, t.target_id, pool_id),
+                    node_uid,
+                    &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
                 )
                 .await;
 
@@ -102,11 +109,10 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             // first
             if let Err(ref err) = resp {
                 log::error!(
-                    "Fetching user quota info for storage target {:?} failed: {err:#}",
-                    t.target_id
+                    "Fetching user quota info for storage target {target_id} failed: {err:#}"
                 );
             }
-            (t.target_id, resp)
+            (target_id, resp)
         }));
 
         let ctx2 = ctx.clone();
@@ -117,8 +123,8 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             let resp = ctx2
                 .conn
                 .request(
-                    t.node_uid,
-                    &GetQuotaInfo::with_group_ids(group_ids2, t.target_id, pool_id),
+                    node_uid,
+                    &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
                 )
                 .await;
 
@@ -126,12 +132,11 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             // first
             if let Err(ref err) = resp {
                 log::error!(
-                    "Fetching group quota info for storage target {:?} failed: {err:#}",
-                    t.target_id
+                    "Fetching group quota info for storage target {target_id} failed: {err:#}",
                 );
             }
 
-            (t.target_id, resp)
+            (target_id, resp)
         }));
     }
 

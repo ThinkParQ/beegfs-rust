@@ -345,7 +345,6 @@ CREATE TABLE meta_buddy_groups (
     group_uid INTEGER UNIQUE NOT NULL
         REFERENCES buddy_groups (group_uid) ON DELETE CASCADE,
 
-    -- TODO add trigger to ensure uniqueness over both columns
     p_target_id INTEGER UNIQUE NOT NULL
         REFERENCES meta_targets (target_id) ON DELETE RESTRICT,
     s_target_id INTEGER UNIQUE NOT NULL
@@ -371,7 +370,6 @@ CREATE TABLE storage_buddy_groups (
     group_uid INTEGER UNIQUE NOT NULL
         REFERENCES buddy_groups (group_uid) ON DELETE CASCADE,
 
-    -- TODO add trigger to ensure uniqueness over both columns
     p_target_id INTEGER UNIQUE NOT NULL
         REFERENCES storage_targets (target_id) ON DELETE RESTRICT,
     s_target_id INTEGER UNIQUE NOT NULL

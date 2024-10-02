@@ -122,6 +122,8 @@ pub(crate) async fn delete(
     ctx: Context,
     req: pm::DeleteNodeRequest,
 ) -> Result<pm::DeleteNodeResponse> {
+    fail_on_pre_shutdown(&ctx)?;
+
     let node: EntityId = required_field(req.node)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 

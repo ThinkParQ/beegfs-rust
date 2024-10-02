@@ -74,6 +74,8 @@ impl HandleWithResponse for Heartbeat {
     type Response = Ack;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         update_node(
             RegisterNode {
                 instance_version: self.instance_version,
@@ -148,6 +150,8 @@ impl HandleWithResponse for RegisterNode {
     type Response = RegisterNodeResp;
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let node_id = update_node(self, ctx).await?;
 
         Ok(RegisterNodeResp {
@@ -161,7 +165,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
     let msg2 = msg.clone();
     let info = ctx.info;
 
-    let licensed_machines = match ctx.lic.get_num_machines() {
+    let licensed_machines = match ctx.license.get_num_machines() {
         Ok(n) => n,
         Err(e) => {
             log::warn!("Error while parsing number of licensed servers: {}", e);
@@ -353,6 +357,8 @@ impl HandleWithResponse for RemoveNode {
     }
 
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(ctx)?;
+
         let node = ctx
             .db
             .op(move |tx| {

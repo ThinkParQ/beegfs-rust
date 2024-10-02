@@ -3,44 +3,6 @@
 use super::*;
 use itertools::Itertools;
 use std::cmp::Ordering;
-use std::time::Duration;
-
-/// A target entry.
-///
-/// Since this is also used for meta targets, pool_id is optional.
-#[derive(Clone, Debug)]
-pub(crate) struct Target {
-    pub target_id: TargetId,
-    pub node_uid: Uid,
-    pub node_id: NodeId,
-    pub pool_id: Option<PoolId>,
-    pub consistency: TargetConsistencyState,
-    pub last_contact: Duration,
-}
-
-/// Retrieve a list of targets filtered by node type.
-pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeTypeServer) -> Result<Vec<Target>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT target_id, node_uid, node_id, pool_id,
-            consistency, (STRFTIME('%s', 'now') - STRFTIME('%s', n.last_contact))
-            FROM all_targets_v AS t
-            INNER JOIN nodes AS n USING(node_uid)
-            WHERE t.node_type = ?1 AND t.node_id IS NOT NULL;"
-        ),
-        [node_type.sql_variant()],
-        |row| {
-            Ok(Target {
-                target_id: row.get(0)?,
-                node_uid: row.get(1)?,
-                node_id: row.get(2)?,
-                pool_id: row.get(3)?,
-                consistency: TargetConsistencyState::from_row(row, 4)?,
-                last_contact: Duration::from_secs(row.get(5)?),
-            })
-        },
-    )?)
-}
 
 /// Ensures that the list of given targets actually exists and returns an appropriate error if not.
 pub(crate) fn validate_ids(
@@ -330,9 +292,13 @@ mod test {
             // existing alias
             super::insert_meta(tx, 99, Some("new_meta_target".try_into().unwrap())).unwrap_err();
 
-            let targets = super::get_with_type(tx, NodeTypeServer::Meta).unwrap();
+            let targets: i64 = tx
+                .query_row(sql!("SELECT COUNT(*) FROM meta_targets"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
 
-            assert_eq!(5, targets.len());
+            assert_eq!(5, targets);
         })
     }
 
@@ -356,12 +322,18 @@ mod test {
                 super::update_storage_node_mappings(tx, &[9999, 1], 1).unwrap()
             );
 
-            let targets = super::get_with_type(tx, NodeTypeServer::Storage).unwrap();
+            let targets: Vec<TargetId> = tx
+                .query_map_collect(
+                    sql!("SELECT target_id FROM storage_targets WHERE node_id IS NOT NULL"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
 
             assert_eq!(18, targets.len());
 
-            assert!(targets.iter().any(|e| e.target_id == new_target_id));
-            assert!(targets.iter().any(|e| e.target_id == 1000));
+            assert!(targets.iter().any(|e| *e == new_target_id));
+            assert!(targets.iter().any(|e| *e == 1000));
         })
     }
 }

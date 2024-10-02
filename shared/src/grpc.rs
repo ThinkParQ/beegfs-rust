@@ -191,9 +191,9 @@ where
 // UTIL
 
 /// Logs an error returned from a gRPC handler and extracts the set response status code or
-/// defaults to internal (including the stringified error chain).
+/// defaults to unknown (including the stringified error chain).
 pub fn process_grpc_handler_error(err: anyhow::Error) -> Status {
-    let mut resp_code = Code::Internal;
+    let mut resp_code = Code::Unknown;
     let mut err_string = String::new();
 
     let mut delim = "";
