@@ -76,7 +76,7 @@ pub async fn start(info: StaticInfo, lic: LicenseVerifier, shutdown: Shutdown) -
 
     db.op(|tx| {
         // Update management node entry in db
-        db::node::update(tx, MGMTD_UID, info.user_config.beemsg_port)?;
+        db::node::update(tx, MGMTD_UID, info.user_config.beemsg_port, None)?;
 
         // Update management nics entry in db
         db::node_nic::replace(

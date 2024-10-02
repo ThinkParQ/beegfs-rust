@@ -79,6 +79,7 @@ pub(crate) async fn set_alias(
                         nic_type: e.nic_type,
                     })
                     .collect(),
+                machine_uuid: vec![],
             },
         )
         .await;
