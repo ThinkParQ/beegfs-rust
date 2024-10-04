@@ -3,12 +3,16 @@ name = "mgmtd"
 description = "The BeeGFS management service"
 readme = "README.md"
 version = "0.0.0"
-license-file = "LICENSE.txt"
+license-file = "LICENSE.md"
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true
 homepage.workspace = true
 publish.workspace = true
+
+[[bin]]
+name = "beegfs-mgmtd"
+path = "src/main.rs"
 
 [build-dependencies]
 sqlite = { path = "../sqlite" }
@@ -49,25 +53,47 @@ uuid = { workspace = true }
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"
 
+# RPM package generation
+
 [package.metadata.generate-rpm]
 name = "beegfs-mgmtd"
 assets = [
-    { source = "target/release/mgmtd", dest = "/opt/beegfs/sbin/beegfs-mgmtd", mode = "755" },
-    { source = "assets/mgmtd.toml", dest = "/etc/beegfs/", mode = "644" },
+    # We use the binary generated and postprocessed from the Makefile
+    { source = "../target/make/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },
+    { source = "../target/make/thirdparty-licenses.html", dest = "/usr/share/doc/beegfs/", mode = "644" },
+    { source = "assets/beegfs-mgmtd.toml", dest = "/etc/beegfs/", mode = "644" },
     { source = "assets/beegfs-mgmtd.service", dest = "/etc/systemd/system/", mode = "644" },
 ]
+
+[package.metadata.generate-rpm.variants.debuginfo]
+name = "beegfs-mgmtd-debuginfo"
+extended-description = "The BeeGFS management daemon debug info"
+assets = [
+    { source = "../target/make/beegfs-mgmtd.debug", dest = "/opt/beegfs/sbin/", mode = "755" },
+]
+
+[package.metadata.generate-rpm.variants.debuginfo.requires]
+beegfs-mgmtd = "*"
+
+# DEB package generation
 
 [package.metadata.deb]
 name = "beegfs-mgmtd"
 extended-description = "The BeeGFS management daemon"
 assets = [
+    # We use the binary generated and postprocessed from the Makefile
     [
-        "target/release/mgmtd",
-        "/opt/beegfs/sbin/beegfs-mgmtd",
+        "../target/make/beegfs-mgmtd",
+        "/opt/beegfs/sbin/",
         "755",
     ],
     [
-        "assets/mgmtd.toml",
+        "../target/make/thirdparty-licenses.html",
+        "/usr/share/doc/beegfs/",
+        "644",
+    ],
+    [
+        "assets/beegfs-mgmtd.toml",
         "/etc/beegfs/",
         "644",
     ],
@@ -76,4 +102,16 @@ assets = [
         "/etc/systemd/system/",
         "644",
     ],
+]
+
+[package.metadata.deb.variants.debuginfo]
+name = "beegfs-mgmtd-debuginfo"
+extended-description = "The BeeGFS management daemon debug info"
+depends = "beegfs-mgmtd"
+assets = [
+    [
+        "../target/make/beegfs-mgmtd.debug",
+        "/opt/beegfs/sbin/",
+        "755",
+    ]
 ]

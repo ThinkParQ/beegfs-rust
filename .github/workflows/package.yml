@@ -17,32 +17,29 @@ jobs:
         uses: moonrepo/setup-rust@v1
         with:
           targets: x86_64-unknown-linux-musl
-          bins: cargo-deny, cargo-generate-rpm, cargo-deb
+          bins: cargo-deny, cargo-about, cargo-generate-rpm, cargo-deb
+      - name: Setup nightly toolchain and tools
+        run: |
+          rustup toolchain install nightly
+          rustup component add --toolchain nightly rustfmt
       - name: Setup tools
         # The musl-tools are most likely only needed due to the indirect `ring` crate dependency, which
         # compiles some C code.
         run: sudo apt-get update && sudo apt-get -y install musl-tools
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Important to fetch the tags
+          fetch-depth: 0
       - name: Configure git
         # Make sure the runner has access to the protobuf repo using an access token
         run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
-      - name: Cargo deny
-        run: cargo deny check
-      - name: Set VERSION to be used by build
-        run: echo "VERSION=$(git describe --tags --always --match "v*.*.*")" >> "$GITHUB_ENV"
-      - name: Build
-        run: |
-          cargo build --release --target=x86_64-unknown-linux-musl
-          strip -s target/x86_64-unknown-linux-musl/release/mgmtd
-      - name: Generate packages
-        run: |
-          mkdir -p packages
-          rm -rf packages/*
-          cargo deb -p mgmtd -o packages --target=x86_64-unknown-linux-musl --no-build
-          cargo generate-rpm -p mgmtd -o packages --target=x86_64-unknown-linux-musl
+      - name: Check, build and make packages
+        env:
+          TARGET: x86_64-unknown-linux-musl
+        run: make package
       - name: Upload packages artifact
         uses: actions/upload-artifact@v4
         with:
           name: packages_${{ github.sha }}_${{ github.run_number }}
-          path: packages/
+          path: target/make/packages/

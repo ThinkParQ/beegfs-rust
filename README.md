@@ -38,7 +38,7 @@ The management server binary runs by itself, no additional installation needed. 
 
 ## Provide a config file
 
-The management can optionally read in a configuration file in TOML format. The default location is `/etc/beegfs/mgmtd.toml`, can be set by `--config-file`.
+The management can optionally read in a configuration file in TOML format. The default location is `/etc/beegfs/beegfs-mgmtd.toml`, can be set by `--config-file`.
 
 The config file is ignored if not present - most configuration options can also be given by command line flags. The exceptions is quota.
 

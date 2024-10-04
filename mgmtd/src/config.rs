@@ -133,14 +133,14 @@ generate_structs! {
     #[serde(skip)]
     import_from_v7: Option<PathBuf> = None,
 
-    /// Loads additional configuration from the given file. [default = "/etc/beegfs/mgmtd.toml"]
+    /// Loads additional configuration from the given file. [default = "/etc/beegfs/beegfs-mgmtd.toml"]
     ///
     /// Config file settings overwrite the default settings and command line settings
     /// overwrite config file settings.
     #[arg(long)]
     #[arg(value_name = "PATH")]
     #[serde(skip)]
-    config_file: PathBuf = "/etc/beegfs/mgmtd.toml".into(),
+    config_file: PathBuf = "/etc/beegfs/beegfs-mgmtd.toml".into(),
 
     /// Managements database file location. [default: /var/lib/beegfs/mgmtd.sqlite]
     #[arg(long)]
