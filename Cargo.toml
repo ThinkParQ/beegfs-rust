@@ -4,26 +4,27 @@ members = ["shared", "mgmtd", "sqlite", "sqlite_check", "bee_serde_derive"]
 
 [workspace.package]
 edition = "2021"
-authors = ["ThinkParQ Development Team", "ThinkParQ GmbH"]
+authors = ["ThinkParQ Development Team"]
 homepage = "https://www.beegfs.io"
 documentation = "https://doc.beegfs.io"
 publish = false
 
 [workspace.dependencies]
-anyhow = "~1"
-bytes = "~1"
-clap = { version = "~4", features = ["derive"] }
-env_logger = "~0"
-itertools = "~0"
-log = { version = "~0", features = ["std"] }
-prost = "~0"
+anyhow = "1"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+env_logger = "0"
+itertools = "0"
+libc = "0"
+log = { version = "0", features = ["std"] }
+prost = "0"
 protobuf = { git = "https://github.com/thinkparq/protobuf", tag = "v0.0.14" }
-regex = "~1"
-rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}
-serde = "~1"
+regex = "1"
+rusqlite = { version = "0", features = ["bundled", "vtab", "array"]}
+serde = "1"
 thiserror = "~1"
-tokio = { version = "~1", features = ["rt", "sync", "macros"] }
-tokio-stream = { version = "~0" }
+tokio = { version = "1", features = ["rt", "sync", "macros"] }
+tokio-stream = { version = "0" }
 tokio-rusqlite = "0.5.0"
-tonic = { version = "~0", features = ["tls"] }
-uuid = { version = "~1", features = ["v4"] }
+tonic = { version = "0", features = ["tls"] }
+uuid = { version = "1", features = ["v4"] }

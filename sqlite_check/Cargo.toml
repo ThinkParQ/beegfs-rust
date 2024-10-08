@@ -1,6 +1,6 @@
 [package]
 name = "sqlite_check"
-description = "SQLite query checker"
+description = "A simple SQLite query checker for BeeGFS management code"
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true
@@ -13,5 +13,5 @@ proc-macro = true
 [dependencies]
 sqlite = {path = "../sqlite" }
 
-syn = { version = "~2", features = ["parsing"] }
-rusqlite = { version = "~0", features = ["bundled", "vtab", "array"]}
+syn = { version = "2", features = ["parsing"] }
+rusqlite = { workspace = true }

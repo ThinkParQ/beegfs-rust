@@ -1,9 +1,9 @@
 [package]
 name = "mgmtd"
-description = "BeeGFS management node Rust prototype"
+description = "The BeeGFS management service"
 readme = "README.md"
 version = "0.0.0"
-license = ""
+license-file = "LICENSE.txt"
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true
@@ -23,13 +23,13 @@ anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 env_logger = { workspace = true }
 itertools = { workspace = true }
-libc = { version = "~0" }
-libloading = { version = "~0.8" }
+libc = { workspace = true }
+libloading = { version = "0.8" }
 log = { workspace = true }
 prost = { workspace = true }
 regex = { workspace = true }
 rusqlite = { workspace = true }
-sd-notify = "~0"
+sd-notify = "0"
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -42,7 +42,7 @@ tokio = { workspace = true, features = [
 ] }
 tokio-stream = { workspace = true }
 tokio-rusqlite = { workspace = true }
-toml = "~0"
+toml = "0"
 tonic = { workspace = true }
 uuid = { workspace = true }
 

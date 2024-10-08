@@ -1,6 +1,6 @@
 [package]
 name = "shared"
-description = "Provides shared code that can be reused by BeeGFS Rust projects"
+description = "Contains shared BeeGFS functionality"
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true
@@ -14,7 +14,7 @@ hsieh = { path = "hsieh" }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 log = { workspace = true }
-pnet_datalink = "~0"
+pnet_datalink = "0"
 protobuf = { workspace = true, optional = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
