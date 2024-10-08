@@ -23,9 +23,7 @@ jobs:
       - name: Configure git
         # Make sure the runner has access to the protobuf repo using an access token
         run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
-      - name: Check formatting
-        run: cargo +nightly fmt --check
-      - name: Check clippy
-        run: cargo clippy -- -D warnings
+      - name: Checks
+        run: make check
       - name: Run tests
-        run: cargo test
+        run: make test

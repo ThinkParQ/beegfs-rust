@@ -3,7 +3,7 @@
 # This file configures the BeeGFS management node and can be used as an alternative or together with
 # command line arguments. Command line arguments overwrite arguments specified here,
 # arguments specified here overwrite the internal defaults.
-# 
+#
 # The command line help might have more information on a specific setting. Run the management
 # binary with `--help` to display it.
 
