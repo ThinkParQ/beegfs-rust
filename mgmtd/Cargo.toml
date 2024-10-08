@@ -57,22 +57,27 @@ undocumented_unsafe_blocks = "deny"
 
 [package.metadata.generate-rpm]
 name = "beegfs-mgmtd"
+# We do not specify any dependencies for now as we might be linked against an older glibc than the
+# hosts and auto detect would put it as a requirement into the package. This allows the package to
+# be installed even if the systems glibc is too old, however, this is acceptable until we find a
+# better solution
+auto-req = "disabled"
 assets = [
     # We use the binary generated and postprocessed from the Makefile
-    { source = "../target/make/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },
-    { source = "../target/make/thirdparty-licenses.html", dest = "/usr/share/doc/beegfs/", mode = "644" },
-    { source = "assets/beegfs-mgmtd.toml", dest = "/etc/beegfs/", mode = "644" },
+    { source = "target/release/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },
+    { source = "target/release/thirdparty-licenses.html", dest = "/usr/share/doc/beegfs/", mode = "644" },
+    { source = "assets/beegfs-mgmtd.toml", dest = "/etc/beegfs/", mode = "644", config = true },
     { source = "assets/beegfs-mgmtd.service", dest = "/etc/systemd/system/", mode = "644" },
 ]
 
-[package.metadata.generate-rpm.variants.debuginfo]
+[package.metadata.generate-rpm.variants.debug]
 name = "beegfs-mgmtd-debuginfo"
 extended-description = "The BeeGFS management daemon debug info"
 assets = [
-    { source = "../target/make/beegfs-mgmtd.debug", dest = "/opt/beegfs/sbin/", mode = "755" },
+    { source = "target/release/beegfs-mgmtd.debug", dest = "/opt/beegfs/sbin/", mode = "644" },
 ]
 
-[package.metadata.generate-rpm.variants.debuginfo.requires]
+[package.metadata.generate-rpm.variants.debug.requires]
 beegfs-mgmtd = "*"
 
 # DEB package generation
@@ -80,15 +85,20 @@ beegfs-mgmtd = "*"
 [package.metadata.deb]
 name = "beegfs-mgmtd"
 extended-description = "The BeeGFS management daemon"
+# We do not specify any dependencies for now as we might be linked against an older glibc than the
+# hosts and auto detect would put it as a requirement into the package. This allows the package to
+# be installed even if the systems glibc is too old, however, this is acceptable until we find a
+# better solution
+depends = ""
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     [
-        "../target/make/beegfs-mgmtd",
+        "target/release/beegfs-mgmtd",
         "/opt/beegfs/sbin/",
         "755",
     ],
     [
-        "../target/make/thirdparty-licenses.html",
+        "target/release/thirdparty-licenses.html",
         "/usr/share/doc/beegfs/",
         "644",
     ],
@@ -103,15 +113,18 @@ assets = [
         "644",
     ],
 ]
+conf-files = [
+    "/etc/beegfs/beegfs-mgmtd.toml"
+]
 
-[package.metadata.deb.variants.debuginfo]
-name = "beegfs-mgmtd-debuginfo"
+[package.metadata.deb.variants.debug]
+name = "beegfs-mgmtd-dbg"
 extended-description = "The BeeGFS management daemon debug info"
 depends = "beegfs-mgmtd"
 assets = [
     [
-        "../target/make/beegfs-mgmtd.debug",
+        "target/release/beegfs-mgmtd.debug",
         "/opt/beegfs/sbin/",
-        "755",
+        "644",
     ]
 ]

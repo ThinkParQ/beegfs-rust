@@ -1,11 +1,9 @@
 name: Check
-
+run-name: Check ${{ github.ref_name }} by @${{ github.actor }}
 on: [pull_request, workflow_call]
-
 env:
   # Cargo must use git cli for checkouts instead of builtin functionality to respect the repla
   CARGO_NET_GIT_FETCH_WITH_CLI: true
-
 jobs:
   checks:
     runs-on: ubuntu-latest
@@ -20,7 +18,7 @@ jobs:
           rustup component add --toolchain nightly rustfmt
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Configure git
+      - name: Configure foreign git repos
         # Make sure the runner has access to the protobuf repo using an access token
         run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
       - name: Checks
