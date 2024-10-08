@@ -28,16 +28,14 @@ pub(crate) async fn get(
     let targets_q = sql!(
         "SELECT t.target_uid, t.alias, t.target_id, t.node_type,
             n.node_uid, n.alias, n.node_id,
-            sp.pool_uid, e_sp.alias, sp.pool_id,
+            p.pool_uid, p.alias, p.pool_id,
             t.consistency, (UNIXEPOCH('now') - UNIXEPOCH(last_contact)),
             t.free_space, t.free_inodes, t.total_space, t.total_inodes,
-            COALESCE(mg.s_target_id, sg.s_target_id) AS s_target_id
-        FROM all_targets_v AS t
-        INNER JOIN all_nodes_v AS n USING(node_uid)
-        LEFT JOIN storage_pools AS sp USING(pool_id)
-        LEFT JOIN entities AS e_sp ON e_sp.uid = sp.pool_uid
-        LEFT JOIN meta_buddy_groups AS mg ON mg.s_target_id = t.target_id
-        LEFT JOIN storage_buddy_groups AS sg ON sg.s_target_id = t.target_id"
+            g.s_target_id
+        FROM targets_ext AS t
+        INNER JOIN nodes_ext AS n USING(node_uid)
+        LEFT JOIN pools_ext AS p USING(node_type, pool_id)
+        LEFT JOIN buddy_groups AS g ON g.s_target_id = t.target_id AND g.node_type = t.node_type"
     );
 
     let targets_f = move |row: &rusqlite::Row| {
@@ -178,7 +176,7 @@ pub(crate) async fn delete(
 
             let assigned_groups: usize = tx.query_row_cached(
                 sql!(
-                    "SELECT COUNT(*) FROM all_buddy_groups_v
+                    "SELECT COUNT(*) FROM buddy_groups_ext
                     WHERE p_target_uid = ?1 OR s_target_uid = ?1"
                 ),
                 [target.uid],
@@ -246,7 +244,7 @@ pub(crate) async fn set_state(
             let target = target.resolve(tx, EntityType::Target)?;
 
             let node: i64 = tx.query_row_cached(
-                sql!("SELECT node_uid FROM all_targets_v WHERE target_uid = ?1"),
+                sql!("SELECT node_uid FROM targets_ext WHERE target_uid = ?1"),
                 [target.uid],
                 |row| row.get(0),
             )?;

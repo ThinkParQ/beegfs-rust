@@ -30,7 +30,7 @@ pub(crate) fn exceeded_quota_ids(
     Ok(tx.query_map_collect(
         sql!(
             "SELECT DISTINCT e.quota_id FROM quota_usage AS e
-            INNER JOIN storage_targets AS st USING(target_id)
+            INNER JOIN targets AS st USING(node_type, target_id)
             LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
             LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
             WHERE e.id_type = ?1 AND e.quota_type = ?2 AND st.pool_id = ?3
@@ -62,7 +62,7 @@ pub(crate) fn all_exceeded_quota_ids(tx: &Transaction) -> Result<Vec<ExceededQuo
         sql!(
             "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
             FROM quota_usage AS e
-            INNER JOIN storage_targets AS st USING(target_id)
+            INNER JOIN targets AS st USING(node_type, target_id)
             LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
             LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
             GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id

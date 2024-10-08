@@ -192,7 +192,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
         buddy_group::insert(
             tx,
             g,
-            &format!("buddy_group_{}_{}", nt.sql_table_str(), g).try_into()?,
+            &format!("buddy_group_{}_{}", nt.user_str(), g).try_into()?,
             nt,
             p_id.parse()?,
             s_id.parse()?,

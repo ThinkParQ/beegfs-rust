@@ -10,19 +10,14 @@ pub(crate) fn validate_ids(
     target_ids: &[TargetId],
     node_type: NodeTypeServer,
 ) -> Result<()> {
-    let stmt = match node_type {
-        NodeTypeServer::Meta => {
-            sql!("SELECT COUNT(*) FROM meta_targets WHERE target_id IN rarray(?1)")
-        }
-        NodeTypeServer::Storage => {
-            sql!("SELECT COUNT(*) FROM storage_targets WHERE target_id IN rarray(?1)")
-        }
-    };
-
-    let count: usize =
-        tx.query_row_cached(stmt, [&rarray_param(target_ids.iter().copied())], |row| {
-            row.get(0)
-        })?;
+    let count: usize = tx.query_row_cached(
+        sql!("SELECT COUNT(*) FROM targets WHERE target_id IN rarray(?1) AND node_type = ?2"),
+        params![
+            &rarray_param(target_ids.iter().copied()),
+            node_type.sql_variant(),
+        ],
+        |row| row.get(0),
+    )?;
 
     match count.cmp(&target_ids.len()) {
         Ordering::Less => Err(anyhow!(TypedError::value_not_found(
@@ -48,7 +43,7 @@ pub(crate) fn insert_meta(
     alias: Option<Alias>,
 ) -> Result<()> {
     let target_id = if target_id == 0 {
-        misc::find_new_id(tx, "meta_targets", "target_id", 1..=0xFFFF)?
+        misc::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=0xFFFF)?
     } else if try_resolve_num_id(tx, EntityType::Target, NodeType::Meta, target_id.into())?
         .is_some()
     {
@@ -68,7 +63,7 @@ pub(crate) fn insert_meta(
     // If this is the first meta target, set it as meta root
     tx.execute(
         sql!("INSERT OR IGNORE INTO root_inode (target_id) VALUES (?1)"),
-        params![target_id],
+        [target_id],
     )?;
 
     Ok(())
@@ -86,7 +81,7 @@ pub(crate) fn insert_storage(
     alias: Option<Alias>,
 ) -> Result<TargetId> {
     let target_id = if target_id == 0 {
-        misc::find_new_id(tx, "storage_targets", "target_id", 1..=0xFFFF)?
+        misc::find_new_id(tx, "targets", "target_id", NodeType::Storage, 1..=0xFFFF)?
     } else if try_resolve_num_id(tx, EntityType::Target, NodeType::Storage, target_id.into())?
         .is_some()
     {
@@ -111,31 +106,27 @@ fn insert(
     let alias = if let Some(alias) = alias {
         alias
     } else {
-        format!("target_{}_{}", node_type.sql_table_str(), target_id).try_into()?
+        format!("target_{}_{}", node_type.user_str(), target_id).try_into()?
     };
 
     let new_uid = entity::insert(tx, EntityType::Target, &alias)?;
 
     tx.execute(
-        sql!("INSERT INTO targets (target_uid, node_type) VALUES (?1, ?2)"),
-        params![new_uid, node_type.sql_variant()],
-    )?;
-
-    tx.execute(
-        match node_type {
-            NodeTypeServer::Meta => {
-                sql!(
-                    "INSERT INTO meta_targets (target_id, target_uid, node_id) VALUES (?1, ?2, ?3)"
-                )
+        sql!(
+            "INSERT INTO targets (target_uid, node_type, target_id, node_id, pool_id)
+            VALUES (?1, ?2, ?3, ?4, ?5)"
+        ),
+        params![
+            new_uid,
+            node_type.sql_variant(),
+            target_id,
+            node_id,
+            if node_type == NodeTypeServer::Storage {
+                Some(1)
+            } else {
+                None
             }
-            NodeTypeServer::Storage => {
-                sql!(
-                    "INSERT INTO storage_targets (target_id, target_uid, node_id)
-                    VALUES (?1, ?2, ?3)"
-                )
-            }
-        },
-        params![target_id, new_uid, node_id],
+        ],
     )?;
 
     Ok(())
@@ -153,7 +144,7 @@ pub(crate) fn update_consistency_states(
     let mut update = tx.prepare_cached(sql!(
         "UPDATE targets SET consistency = ?3
         WHERE consistency != ?3 AND target_uid = (
-            SELECT target_uid FROM all_targets_v WHERE target_id = ?1 AND node_type = ?2
+            SELECT target_uid FROM targets WHERE target_id = ?1 AND node_type = ?2
         )"
     ))?;
 
@@ -176,8 +167,12 @@ pub(crate) fn update_storage_pools(
     validate_ids(tx, target_ids, NodeTypeServer::Storage)?;
 
     tx.execute(
-        sql!("UPDATE storage_targets SET pool_id = ?1 WHERE target_id IN rarray(?2)"),
-        params![new_pool_id, &rarray_param(target_ids.iter().copied())],
+        sql!("UPDATE targets SET pool_id = ?1 WHERE target_id IN rarray(?2) AND node_type = ?3"),
+        params![
+            new_pool_id,
+            &rarray_param(target_ids.iter().copied()),
+            NodeType::Storage.sql_variant()
+        ],
     )?;
 
     Ok(())
@@ -193,12 +188,16 @@ pub(crate) fn update_storage_node_mappings(
     new_node_id: NodeId,
 ) -> Result<usize> {
     let mut stmt = tx.prepare_cached(sql!(
-        "UPDATE storage_targets SET node_id = ?1 WHERE target_id = ?2"
+        "UPDATE targets SET node_id = ?1 WHERE target_id = ?2 AND node_type = ?3"
     ))?;
 
     let mut updated = 0;
     for target_id in target_ids {
-        updated += stmt.execute(params![new_node_id, target_id])?;
+        updated += stmt.execute(params![
+            new_node_id,
+            target_id,
+            NodeType::Storage.sql_variant()
+        ])?;
     }
 
     Ok(updated)
@@ -225,7 +224,7 @@ pub(crate) fn get_and_update_capacities(
 ) -> Result<Vec<(TargetId, TargetCapacities)>> {
     let mut select = tx.prepare_cached(sql!(
         "SELECT total_space, total_inodes, free_space, free_inodes
-        FROM all_targets_v
+        FROM targets_ext
         WHERE target_id = ?1 AND node_type = ?2;"
     ))?;
 
@@ -233,7 +232,7 @@ pub(crate) fn get_and_update_capacities(
         "UPDATE targets
         SET total_space = ?1, total_inodes = ?2, free_space = ?3, free_inodes = ?4
         WHERE target_uid = (
-            SELECT target_uid FROM all_targets_v WHERE target_id = ?5 AND node_type = ?6
+            SELECT target_uid FROM targets WHERE target_id = ?5 AND node_type = ?6
         )"
     ))?;
 
@@ -272,8 +271,8 @@ pub(crate) fn get_and_update_capacities(
 /// Deletes a storage target.
 pub(crate) fn delete_storage(tx: &Transaction, target_id: TargetId) -> Result<()> {
     let affected = tx.execute_cached(
-        sql!("DELETE FROM storage_targets WHERE target_id = ?1"),
-        params![target_id],
+        sql!("DELETE FROM targets WHERE target_id = ?1 AND node_type = ?2"),
+        params![target_id, NodeType::Storage.sql_variant()],
     )?;
 
     check_affected_rows(affected, [1])
@@ -323,14 +322,12 @@ mod test {
             );
 
             let targets: Vec<TargetId> = tx
-                .query_map_collect(
-                    sql!("SELECT target_id FROM storage_targets WHERE node_id IS NOT NULL"),
-                    [],
-                    |row| row.get(0),
-                )
+                .query_map_collect(sql!("SELECT target_id FROM storage_targets"), [], |row| {
+                    row.get(0)
+                })
                 .unwrap();
 
-            assert_eq!(18, targets.len());
+            assert_eq!(19, targets.len());
 
             assert!(targets.iter().any(|e| *e == new_target_id));
             assert!(targets.iter().any(|e| *e == 1000));

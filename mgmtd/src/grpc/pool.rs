@@ -1,5 +1,5 @@
 use super::*;
-use rusqlite::Row;
+use rusqlite::{named_params, Row};
 use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Delivers the list of pools
@@ -24,20 +24,25 @@ pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::Ge
             let pools: Vec<_> = if req.with_quota_limits {
                 tx.query_map_collect(
                     sql!(
-                        "SELECT p.pool_uid, p.pool_id, e.alias,
+                        "SELECT p.pool_uid, p.pool_id, alias,
                             qus.value, qui.value, qgs.value, qgi.value
                         FROM storage_pools AS p
-                        INNER JOIN entities AS e ON e.uid = p.pool_uid
+                        INNER JOIN entities ON uid = pool_uid
                         LEFT JOIN quota_default_limits AS qus ON qus.pool_id = p.pool_id
-                            AND qus.id_type = 1 AND qus.quota_type = 1
+                            AND qus.id_type = :user AND qus.quota_type = :space
                         LEFT JOIN quota_default_limits AS qui ON qui.pool_id = p.pool_id
-                            AND qui.id_type = 1 AND qui.quota_type = 2
+                            AND qui.id_type = :user AND qui.quota_type = :inode
                         LEFT JOIN quota_default_limits AS qgs ON qgs.pool_id = p.pool_id
-                            AND qgs.id_type = 2 AND qgs.quota_type = 1
+                            AND qgs.id_type = :group AND qgs.quota_type = :space
                         LEFT JOIN quota_default_limits AS qgi ON qgi.pool_id = p.pool_id
-                            AND qgi.id_type = 2 AND qgi.quota_type = 2 "
+                            AND qgi.id_type = :group AND qgi.quota_type = :inode"
                     ),
-                    [],
+                    named_params![
+                        ":user": QuotaIdType::User.sql_variant(),
+                        ":group": QuotaIdType::Group.sql_variant(),
+                        ":space": QuotaType::Space.sql_variant(),
+                        ":inode": QuotaType::Inode.sql_variant()
+                    ],
                     |row| {
                         let mut sp = make_sp(row)?;
                         sp.user_space_limit = row.get::<_, Option<i64>>(3)?.or(Some(-1));
@@ -50,9 +55,9 @@ pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::Ge
             } else {
                 tx.query_map_collect(
                     sql!(
-                        "SELECT p.pool_uid, p.pool_id, e.alias
-                        FROM storage_pools AS p
-                        INNER JOIN entities AS e ON e.uid = p.pool_uid"
+                        "SELECT pool_uid, pool_id, alias
+                        FROM storage_pools
+                        INNER JOIN entities ON uid = pool_uid"
                     ),
                     [],
                     make_sp,
@@ -62,10 +67,9 @@ pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::Ge
             let targets: Vec<(Uid, _)> = tx.query_map_collect(
                 sql!(
                     "SELECT target_uid, target_id, alias, pool_uid
-                    FROM storage_targets AS st
-                    INNER JOIN targets AS t USING(target_uid)
-                    INNER JOIN entities AS e ON e.uid = t.target_uid
-                    INNER JOIN storage_pools AS p ON p.pool_id = st.pool_id"
+                    FROM storage_targets
+                    INNER JOIN entities ON uid = target_uid
+                    INNER JOIN pools USING(node_type, pool_id)"
                 ),
                 [],
                 |row| {
@@ -86,10 +90,9 @@ pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::Ge
             let buddy_groups: Vec<(Uid, _)> = tx.query_map_collect(
                 sql!(
                     "SELECT group_uid, group_id, alias, pool_uid
-                    FROM storage_buddy_groups AS st
-                    INNER JOIN buddy_groups AS t USING(group_uid)
-                    INNER JOIN entities AS e ON e.uid = t.group_uid
-                    INNER JOIN storage_pools AS p ON p.pool_id = st.pool_id"
+                    FROM storage_buddy_groups
+                    INNER JOIN entities ON uid = group_uid
+                    INNER JOIN pools USING(pool_id)"
                 ),
                 [],
                 |row| {
@@ -219,13 +222,13 @@ fn assign_pool(
     // Target being part of a buddy group can not be assigned individually
     let mut check_group_membership = tx.prepare_cached(sql!(
         "SELECT COUNT(*) FROM storage_buddy_groups AS g
-        INNER JOIN storage_targets AS p_t ON p_t.target_id = g.p_target_id
-        INNER JOIN storage_targets AS s_t ON s_t.target_id = g.s_target_id
+        INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_id AND p_t.node_type = g.node_type
+        INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_id AND s_t.node_type = g.node_type
         WHERE p_t.target_uid = ?1 OR s_t.target_uid = ?1"
     ))?;
 
     let mut assign_target = tx.prepare_cached(sql!(
-        "UPDATE storage_targets SET pool_id = ?1 WHERE target_uid = ?2"
+        "UPDATE targets SET pool_id = ?1 WHERE target_uid = ?2"
     ))?;
 
     // Do the checks and assign for each target in the given list. This is expensive, but shouldn't
@@ -242,16 +245,16 @@ fn assign_pool(
     }
 
     let mut assign_group = tx.prepare_cached(sql!(
-        "UPDATE storage_buddy_groups SET pool_id = ?1 WHERE group_uid = ?2"
+        "UPDATE buddy_groups SET pool_id = ?1 WHERE group_uid = ?2"
     ))?;
 
     // Targets being part of buddy groups are auto-assigned to the new pool
     let mut assign_grouped_targets = tx.prepare_cached(sql!(
-        "UPDATE storage_targets SET pool_id = ?1
+        "UPDATE targets SET pool_id = ?1
         FROM (
-            SELECT p_t.target_uid AS p_uid, s_t.target_uid AS s_uid FROM storage_buddy_groups AS g
-            INNER JOIN storage_targets AS p_t ON p_t.target_id = g.p_target_id
-            INNER JOIN storage_targets AS s_t ON s_t.target_id = g.s_target_id
+            SELECT p_t.target_uid AS p_uid, s_t.target_uid AS s_uid FROM buddy_groups AS g
+            INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_id AND p_t.node_type = g.node_type
+            INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_id AND s_t.node_type = g.node_type
             WHERE group_uid = ?2
         )
         WHERE target_uid IN (p_uid, s_uid)"
@@ -306,10 +309,7 @@ are still assigned to this pool"
                 )
             }
 
-            let affected = tx.execute(
-                sql!("DELETE FROM storage_pools WHERE pool_uid = ?1"),
-                params![pool.uid],
-            )?;
+            let affected = tx.execute(sql!("DELETE FROM pools WHERE pool_uid = ?1"), [pool.uid])?;
             check_affected_rows(affected, [1])?;
 
             if execute {

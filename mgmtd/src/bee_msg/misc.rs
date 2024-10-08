@@ -89,7 +89,7 @@ fn load_targets_by_type(
     let targets = tx.query_map_collect(
         sql!(
             "SELECT target_id, pool_id, free_space, free_inodes
-            FROM all_targets_v
+            FROM targets
             WHERE node_type = ?1 AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
         ),
         [node_type.sql_variant()],
@@ -112,12 +112,12 @@ fn load_buddy_groups_by_type(
 ) -> Result<Vec<TargetOrBuddyGroup>> {
     let groups = tx.query_map_collect(
         sql!(
-            "SELECT group_id, pool_id,
+            "SELECT g.group_id, g.pool_id,
                 MIN(p_t.free_space, s_t.free_space),
                 MIN(p_t.free_inodes, s_t.free_inodes)
-            FROM all_buddy_groups_v AS g
-            INNER JOIN targets AS p_t ON p_t.target_uid = p_target_uid
-            INNER JOIN targets AS s_t ON s_t.target_uid = s_target_uid
+            FROM buddy_groups_ext AS g
+            INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_uid AND p_t.node_type = g.node_type
+            INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_uid AND s_t.node_type = g.node_type
             WHERE g.node_type = ?1
                 AND p_t.free_space IS NOT NULL AND s_t.free_space IS NOT NULL
                 AND p_t.free_inodes IS NOT NULL AND s_t.free_inodes IS NOT NULL"

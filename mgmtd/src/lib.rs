@@ -192,7 +192,8 @@ impl RunControl {
                 let clients = tx.query_map_collect(
                     sql!(
                         "SELECT n.node_id, t.node_type FROM client_nodes AS n
-                        CROSS JOIN node_types AS t WHERE t.name IN ('meta', 'storage')"
+                        CROSS JOIN node_types AS t
+                        WHERE t.name IN ('meta', 'storage')"
                     ),
                     [],
                     |row| Ok((NodeType::from_row(row, 1)?, row.get(0)?)),

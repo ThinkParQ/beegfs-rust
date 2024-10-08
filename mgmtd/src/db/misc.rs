@@ -23,6 +23,7 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
     tx: &Transaction,
     table: &str,
     field: &str,
+    node_type: NodeType,
     range: RangeInclusive<T>,
 ) -> Result<T> {
     let min = range.start();
@@ -34,14 +35,16 @@ pub(crate) fn find_new_id<T: FromSql + std::fmt::Display>(
                 (SELECT MIN(t1.{field}) + 1 AS new
                     FROM {table} AS t1
                     LEFT JOIN {table} AS t2 ON t2.{field} = t1.{field} + 1
+                        AND t2.node_type = t1.node_type
                     WHERE t2.{field} IS NULL AND t1.{field} + 1 BETWEEN {min} AND {max}
+                        AND t1.node_type = ?1
                 ),
                 (SELECT {min} WHERE NOT EXISTS
-                    (SELECT NULL FROM {table} WHERE {field} = {min})
+                    (SELECT NULL FROM {table} WHERE {field} = {min} AND node_type = ?1)
                 )
             )"
         ),
-        [],
+        [node_type.sql_variant()],
         |row| row.get::<_, T>(0),
     )?;
 
@@ -63,10 +66,10 @@ pub(crate) fn get_meta_root(tx: &Transaction) -> Result<MetaRoot> {
     let res = tx
         .query_row_cached(
             sql!(
-                "SELECT mt.node_id, mn.node_uid, ri.group_id
+                "SELECT t.node_id, n.node_uid, ri.group_id
                 FROM root_inode AS ri
-                LEFT JOIN meta_targets AS mt ON mt.target_id = ri.target_id
-                LEFT JOIN meta_nodes AS mn ON mn.node_id = mt.node_id"
+                LEFT JOIN targets AS t USING (node_type, target_id)
+                LEFT JOIN nodes AS n USING (node_type, node_id)"
             ),
             [],
             |row| {
@@ -93,25 +96,27 @@ pub(crate) fn enable_metadata_mirroring(tx: &Transaction) -> Result<()> {
         sql!(
             "UPDATE root_inode
             SET target_id = NULL, group_id = (
-                SELECT mg.group_id FROM root_inode AS ri
-                INNER JOIN meta_buddy_groups AS mg ON mg.p_target_id = ri.target_id
+                SELECT g.group_id FROM root_inode AS ri
+                INNER JOIN buddy_groups AS g ON g.p_target_id = ri.target_id AND g.node_type = ?1
             )"
         ),
-        [],
+        [NodeType::Meta.sql_variant()],
     )?;
 
     check_affected_rows(affected, [1])?;
 
     let affected = tx.execute(
         sql!(
-            "UPDATE targets SET consistency = 2
-            WHERE target_uid = (
-                SELECT mt.target_uid FROM root_inode AS ri
-                INNER JOIN meta_buddy_groups AS mg USING(group_id)
-                INNER JOIN meta_targets AS mt ON mt.target_id = mg.s_target_id
+            "UPDATE targets SET consistency = ?1
+            WHERE node_type = ?2 AND target_id = (
+                SELECT g.s_target_id FROM root_inode AS ri
+                INNER JOIN buddy_groups AS g USING(node_type, group_id)
             )"
         ),
-        [],
+        params![
+            TargetConsistencyState::NeedsResync.sql_variant(),
+            NodeType::Meta.sql_variant()
+        ],
     )?;
 
     check_affected_rows(affected, [1])
@@ -125,17 +130,20 @@ mod test {
     fn find_new_id() {
         with_test_data(|tx| {
             // New max id
-            let new_id = super::find_new_id(tx, "meta_targets", "target_id", 1..=100).unwrap();
+            let new_id =
+                super::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=100).unwrap();
             assert_eq!(new_id, 5);
             // New min ID in a non-empty range
-            let new_id = super::find_new_id(tx, "meta_targets", "target_id", 0..=4).unwrap();
+            let new_id =
+                super::find_new_id(tx, "targets", "target_id", NodeType::Meta, 0..=4).unwrap();
             assert_eq!(new_id, 0);
             // New min ID in an empty range
-            let new_id = super::find_new_id(tx, "meta_targets", "target_id", 100..=101).unwrap();
+            let new_id =
+                super::find_new_id(tx, "targets", "target_id", NodeType::Meta, 100..=101).unwrap();
             assert_eq!(new_id, 100);
 
             // All IDs taken
-            super::find_new_id(tx, "meta_targets", "target_id", 1..=4).unwrap_err();
+            super::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=4).unwrap_err();
         })
     }
 
