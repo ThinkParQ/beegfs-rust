@@ -1,19 +1,14 @@
 SHELL = /bin/bash
 
-
 # By default, we don't set a target and use the current default toolchain.
 ifneq ($(TARGET),)
 	export CARGO_BUILD_TARGET := $(TARGET)
-endif
-
-# By default, we build the dev profile. To make a release build, set PROFILE=release.
-ifeq ($(PROFILE),)
-	PROFILE := dev
+	TARGET_FLAG := --target=$(TARGET)
 endif
 
 # Defines VERSION from the git history. Used by the binaries to build their own version string.
 # To satisfy semver we fall back to `0.0.0` if there is no matching tag
-export VERSION := $(shell git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0.0.0")
+VERSION := $(shell git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0.0.0")
 # Strip the first character, which is usually "v" to allow usage in semver contexts
 VERSION_TRIMMED := $(shell V="$(VERSION)" && echo $${V:1})
 
@@ -22,6 +17,9 @@ VERSION_TRIMMED := $(shell V="$(VERSION)" && echo $${V:1})
 ### Simple cargo wrappers ###
 
 all: build
+
+# By setting TARGET (or CARGO_BUILD_TARGET directly) to a Rust target triple, the following commands
+# can cross compile.
 
 # Run quick sanity checks
 .PHONY: check
@@ -39,10 +37,12 @@ deny:
 test:
 	cargo test --all-features
 
-# Builds the selected profile (see PROFILE) for the selected target (see TARGET)
+# Build the normal dev/debug profile
 .PHONY: build
+.ONESHELL: build
 build:
-	cargo build --profile=$(PROFILE)
+	@set -xe
+	VERSION="$(VERSION)" cargo build
 
 .PHONY: clean
 clean:
@@ -52,63 +52,70 @@ clean:
 
 ### Release build and packaging ###
 
-# To not interfere with cargo, this makefile copies the output to its own directory before
-# modifying it. This also helps when building packages with different profiles as the binaries
-# are always found under $(MAKE_DIR) after copying and one can simply refer to that from Cargo.toml.
-MAKE_DIR := target/make
+# Where to put the packages
+PACKAGE_DIR := target/package
 
-# Name of the generated management binary. Must match the binaries name from mgmtd/Cargo.toml
-MANAGEMENT_BIN := beegfs-mgmtd
+# Output dir of all artifacts, including the manually generated
+TARGET_DIR := target/$(TARGET)/release
 
-# If we build release profile, we always want to include full debug info
-export CARGO_PROFILE_RELEASE_DEBUG := full
+# Define the command to build the release binaries based on configuration
+ifneq ($(TARGET),)
+	ifneq ($(GLIBC_VERSION),)
+		RELEASE_BUILD_CMD := cargo zigbuild --target=$(TARGET).$(GLIBC_VERSION)
+	else
+		RELEASE_BUILD_CMD := cargo build --target=$(TARGET)
+	endif
+else
+	RELEASE_BUILD_CMD := cargo build
+endif
+# We want to include the full debug info so it can be split off
+RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
+	--release --locked --config='profile.release.debug = "full"'
 
 # Build release binaries and package them.
-# Note that this is intentionally all within one target as building a release requires slightly
-# different parameters on the cargo commands than the ones passed above. Since one usually
-# doesn't need any of this separately during development, we avoid making a mess with a ton of
-# extra targets and checks. In the end, cargo already handles this stuff and this Makefile just
-# servers as a wrapper.
+# In addition to all environment variables accepted by cargo, this target reads the following:
+# * TARGET: Define a build target for cross compiling by giving a Rust target triple. Requires
+#   all the necessary tools (compilers, linkers, ...) to be installed
+# * BIN_UTIL_PREFIX: The prefix to put before binutil commands when cross compiling (like strip) to
+#   call the correct one.
+# * GLIBC_VERSION: The glibc version to link against when applicable. This requires `cargo-zigbuild`
+#   and the zig compiler to be installed and available.
 .PHONY: package
 .ONESHELL: package
 package:
-	@set -x
-
-	# Checks and tests
-	cargo +nightly fmt --check
-	cargo clippy --release --all-features --locked -- -D warnings
-	cargo deny --all-features --locked check
-
-	# Tests are only run if we are building for the current host, cross compiled tests obviously
-	# won't work
-	if [[ "$(TARGET)" == "" ]]; then
-		cargo test --release --all-features --locked
-	fi
-
-	mkdir -p $(MAKE_DIR)
+	@set -xe
 
 	# Build thirdparty license summary
-	cargo about generate about.hbs --all-features -o $(MAKE_DIR)/thirdparty-licenses.html
+	mkdir -p $(TARGET_DIR)
+	cargo about generate about.hbs --all-features -o $(TARGET_DIR)/thirdparty-licenses.html
 
-	# Build binaries
-	cargo build --release
+	# Build after cleaning the binary generating crates to prevent accidental reuse of already
+	# stripped binaries.
+	cargo clean $(TARGET_FLAG) --release -p mgmtd
+	$(RELEASE_BUILD_CMD)
 
 	# Post process binaries
-	cp -af target/$(TARGET)/release/$(MANAGEMENT_BIN) $(MAKE_DIR)
-	$(BIN_UTIL_PREFIX)objcopy --only-keep-debug $(MAKE_DIR)/$(MANAGEMENT_BIN) $(MAKE_DIR)/$(MANAGEMENT_BIN).debug
-	$(BIN_UTIL_PREFIX)strip -s $(MAKE_DIR)/$(MANAGEMENT_BIN)
+	$(BIN_UTIL_PREFIX)objcopy --only-keep-debug \
+		$(TARGET_DIR)/beegfs-mgmtd $(TARGET_DIR)/beegfs-mgmtd.debug
+	$(BIN_UTIL_PREFIX)strip -s $(TARGET_DIR)/beegfs-mgmtd
 
 	# Build packages
-	cargo deb --no-build -p mgmtd -o $(MAKE_DIR)/packages/ --deb-version="$(VERSION_TRIMMED)"
-	cargo deb --no-build -p mgmtd -o $(MAKE_DIR)/packages/ --deb-version="$(VERSION_TRIMMED)" --variant=debuginfo
+	# These don't respect CARGO_BUILD_TARGET, so we need to add --target manually using $(TARGET_FLAG)
+	cargo deb $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ \
+		--deb-version="$(VERSION_TRIMMED)"
+	cargo deb $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
+		--deb-version="$(VERSION_TRIMMED)"
 	# We add a license field since generate-rpm fails if it is not there (even if license-file is given)
-	cargo generate-rpm -p mgmtd -o $(MAKE_DIR)/packages/ \
-		--set-metadata="version = \"$(VERSION_TRIMMED)\"" \
-		--set-metadata="license = \"BeeGFS EULA\""
-	cargo generate-rpm -p mgmtd -o $(MAKE_DIR)/packages/ --variant=debuginfo \
-		--set-metadata="version = \"$(VERSION_TRIMMED)\"" \
-		--set-metadata="license = \"BeeGFS EULA\""
+	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
+		--set-metadata='version = "$(VERSION_TRIMMED)"' \
+		--set-metadata='license = "BeeGFS EULA"'
+	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
+		--set-metadata='version = "$(VERSION_TRIMMED)"' \
+		--set-metadata='license = "BeeGFS EULA"'
 
+.PHONY: clean-package
+clean-package:
+	rm -rf $(PACKAGE_DIR)
 
 
 ### Utilities ###

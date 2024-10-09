@@ -1,0 +1,65 @@
+name: Create release
+run-name: Create release for ${{ github.ref_name }} by @${{ github.actor }}
+on:
+  workflow_dispatch:
+  push:
+    # This should run automatically on pushing a BeeGFS version tag, but not on any others
+    tags:
+      - "v*.*.*"
+env:
+  # Cargo must use git cli for checkouts instead of builtin functionality to respect the repla
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Rust
+        uses: moonrepo/setup-rust@v1
+        with:
+          targets: aarch64-unknown-linux-gnu
+          bins: cargo-deny, cargo-about, cargo-generate-rpm, cargo-deb, cargo-zigbuild
+      - name: Setup nightly toolchain and tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y gcc-aarch64-linux-gnu
+          rustup toolchain install nightly
+          rustup component add --toolchain nightly rustfmt
+          # Install latest zig release, needed for cargo-zigbuild
+          curl -s https://api.github.com/repos/ziglang/zig/releases/latest \
+            | grep -w "name" | grep -Eo -m1 "[0-9]+\.[0-9]+\.[0-9]+" \
+            | xargs -I {} wget https://ziglang.org/download/{}/zig-linux-x86_64-{}.tar.xz -qO zig.tar.xz
+          mkdir -p ${HOME}/zig
+          tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
+          echo ${HOME}/zig >> ${GITHUB_PATH}
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Important to fetch the tags
+          fetch-depth: 0
+      - name: Configure foreign git repos
+        # Make sure the runner has access to the protobuf repo using an access token
+        run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
+      - name: Run checks and tests
+        run: |
+          make check
+          make deny
+          make test
+      - name: Build x86_64 packages
+        env:
+          TARGET: x86_64-unknown-linux-gnu
+          GLIBC_VERSION: 2.27
+        run: make package
+      - name: Build aarch64 packages
+        env:
+          TARGET: aarch64-unknown-linux-gnu
+          BIN_UTIL_PREFIX: aarch64-linux-gnu-
+          GLIBC_VERSION: 2.27
+        run: make package
+      - name: Create Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "target/package/*.deb,target/package/*.rpm"
+          allowUpdates: true
+          updateOnlyUnreleased: true
+          removeArtifacts: true
+          generateReleaseNotes: true
+          draft: true
