@@ -57,6 +57,7 @@ undocumented_unsafe_blocks = "deny"
 
 [package.metadata.generate-rpm]
 name = "beegfs-mgmtd"
+extended-description = "The BeeGFS management service"
 # We do not specify any dependencies for now as we might be linked against an older glibc than the
 # hosts and auto detect would put it as a requirement into the package. This allows the package to
 # be installed even if the systems glibc is too old, however, this is acceptable until we find a
@@ -67,12 +68,15 @@ assets = [
     { source = "target/release/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },
     { source = "target/release/thirdparty-licenses.html", dest = "/usr/share/doc/beegfs/", mode = "644" },
     { source = "assets/beegfs-mgmtd.toml", dest = "/etc/beegfs/", mode = "644", config = true },
-    { source = "assets/beegfs-mgmtd.service", dest = "/etc/systemd/system/", mode = "644" },
+    { source = "assets/beegfs-mgmtd.service", dest = "/usr/lib/systemd/system/", mode = "644" },
 ]
+
+[package.metadata.generate-rpm.suggests]
+libbeegfs-license = ">= 8"
 
 [package.metadata.generate-rpm.variants.debug]
 name = "beegfs-mgmtd-debuginfo"
-extended-description = "The BeeGFS management daemon debug info"
+extended-description = "The BeeGFS management service debug info"
 assets = [
     { source = "target/release/beegfs-mgmtd.debug", dest = "/opt/beegfs/sbin/", mode = "644" },
 ]
@@ -84,12 +88,13 @@ beegfs-mgmtd = "*"
 
 [package.metadata.deb]
 name = "beegfs-mgmtd"
-extended-description = "The BeeGFS management daemon"
+extended-description = "The BeeGFS management service"
 # We do not specify any dependencies for now as we might be linked against an older glibc than the
 # hosts and auto detect would put it as a requirement into the package. This allows the package to
 # be installed even if the systems glibc is too old, however, this is acceptable until we find a
 # better solution
 depends = ""
+suggests = "libbeegfs-license >= 8"
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     [
@@ -109,7 +114,7 @@ assets = [
     ],
     [
         "assets/beegfs-mgmtd.service",
-        "/etc/systemd/system/",
+        "/usr/lib/systemd/system/",
         "644",
     ],
 ]
@@ -119,7 +124,7 @@ conf-files = [
 
 [package.metadata.deb.variants.debug]
 name = "beegfs-mgmtd-dbg"
-extended-description = "The BeeGFS management daemon debug info"
+extended-description = "The BeeGFS management service debug info"
 depends = "beegfs-mgmtd"
 assets = [
     [

@@ -102,16 +102,24 @@ package:
 	# Build packages
 	# These don't respect CARGO_BUILD_TARGET, so we need to add --target manually using $(TARGET_FLAG)
 	cargo deb $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ \
-		--deb-version="$(VERSION_TRIMMED)"
+		--deb-version="20:$(VERSION_TRIMMED)" \
+		--deb-revision=""
 	cargo deb $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
-		--deb-version="$(VERSION_TRIMMED)"
+		--deb-version="20:$(VERSION_TRIMMED)" \
+		--deb-revision=""
+
+	# We don't want the epoch in the file names
+	find $(PACKAGE_DIR) -name "*_20:*.deb" -exec bash -c 'mv "$$1" $$(echo "$$1" | sed "s/_20:/_/g")' bash {} \;
+
 	# We add a license field since generate-rpm fails if it is not there (even if license-file is given)
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
-		--set-metadata='version = "$(VERSION_TRIMMED)"' \
-		--set-metadata='license = "BeeGFS EULA"'
+		--set-metadata='version="$(VERSION_TRIMMED)"' \
+		--set-metadata='epoch=20' \
+		--set-metadata='license="BeeGFS EULA"'
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
-		--set-metadata='version = "$(VERSION_TRIMMED)"' \
-		--set-metadata='license = "BeeGFS EULA"'
+		--set-metadata='version="$(VERSION_TRIMMED)"' \
+		--set-metadata='epoch=20' \
+		--set-metadata='license="BeeGFS EULA"'
 
 .PHONY: clean-package
 clean-package:
