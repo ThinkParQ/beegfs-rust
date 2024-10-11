@@ -98,6 +98,17 @@ pub(crate) fn insert(
         }
     }
 
+    // If it's a meta group, check that the secondary target does not own the root inode
+    if node_type == NodeTypeServer::Meta
+        && tx.query_row(
+            sql!("SELECT COUNT(*) FROM root_inode WHERE target_id = ?1"),
+            params![s_target_id],
+            |row| row.get::<_, i64>(0),
+        )? > 0
+    {
+        bail!("The secondary meta target {s_target_id} must not own the root inode");
+    }
+
     // Insert entity
     let new_uid = entity::insert(tx, EntityType::BuddyGroup, alias)?;
 
