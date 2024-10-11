@@ -21,6 +21,8 @@ jobs:
       - name: Setup nightly toolchain and tools
         run: |
           sudo apt-get update -qq && sudo apt-get install -y gcc-aarch64-linux-gnu
+          wget -q -P /tmp http://deb.debian.org/debian/pool/main/d/dpkg-sig/dpkg-sig_0.13.1+nmu4_all.deb
+          sudo apt install --yes /tmp/dpkg-sig_0.13.1+nmu4_all.deb rpm gnupg2
           rustup toolchain install nightly
           rustup component add --toolchain nightly rustfmt
           # Install latest zig release, needed for cargo-zigbuild
@@ -54,6 +56,15 @@ jobs:
           BIN_UTIL_PREFIX: aarch64-linux-gnu-
           GLIBC_VERSION: 2.27
         run: make package
+      - name: Signing packages
+        run: |
+          set +x
+          export GPG_TTY=$(tty)
+          echo "${{ secrets.GPGPACKAGEKEY }}" | gpg --import --pinentry-mode loopback --passphrase ${{ secrets.GPGPACKAGEPASSPHRASE }}
+          set -x
+          gpg --list-secret-keys
+          rpm --addsign -D "_gpg_name ${{ vars.GPGKEYNAME }}" --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.GPGPACKAGEPASSPHRASE }}" target/package/*.rpm
+          dpkg-sig -v --sign builder --gpg-options "--pinentry-mode loopback --passphrase ${{ secrets.GPGPACKAGEPASSPHRASE }}" target/package/*.deb
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
