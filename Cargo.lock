@@ -480,10 +480,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
-name = "hsieh"
-version = "1.0.0"
-
-[[package]]
 name = "http"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1088,11 +1084,11 @@ dependencies = [
  "anyhow",
  "bee_serde_derive",
  "bytes",
- "hsieh",
  "log",
  "pnet_datalink",
  "protobuf",
  "regex",
+ "ring",
  "serde",
  "thiserror",
  "tokio",
