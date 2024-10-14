@@ -10,11 +10,11 @@ pub enum LicensedFeature {
     Mirroring,
     HA,
     Quota,
-    ACL,
     Storagepool,
-    Events,
     Watch,
-    Flex,
+    RST,
+    Copy,
+    Index,
 }
 
 impl LicensedFeature {
@@ -23,11 +23,11 @@ impl LicensedFeature {
             LicensedFeature::Mirroring => c"io.beegfs.mirroring",
             LicensedFeature::HA => c"io.beegfs.ha",
             LicensedFeature::Quota => c"io.beegfs.quota",
-            LicensedFeature::ACL => c"io.beegfs.acl",
             LicensedFeature::Storagepool => c"io.beegfs.storagepool",
-            LicensedFeature::Events => c"io.beegfs.events",
             LicensedFeature::Watch => c"io.beegfs.watch",
-            LicensedFeature::Flex => c"io.beegfs.flex",
+            LicensedFeature::RST => c"io.beegfs.rst",
+            LicensedFeature::Copy => c"io.beegfs.copy",
+            LicensedFeature::Index => c"io.beegfs.index",
         }
     }
 }
