@@ -167,9 +167,11 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
 
     let licensed_machines = match ctx.license.get_num_machines() {
         Ok(n) => n,
-        Err(e) => {
-            log::warn!("Error while parsing number of licensed servers: {}", e);
-            0
+        Err(err) => {
+            log::debug!(
+                "Could not obtain number of licensed machines, defaulting to unlimited: {err:#}"
+            );
+            u32::MAX
         }
     };
 
@@ -193,11 +195,10 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
             };
 
             if let Some(machine_uuid) = machine_uuid {
-                if licensed_machines > 0
-                    && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
-                        >= licensed_machines
+                if db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
+                    >= licensed_machines
                 {
-                    bail!("Licensed server limit reached. Node registration denied.");
+                    bail!("Licensed machine limit reached. Node registration denied.");
                 }
             }
 

@@ -242,20 +242,14 @@ impl LicenseVerifier {
         Ok(cert)
     }
 
-    /// Fetches the number of machines the license is valid for
+    /// Fetches the number of machines the license is valid for. Defaults to maximum if library is
+    /// not loaded or certificate is not loaded or certificate doesn't contain the required
+    /// information.
     pub fn get_num_machines(&self) -> Result<u32> {
-        let cert_data = match self
-            .get_cert_data()
-            .and_then(|e| e.data.ok_or_else(|| anyhow!("No certificate loaded")))
-        {
-            Ok(cert_data) => cert_data,
-            Err(err) => {
-                log::debug!(
-                    "Could not obtain certificate data, defaulting to unlimited machines: {err:#}"
-                );
-                return Ok(u32::MAX);
-            }
-        };
+        let cert_data = self
+            .get_cert_data()?
+            .data
+            .ok_or_else(|| anyhow!("No certificate loaded"))?;
 
         for name in cert_data.dns_names {
             if let Some(suffix) = name.strip_prefix(NUM_MACHINES_PREFIX) {
@@ -267,7 +261,7 @@ impl LicenseVerifier {
             }
         }
 
-        bail!("Number of licensed servers not specified in certificate")
+        bail!("Number of licensed machines not specified in certificate")
     }
 
     /// Verifies a specific licensed feature
