@@ -14,7 +14,7 @@ pub(crate) async fn get(
 ) -> Result<pm::GetBuddyGroupsResponse> {
     let buddy_groups = ctx
         .db
-        .op(|tx| {
+        .read_tx(|tx| {
             Ok(tx.query_map_collect(
                 sql!(
                     "SELECT group_uid, group_id, bg.alias, bg.node_type,
@@ -98,7 +98,7 @@ pub(crate) async fn create(
 
     let (group, p_target, s_target) = ctx
         .db
-        .op(move |tx| {
+        .write_tx(move |tx| {
             let p_target = p_target.resolve(tx, EntityType::Target)?;
             let s_target = s_target.resolve(tx, EntityType::Target)?;
 
@@ -161,7 +161,7 @@ pub(crate) async fn delete(
     // 1. Check deletion is allowed
     let (group, p_node_uid, s_node_uid) = ctx
         .db
-        .op_with_conn(move |conn| {
+        .conn(move |conn| {
             let tx = conn.transaction()?;
 
             let group = group.resolve(&tx, EntityType::BuddyGroup)?;
@@ -203,7 +203,7 @@ Primary result: {:?}, Secondary result: {:?}",
 
     // 3. If the deletion request succeeded, remove the group from the database
     ctx.db
-        .op_with_conn(move |conn| {
+        .conn(move |conn| {
             let tx = conn.transaction()?;
 
             db::buddy_group::delete_storage(&tx, group_id)?;
@@ -234,7 +234,7 @@ pub(crate) async fn mirror_root_inode(
 
     let meta_root = ctx
         .db
-        .op(|tx| {
+        .read_tx(|tx| {
             let node_uid = match db::misc::get_meta_root(tx)? {
                 MetaRoot::Normal(_, node_uid) => node_uid,
                 MetaRoot::Mirrored(_) => bail!("Root inode is already mirrored"),
@@ -277,7 +277,7 @@ pub(crate) async fn mirror_root_inode(
         .await?;
 
     match resp.result {
-        OpsErr::SUCCESS => ctx.db.op(db::misc::enable_metadata_mirroring).await?,
+        OpsErr::SUCCESS => ctx.db.write_tx(db::misc::enable_metadata_mirroring).await?,
         _ => bail!(
             "The root meta server failed to mirror the root inode: {:?}",
             resp.result

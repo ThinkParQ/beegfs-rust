@@ -55,7 +55,7 @@ pub(crate) async fn set_default_quota_limits(
     }
 
     ctx.db
-        .op(move |tx| {
+        .write_tx(move |tx| {
             let pool = pool.resolve(tx, EntityType::Pool)?;
             let pool_id: PoolId = pool.num_id().try_into()?;
 
@@ -91,7 +91,7 @@ pub(crate) async fn set_quota_limits(
     }
 
     ctx.db
-        .op(|tx| {
+        .write_tx(|tx| {
             let mut insert_stmt = tx.prepare_cached(sql!(
                 "REPLACE INTO quota_limits
                 (quota_id, id_type, quota_type, pool_id, value)
@@ -193,7 +193,7 @@ pub(crate) async fn get_quota_limits(
         let pool: EntityId = pool.try_into()?;
         let pool_id = ctx
             .db
-            .op(move |tx| pool.resolve(tx, EntityType::Pool))
+            .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .num_id();
 
@@ -220,7 +220,7 @@ pub(crate) async fn get_quota_limits(
             let sql = sql.clone();
             let entries: Vec<_> = ctx
                 .db
-                .op(move |tx| {
+                .read_tx(move |tx| {
                     tx.query_map_collect(&sql, [offset, PAGE_LIMIT], |row| {
                         Ok(pm::QuotaInfo {
                             pool: Some(pb::EntityIdSet {
@@ -293,7 +293,7 @@ pub(crate) async fn get_quota_usage(
         let pool: EntityId = pool.try_into()?;
         let pool_uid = ctx
             .db
-            .op(move |tx| pool.resolve(tx, EntityType::Pool))
+            .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .uid;
 
@@ -343,7 +343,7 @@ pub(crate) async fn get_quota_usage(
             let sql = sql.clone();
             let entries: Vec<_> = ctx
                 .db
-                .op(move |tx| {
+                .read_tx(move |tx| {
                     tx.query_map_collect(&sql, [offset, PAGE_LIMIT], |row| {
                         Ok(pm::QuotaInfo {
                             pool: Some(pb::EntityIdSet {

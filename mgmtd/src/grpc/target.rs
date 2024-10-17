@@ -92,7 +92,7 @@ pub(crate) async fn get(
 
     let (mut targets, pools): (Vec<pm::get_targets_response::Target>, Vec<Uid>) = ctx
         .db
-        .op(move |tx| {
+        .read_tx(move |tx| {
             Ok((
                 tx.query_map_collect(targets_q, [], targets_f)?,
                 tx.query_map_collect(pools_q, [], |row| row.get(0))?,
@@ -165,8 +165,8 @@ pub(crate) async fn delete(
 
     let target = ctx
         .db
-        .op_with_conn(move |conn| {
-            let tx = conn.transaction()?;
+        .conn(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
             let target = target.resolve(&tx, EntityType::Target)?;
 
@@ -240,7 +240,7 @@ pub(crate) async fn set_state(
 
     let (target, node_uid) = ctx
         .db
-        .op(move |tx| {
+        .write_tx(move |tx| {
             let target = target.resolve(tx, EntityType::Target)?;
 
             let node: i64 = tx.query_row_cached(

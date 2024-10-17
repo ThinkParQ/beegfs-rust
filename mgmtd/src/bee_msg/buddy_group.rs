@@ -8,7 +8,7 @@ impl HandleWithResponse for GetMirrorBuddyGroups {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 tx.query_map_collect(
                     sql!(
                         "SELECT group_id, p_target_id, s_target_id FROM buddy_groups_ext
@@ -59,7 +59,7 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
 
         let (targets, groups) = ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 let targets = get_targets_with_states(
                     tx,
                     pre_shutdown,

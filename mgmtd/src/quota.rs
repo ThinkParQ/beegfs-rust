@@ -10,7 +10,7 @@ use shared::bee_msg::quota::{
 };
 use shared::bee_msg::OpsErr;
 use shared::types::{NodeType, PoolId, QuotaId, TargetId, Uid};
-use sqlite::{ConnectionExt, TransactionExt};
+use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::path::Path;
@@ -21,7 +21,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 
     let targets: Vec<(TargetId, PoolId, Uid)> = ctx
         .db
-        .op(move |tx| {
+        .read_tx(move |tx| {
             tx.query_map_collect(
                 sql!(
                     "SELECT target_id, pool_id, node_uid
@@ -150,7 +150,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
         if let Ok(r) = resp {
             // Insert quota usage data into the database
             ctx.db
-                .op(move |tx| {
+                .write_tx(move |tx| {
                     db::quota_usage::update(
                         tx,
                         target_id,
@@ -178,7 +178,11 @@ async fn exceeded_quota(ctx: &Context) -> Result<()> {
     log::info!("Calculating and pushing exceeded quota");
 
     let mut msges: Vec<SetExceededQuota> = vec![];
-    for e in ctx.db.op(db::quota_usage::all_exceeded_quota_ids).await? {
+    for e in ctx
+        .db
+        .read_tx(db::quota_usage::all_exceeded_quota_ids)
+        .await?
+    {
         if let Some(last) = msges.last_mut() {
             if e.pool_id == last.pool_id
                 && e.id_type == last.id_type
@@ -200,7 +204,7 @@ async fn exceeded_quota(ctx: &Context) -> Result<()> {
     // Get all meta and storage nodes
     let (meta_nodes, storage_nodes) = ctx
         .db
-        .op(move |tx| {
+        .read_tx(move |tx| {
             Ok((
                 db::node::get_with_type(tx, NodeType::Meta)?,
                 db::node::get_with_type(tx, NodeType::Storage)?,
