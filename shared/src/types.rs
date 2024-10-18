@@ -276,17 +276,22 @@ impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
 ///
 /// Sent by the `AuthenticateChannel` message to authenticate a connection.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, BeeSerde)]
-pub struct AuthSecret(i64);
+pub struct AuthSecret(u64);
 
 impl AuthSecret {
-    /// Generates / hashes the secret from the input byte slice. Accepts arbitrary input.
+    /// Generates sha256 hash from the input byte slice and returns the AuthSecret containing the 8
+    /// most significant bytes of the hash in little endian order. Matches the behavior of other
+    /// implementations.
     pub fn hash_from_bytes(input: impl AsRef<[u8]>) -> Self {
-        let (high, low) = input.as_ref().split_at(input.as_ref().len() / 2);
-        let high = hsieh::hash(high) as i64;
-        let low = hsieh::hash(low) as i64;
-
-        let hash = (high << 32) | low;
-
+        let digest = ring::digest::digest(&ring::digest::SHA256, input.as_ref());
+        let hash: [u8; 8] = digest
+            .as_ref()
+            .get(0..8)
+            .expect("sha256 must output exactly 32 bytes")
+            .try_into()
+            .expect("sha256 must output exactly 32 bytes");
+        // Following our usual schema, we create the hash integer using little endian order
+        let hash = u64::from_le_bytes(hash);
         Self(hash)
     }
 
@@ -308,18 +313,5 @@ impl FromStr for AuthSecret {
         Ok(Self(s.parse().with_context(|| {
             format!("{s} does not represent a valid authentication secret string")
         })?))
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_auth_secret() {
-        let expect = ((hsieh::hash(b"hhhhh") as u64) << 32) | hsieh::hash(b"lllll") as u64;
-        assert_eq!(expect as i64, AuthSecret::hash_from_bytes(b"hhhhhlllll").0);
-        let expect = ((hsieh::hash(b"hhhh") as u64) << 32) | hsieh::hash(b"lllll") as u64;
-        assert_eq!(expect as i64, AuthSecret::hash_from_bytes(b"hhhhlllll").0);
     }
 }

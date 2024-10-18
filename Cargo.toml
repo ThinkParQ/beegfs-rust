@@ -20,6 +20,7 @@ log = { version = "0", features = ["std"] }
 prost = "0"
 protobuf = { git = "https://github.com/thinkparq/protobuf", tag = "v0.0.14" }
 regex = "1"
+ring = "0"
 rusqlite = { version = "0", features = ["bundled", "vtab", "array"]}
 serde = "1"
 thiserror = "~1"
