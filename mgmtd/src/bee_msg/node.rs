@@ -162,7 +162,8 @@ impl HandleWithResponse for RegisterNode {
 
 /// Processes incoming node information. Registers new nodes if config allows it
 async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
-    let msg2 = msg.clone();
+    let nics = msg.nics.clone();
+    let requested_node_id = msg.node_id;
     let info = ctx.info;
 
     let licensed_machines = match ctx.license.get_num_machines() {
@@ -175,7 +176,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
         }
     };
 
-    let (node_uid, node_id, meta_root, is_new) = ctx
+    let (node, meta_root, is_new) = ctx
         .db
         .op(move |tx| {
             let node = if msg.node_id == 0 {
@@ -202,11 +203,11 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
                 }
             }
 
-            let (node_id, node_uid) = if let Some(ref node) = node {
+            let (node, is_new) = if let Some(node) = node {
                 // Existing node, update data
                 db::node::update(tx, node.uid, msg.port, machine_uuid)?;
 
-                (node.num_id(), node.uid)
+                (node, false)
             } else {
                 // New node, do additional checks and insert data
 
@@ -239,30 +240,30 @@ client version < 8.0)"
                 };
 
                 // Insert new node entry
-                let (node_uid, node_id) =
-                    db::node::insert(tx, msg.node_id, new_alias, msg.node_type, msg.port)?;
+                let node = db::node::insert(tx, msg.node_id, new_alias, msg.node_type, msg.port)?;
 
                 // if this is a meta node, auto-add a corresponding meta target after the node.
                 if msg.node_type == NodeType::Meta {
                     // Convert the NodeID to a TargetID. Due to the difference in bitsize, meta
                     // node IDs are not allowed to be bigger than u16
-                    let Ok(target_id) = TargetId::try_from(node_id) else {
+                    let Ok(target_id) = TargetId::try_from(node.num_id()) else {
                         bail!(
-                            "{node_id} is not a valid numeric meta node id\
-(must be between 1 and 65535)"
+                            "{} is not a valid numeric meta node id\
+(must be between 1 and 65535)",
+                            node.num_id()
                         );
                     };
 
                     db::target::insert_meta(tx, target_id, None)?;
                 }
 
-                (node_id, node_uid)
+                (node, true)
             };
 
             // Update the corresponding nic lists
             db::node_nic::replace(
                 tx,
-                node_uid,
+                node.uid,
                 msg.nics.iter().map(|e| ReplaceNic {
                     nic_type: e.nic_type,
                     addr: &e.addr,
@@ -270,64 +271,49 @@ client version < 8.0)"
                 }),
             )?;
 
-            Ok((
-                node_uid,
-                node_id,
-                match msg.node_type {
-                    // In case this is a meta node, the requester expects info about the meta
-                    // root
-                    NodeType::Meta => db::misc::get_meta_root(tx)?,
-                    _ => MetaRoot::Unknown,
-                },
-                node.is_none(),
-            ))
+            let meta_root = match node.node_type() {
+                // In case this is a meta node, the requester expects info about the meta
+                // root
+                NodeType::Meta => db::misc::get_meta_root(tx)?,
+                _ => MetaRoot::Unknown,
+            };
+
+            Ok((node, meta_root, is_new))
         })
         .await?;
 
     ctx.conn.replace_node_addrs(
-        node_uid,
-        msg2.nics
-            .clone()
+        node.uid,
+        nics.clone()
             .into_iter()
             .map(|e| SocketAddr::new(e.addr.into(), msg.port))
             .collect::<Arc<_>>(),
     );
 
     if is_new {
-        log::info!(
-            "Registered new {:?} node (Requested Id: {}, Assigned Id: {}, Assigned Uid: {})",
-            msg2.node_type,
-            msg2.node_id,
-            node_id,
-            node_uid,
-        );
+        log::info!("Registered new node {node} (Requested Numeric Id: {requested_node_id})",);
     } else {
-        log::debug!(
-            "Updated {:?} node (Numeric Id: {}, Uid: {})",
-            msg2.node_type,
-            node_id,
-            node_uid,
-        );
+        log::debug!("Updated node {node} node",);
     }
+
+    let node_num_id = node.num_id();
 
     // notify all nodes
     notify_nodes(
         ctx,
-        match msg.node_type {
-            shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
-            shared::types::NodeType::Storage => {
-                &[NodeType::Meta, NodeType::Storage, NodeType::Client]
-            }
-            shared::types::NodeType::Client => &[NodeType::Meta],
+        match node.node_type() {
+            NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+            NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+            NodeType::Client => &[NodeType::Meta],
             _ => &[],
         },
         &Heartbeat {
             instance_version: 0,
             nic_list_version: 0,
-            node_type: msg2.node_type,
-            node_alias: msg2.node_alias,
+            node_type: node.node_type(),
+            node_alias: String::from(node.alias).into_bytes(),
             ack_id: "".into(),
-            node_num_id: node_id,
+            node_num_id,
             root_num_id: match meta_root {
                 MetaRoot::Unknown => 0,
                 MetaRoot::Normal(node_id, _) => node_id,
@@ -339,13 +325,13 @@ client version < 8.0)"
             },
             port: msg.port,
             port_tcp_unused: msg.port,
-            nic_list: msg2.nics,
+            nic_list: nics,
             machine_uuid: vec![], // No need for the other nodes to know machine UUIDs
         },
     )
     .await;
 
-    Ok(node_id)
+    Ok(node_num_id)
 }
 
 impl HandleWithResponse for RemoveNode {

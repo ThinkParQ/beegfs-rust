@@ -75,8 +75,8 @@ pub(crate) fn insert(
     alias: Option<Alias>,
     node_type: NodeType,
     port: Port,
-) -> Result<(Uid, NodeId)> {
-    let node_id = if node_id == 0 {
+) -> Result<EntityIdSet> {
+    let num_id = if node_id == 0 {
         if node_type == NodeType::Client {
             // Immediately reusing client IDs is not possible because nodes only learn about removed
             // clients periodically when they download the node lists via the InternodeSyncer. At
@@ -115,7 +115,7 @@ pub(crate) fn insert(
     let alias = if let Some(alias) = alias {
         alias
     } else {
-        format!("node_{}_{}", node_type.user_str(), node_id).try_into()?
+        format!("node_{}_{}", node_type.user_str(), num_id).try_into()?
     };
 
     let uid = entity::insert(tx, EntityType::Node, &alias)?;
@@ -125,10 +125,14 @@ pub(crate) fn insert(
             "INSERT INTO nodes (node_uid, node_type, node_id, port, last_contact)
             VALUES (?1, ?2, ?3, ?4, DATETIME('now'))"
         ),
-        params![uid, node_type.sql_variant(), node_id, port],
+        params![uid, node_type.sql_variant(), num_id, port],
     )?;
 
-    Ok((uid, node_id))
+    Ok(EntityIdSet {
+        uid,
+        alias,
+        legacy_id: LegacyId { node_type, num_id },
+    })
 }
 
 /// Updates a node in the database
@@ -230,7 +234,7 @@ mod test {
     fn insert_get_delete() {
         with_test_data(|tx| {
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
-            let (uid, _) = insert(
+            let node = insert(
                 tx,
                 1234,
                 Some("new_node".try_into().unwrap()),
@@ -256,8 +260,8 @@ mod test {
             .unwrap_err();
             assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
 
-            delete(tx, uid).unwrap();
-            delete(tx, uid).unwrap_err();
+            delete(tx, node.uid).unwrap();
+            delete(tx, node.uid).unwrap_err();
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
         });
     }

@@ -7,17 +7,17 @@ struct TargetOrBuddyGroup {
     id: u16,
     node_id: Option<NodeId>,
     pool_id: PoolId,
-    free_space: u64,
-    free_inodes: u64,
+    free_space: Option<u64>,
+    free_inodes: Option<u64>,
 }
 
 impl CapacityInfo for &TargetOrBuddyGroup {
     fn free_space(&self) -> u64 {
-        self.free_space
+        self.free_space.unwrap_or_default()
     }
 
     fn free_inodes(&self) -> u64 {
-        self.free_inodes
+        self.free_inodes.unwrap_or_default()
     }
 }
 
@@ -41,8 +41,7 @@ impl HandleWithResponse for GetStoragePools {
                     sql!(
                         "SELECT target_id, node_id, pool_id, free_space, free_inodes
                         FROM storage_targets
-                        WHERE node_id IS NOT NULL
-                            AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
+                        WHERE node_id IS NOT NULL"
                     ),
                     [],
                     |row| {
@@ -65,11 +64,7 @@ impl HandleWithResponse for GetStoragePools {
                         INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_id
                             AND p_t.node_type = g.node_type
                         INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_id
-                            AND s_t.node_type = g.node_type
-                        WHERE p_t.free_space IS NOT NULL
-                            AND s_t.free_space IS NOT NULL
-                            AND p_t.free_inodes IS NOT NULL
-                            AND s_t.free_inodes IS NOT NULL"
+                            AND s_t.node_type = g.node_type"
                     ),
                     [],
                     |row| {
@@ -130,7 +125,7 @@ impl HandleWithResponse for GetStoragePools {
                 // Only collect targets belonging to the current pool
                 for target in f_targets {
                     let cp = cp_targets_calc
-                        .cap_pool(target.free_space, target.free_inodes)
+                        .cap_pool(target.free_space(), target.free_inodes())
                         .bee_msg_vec_index();
 
                     let target_id: TargetId = target.id;
@@ -151,7 +146,7 @@ impl HandleWithResponse for GetStoragePools {
                     buddy_group_vec.push(group.id);
 
                     let cp = cp_buddy_groups_calc
-                        .cap_pool(group.free_space, group.free_inodes)
+                        .cap_pool(group.free_space(), group.free_inodes())
                         .bee_msg_vec_index();
                     buddy_group_cap_pools[cp].push(group.id);
                 }

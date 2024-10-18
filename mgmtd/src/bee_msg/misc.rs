@@ -65,24 +65,25 @@ impl HandleWithResponse for RefreshCapacityPools {
     }
 }
 
+#[derive(Debug)]
 struct TargetOrBuddyGroup {
     id: u16,
     pool_id: Option<PoolId>,
-    free_space: u64,
-    free_inodes: u64,
+    free_space: Option<u64>,
+    free_inodes: Option<u64>,
 }
 
 impl CapacityInfo for &TargetOrBuddyGroup {
     fn free_space(&self) -> u64 {
-        self.free_space
+        self.free_space.unwrap_or_default()
     }
 
     fn free_inodes(&self) -> u64 {
-        self.free_inodes
+        self.free_inodes.unwrap_or_default()
     }
 }
 
-fn load_targets_by_type(
+fn load_targets_info_by_type(
     tx: &Transaction,
     node_type: NodeTypeServer,
 ) -> Result<Vec<TargetOrBuddyGroup>> {
@@ -90,7 +91,7 @@ fn load_targets_by_type(
         sql!(
             "SELECT target_id, pool_id, free_space, free_inodes
             FROM targets
-            WHERE node_type = ?1 AND free_space IS NOT NULL AND free_inodes IS NOT NULL"
+            WHERE node_type = ?1"
         ),
         [node_type.sql_variant()],
         |row| {
@@ -106,7 +107,7 @@ fn load_targets_by_type(
     Ok(targets)
 }
 
-fn load_buddy_groups_by_type(
+fn load_buddy_groups_info_by_type(
     tx: &Transaction,
     node_type: NodeTypeServer,
 ) -> Result<Vec<TargetOrBuddyGroup>> {
@@ -118,9 +119,7 @@ fn load_buddy_groups_by_type(
             FROM buddy_groups_ext AS g
             INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_uid AND p_t.node_type = g.node_type
             INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_uid AND s_t.node_type = g.node_type
-            WHERE g.node_type = ?1
-                AND p_t.free_space IS NOT NULL AND s_t.free_space IS NOT NULL
-                AND p_t.free_inodes IS NOT NULL AND s_t.free_inodes IS NOT NULL"
+            WHERE g.node_type = ?1"
         ),
         [node_type.sql_variant()],
         |row| {
@@ -147,7 +146,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             CapacityPoolQueryType::Meta => {
                 let targets = ctx
                     .db
-                    .op(|tx| load_targets_by_type(tx, NodeTypeServer::Meta))
+                    .op(|tx| load_targets_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
@@ -157,9 +156,9 @@ impl HandleWithResponse for GetNodeCapacityPools {
                 )?;
 
                 let mut res = vec![Vec::<u16>::new(), vec![], vec![]];
-                for t in targets {
+                for t in &targets {
                     let cp = cp_calc
-                        .cap_pool(t.free_space, t.free_inodes)
+                        .cap_pool(t.free_space(), t.free_inodes())
                         .bee_msg_vec_index();
                     res[cp].push(t.id);
                 }
@@ -171,7 +170,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
                 let (targets, pools) = ctx
                     .db
                     .op(|tx| {
-                        let targets = load_targets_by_type(tx, NodeTypeServer::Storage)?;
+                        let targets = load_targets_info_by_type(tx, NodeTypeServer::Storage)?;
 
                         let pools: Vec<PoolId> = tx.query_map_collect(
                             sql!("SELECT pool_id FROM storage_pools"),
@@ -199,7 +198,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     res.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
                     for t in f_targets {
                         let cp = cp_calc
-                            .cap_pool(t.free_space, t.free_inodes)
+                            .cap_pool(t.free_space(), t.free_inodes())
                             .bee_msg_vec_index();
                         res.get_mut(&sp).unwrap()[cp].push(t.id);
                     }
@@ -211,7 +210,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             CapacityPoolQueryType::MetaMirrored => {
                 let groups = ctx
                     .db
-                    .op(|tx| load_buddy_groups_by_type(tx, NodeTypeServer::Meta))
+                    .op(|tx| load_buddy_groups_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
@@ -222,9 +221,9 @@ impl HandleWithResponse for GetNodeCapacityPools {
 
                 let mut res = vec![Vec::<u16>::new(), vec![], vec![]];
 
-                for e in groups {
+                for e in &groups {
                     let cp = cp_calc
-                        .cap_pool(e.free_space, e.free_inodes)
+                        .cap_pool(e.free_space(), e.free_inodes())
                         .bee_msg_vec_index();
                     res[cp].push(e.id);
                 }
@@ -236,7 +235,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
                 let (groups, pools) = ctx
                     .db
                     .op(|tx| {
-                        let groups = load_buddy_groups_by_type(tx, NodeTypeServer::Storage)?;
+                        let groups = load_buddy_groups_info_by_type(tx, NodeTypeServer::Storage)?;
 
                         let pools: Vec<PoolId> = tx.query_map_collect(
                             sql!("SELECT pool_id FROM storage_pools"),
@@ -264,7 +263,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     cap_pools.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
                     for t in f_groups {
                         let cp = cp_calc
-                            .cap_pool(t.free_space, t.free_inodes)
+                            .cap_pool(t.free_space(), t.free_inodes())
                             .bee_msg_vec_index();
                         cap_pools.get_mut(&sp).unwrap()[cp].push(t.id);
                     }
