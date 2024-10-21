@@ -18,10 +18,10 @@ path = "src/main.rs"
 sqlite = { path = "../sqlite" }
 
 [dependencies]
-shared = { path = "../shared", features = ["grpc"]}
+shared = { path = "../shared", features = ["grpc"] }
 protobuf = { workspace = true }
 sqlite = { path = "../sqlite" }
-sqlite_check = { path = "../sqlite_check"}
+sqlite_check = { path = "../sqlite_check" }
 
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
@@ -94,7 +94,7 @@ extended-description = "The BeeGFS management service"
 # be installed even if the systems glibc is too old, however, this is acceptable until we find a
 # better solution
 depends = ""
-suggests = "libbeegfs-license >= 8"
+suggests = "libbeegfs-license (>= 8)"
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     [
@@ -118,18 +118,10 @@ assets = [
         "644",
     ],
 ]
-conf-files = [
-    "/etc/beegfs/beegfs-mgmtd.toml"
-]
+conf-files = ["/etc/beegfs/beegfs-mgmtd.toml"]
 
 [package.metadata.deb.variants.debug]
 name = "beegfs-mgmtd-dbg"
 extended-description = "The BeeGFS management service debug info"
 depends = "beegfs-mgmtd"
-assets = [
-    [
-        "target/release/beegfs-mgmtd.debug",
-        "/opt/beegfs/sbin/",
-        "644",
-    ]
-]
+assets = [["target/release/beegfs-mgmtd.debug", "/opt/beegfs/sbin/", "644"]]

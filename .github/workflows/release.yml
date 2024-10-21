@@ -73,4 +73,4 @@ jobs:
           updateOnlyUnreleased: true
           removeArtifacts: true
           generateReleaseNotes: true
-          draft: true
+          draft: false
