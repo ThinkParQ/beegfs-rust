@@ -67,7 +67,7 @@ macro_rules! generate_structs {
         /// parameters overwrite config file parameters. If there is a config file in the default
         /// location, it is loaded automatically. Note that there are some parameters that can only
         /// be set by using a config file (mainly quota and capacity poool related).
-         #[derive(Debug, Default, Parser, Deserialize)]
+        #[derive(Debug, Default, Parser, Deserialize)]
         #[command(
             version = version_str(),
             rename_all = "kebab-case",
@@ -87,7 +87,7 @@ macro_rules! generate_structs {
 
 // Deserialization / parser helpers
 
-fn deserialize_optional_range<'de, D: Deserializer<'de>>(
+fn deserialize_optional_u32_range<'de, D: Deserializer<'de>>(
     de: D,
 ) -> Result<Option<Option<RangeInclusive<u32>>>, D::Error> {
     Ok(Some(Some(integer_range::deserialize(de)?)))
@@ -95,10 +95,6 @@ fn deserialize_optional_range<'de, D: Deserializer<'de>>(
 
 fn deserialize_duration<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Duration>, D::Error> {
     Ok(Some(duration::deserialize(de)?))
-}
-
-fn parse_optional_u32_range(input: &str) -> Result<Option<RangeInclusive<u32>>> {
-    integer_range::parse(input).map(Some)
 }
 
 generate_structs! {
@@ -279,7 +275,7 @@ generate_structs! {
     ///
     /// Note that this uses the users from the local machine the management is running on.
     #[arg(long)]
-    #[arg(num_args = 1)]
+    #[arg(num_args = 1)] // Overwrite the automatic `num_args = 0..=1`
     #[arg(value_name = "ID")]
     quota_user_system_ids_min: Option<QuotaId> = None,
     /// Loads the user ids to be quota queried and enforced from a file.
@@ -293,8 +289,10 @@ generate_structs! {
     #[arg(long)]
     #[arg(num_args = 1)]
     #[arg(value_name = "RANGE")]
-    #[arg(value_parser = parse_optional_u32_range)]
-    #[serde(deserialize_with = "deserialize_optional_range")]
+    // Despite below being clap parsed into an `Option<Option<RangeInclusive>>`,
+    // value_parser still needs to output the "raw" value as `Result<RangeInclusive>`
+    #[arg(value_parser = integer_range::parse::<u32>)]
+    #[serde(deserialize_with = "deserialize_optional_u32_range")]
     quota_user_ids_range: Option<RangeInclusive<u32>> = None,
 
     /// Defines the minimum id of the existing system groups to be quota checked and enforced.
@@ -315,8 +313,8 @@ generate_structs! {
     #[arg(long)]
     #[arg(num_args = 1)]
     #[arg(value_name = "RANGE")]
-    #[arg(value_parser = parse_optional_u32_range)]
-    #[serde(deserialize_with = "deserialize_optional_range")]
+    #[arg(value_parser = integer_range::parse::<u32>)]
+    #[serde(deserialize_with = "deserialize_optional_u32_range")]
     quota_group_ids_range: Option<RangeInclusive<u32>> = None,
 
     /// Sets the limits / boundaries of the meta capacity pools.
