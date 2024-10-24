@@ -131,7 +131,7 @@ pub enum NicType {
     Rdma,
 }
 
-impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 1);
+impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 2);
 
 impl_enum_user_str! {NicType,
     NicType::Ethernet => "ethernet",
