@@ -29,10 +29,15 @@ pub(crate) fn start_tasks(ctx: Context, run_state: RunStateHandle) {
 
 /// Deletes client nodes from the database which haven't responded for the configured time.
 async fn delete_stale_clients(ctx: Context, mut run_state: RunStateHandle) {
-    loop {
-        log::debug!("Running stale client deleter");
+    let timeout = ctx.info.user_config.client_auto_remove_timeout;
 
-        let timeout = ctx.info.user_config.client_auto_remove_timeout;
+    loop {
+        tokio::select! {
+            _ = sleep(timeout) => {}
+            _ = run_state.wait_for_pre_shutdown() => { break; }
+        }
+
+        log::debug!("Running stale client deleter");
 
         match ctx
             .db
@@ -45,11 +50,6 @@ async fn delete_stale_clients(ctx: Context, mut run_state: RunStateHandle) {
                 }
             }
             Err(err) => log::error!("Deleting stale clients failed: {err:#}"),
-        }
-
-        tokio::select! {
-            _ = sleep(timeout) => {}
-            _ = run_state.wait_for_pre_shutdown() => { break; }
         }
     }
 
