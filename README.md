@@ -81,13 +81,13 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout key.pem -out cert.pe
 
 (3) On the mgmtd install the key and cert at /etc/beegfs. On nodes with the CTL install the certificate to /etc/beegfs.
 
-Alternatively, disable TLS using `--tls-enable=false`.
+Alternatively, disable TLS using `--tls-disable`.
 
 ## Provide BeeMsg authentication file
 
 To use BeeMsg authentication, you have to provide the same BeeMsg authentication file used for the other nodes (formerly known as "connAuthFile"). The default location is `/etc/beegfs/conn.auth`, but can be overridden using `--auth-file`.
 
-Alternatively, disable BeeMsg authentication using `--auth-enable=false`.
+Alternatively, disable BeeMsg authentication using `--auth-disable`.
 
 ## Set up the database
 
@@ -102,13 +102,13 @@ cargo run -p mgmtd -- --init --db-file=/tmp/mgmtd.sqlite
 Run the binary according to the preparations above. For example, for disabling BeeMsg authentication and using the generated TLS certificate for gRPC:
 
 ```shell
-cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=false --tls-cert-file=./mgmtd-cert.pem --tls-key-file=./mgmtd-key.pem
+cargo run -p mgmtd -- --db-file=/tmp/mgmtd.sqlite --auth-disable --tls-cert-file=./mgmtd-cert.pem --tls-key-file=./mgmtd-key.pem
 ```
 
 This logs to systemd. For playing around and debugging, it is advisable to log to stdout instead. To do that, provide the `--log-target=std` flag. For that purpose, the management uses [env_logger](https://docs.rs/env_logger/latest/env_logger/). It can be configured by setting the `RUST_LOG` environment variable. For example, to log everything down to debug level:
 
 ```shell
-RUST_LOG=debug cargo run -p mgmtd -- --db-file=/tmp/db.sqlite --auth-enable=false --tls-cert-file=./mgmtd-cert.pem --tls-key-file=./mgmtd-key.pem --log-target=std
+RUST_LOG=debug cargo run -p mgmtd -- --db-file=/tmp/mgmtd.sqlite --auth-disable --tls-cert-file=./mgmtd-cert.pem --tls-key-file=./mgmtd-key.pem --log-target=std
 ```
 
 env_logger can be configured relatively fine grained using `RUST_LOG`, look up its documentation for more details.
