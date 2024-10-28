@@ -446,6 +446,7 @@ const fn version_str() -> &'static str {
 
 /// Defines where log messages shall be sent to
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum LogTarget {
     Std,
     Journald,
@@ -453,6 +454,7 @@ pub enum LogTarget {
 
 /// Defines the log level
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum LogLevel {
     Off,
     Error,
