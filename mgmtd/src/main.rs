@@ -7,8 +7,8 @@ use mgmtd::{start, StaticInfo};
 use shared::journald_logger;
 use shared::types::AuthSecret;
 use std::backtrace::Backtrace;
-use std::panic;
 use std::path::Path;
+use std::{fs, panic};
 use tokio::signal::ctrl_c;
 
 fn main() -> Result<(), i32> {
@@ -55,6 +55,15 @@ fn inner_main() -> Result<()> {
     if user_config.upgrade {
         upgrade_db(&user_config.db_file)?;
         return Ok(());
+    }
+
+    if let Err(err) = fs::metadata(&user_config.db_file) {
+        anyhow::bail!(
+            "No accessible database file found at {:?}: {err}
+If you want to initialize a new system or upgrade an existing one, refer to --help or \
+doc.beegfs.io.",
+            user_config.db_file,
+        );
     }
 
     let auth_secret = if !user_config.auth_disable {
