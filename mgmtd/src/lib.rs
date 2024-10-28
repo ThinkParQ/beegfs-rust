@@ -52,7 +52,7 @@ pub struct StaticInfo {
 /// Returns after all setup work is done and all tasks are started. The caller is responsible for
 /// keeping the shutdown control handle and send a shutdown request when the program shall
 /// be terminated.
-pub async fn start(info: StaticInfo, lic: LicenseVerifier) -> Result<RunControl> {
+pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunControl> {
     // Initialization
 
     let (run_state, run_state_control) = run_state::new();
@@ -114,7 +114,7 @@ pub async fn start(info: StaticInfo, lic: LicenseVerifier) -> Result<RunControl>
     let ctx = Context::new(
         conn_pool,
         db,
-        lic,
+        license,
         info,
         run_state.clone_weak(),
         shutdown_client_tx,

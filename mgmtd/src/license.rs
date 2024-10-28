@@ -171,7 +171,7 @@ impl LicenseVerifier {
     /// # Safety
     /// The signatures of the functions loaded from the dynamic library at `path` must match the
     /// function pointers defined in the LoadedLibrary struct.
-    pub unsafe fn new(path: impl AsRef<Path>) -> Self {
+    pub unsafe fn with_lib(path: impl AsRef<Path>) -> Self {
         // SAFETY:
         // Self::new() already requires fulfilling the LoadedLibrary::new() contract
         match unsafe { LoadedLibrary::new(path) } {
@@ -186,6 +186,11 @@ impl LicenseVerifier {
         }
     }
 
+    /// Returns the verifier without a library being loaded.
+    pub fn with_no_lib() -> Self {
+        Self(None)
+    }
+
     /// Loads and verifies a certificate from a file
     ///
     /// Checks whether the configured path is empty and if not, relays the path to the library,
@@ -195,19 +200,19 @@ impl LicenseVerifier {
     /// not required for subsequent operations on the certificate, because the library caches the
     /// last certificate it was asked to verify, regardless of verification success. In case of
     /// verification failure, returns an `Error` that contains the failure reason.
-    pub async fn load_and_verify_cert(&self, cert_path: &Path) -> Result<String> {
+    pub async fn load_and_verify_cert(&self, cert_path: impl AsRef<Path>) -> Result<String> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded.");
         };
 
-        if cert_path.as_os_str().is_empty() {
+        if cert_path.as_ref().as_os_str().is_empty() {
             bail!("No license certificate configured");
         }
 
         library.init_cert_store();
-        let pem = tokio::fs::read(cert_path)
+        let pem = tokio::fs::read(&cert_path)
             .await
-            .with_context(|| format!("Reading certificate file {cert_path:?} failed"))?;
+            .with_context(|| format!("Reading certificate file {:?} failed", cert_path.as_ref()))?;
 
         let res = VerifyCertResult::decode(library.verify_pem(&pem)?.as_ref())?;
         let result = res.result();

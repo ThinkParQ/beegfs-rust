@@ -233,6 +233,13 @@ generate_structs! {
     #[serde(deserialize_with = "deserialize_duration")]
     client_auto_remove_timeout: Duration = Duration::from_secs(30 * 60),
 
+    /// Disables loading the license library.
+    ///
+    /// This disables all enterprise features.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    license_disable: bool = false,
+
     /// The BeeGFS license certificate file. [default: /etc/beegfs/license.pem]
     #[arg(long)]
     #[arg(value_name = "PATH")]

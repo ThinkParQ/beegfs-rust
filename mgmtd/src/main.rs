@@ -78,13 +78,6 @@ doc.beegfs.io.",
         None
     };
 
-    // SAFETY:
-    // There is no way to verify that the user loaded dynamic library matches the requirements
-    // of LicenseVerifier. After all, users can load anything they want. Therefore, this is just not
-    // safe to do from the Rust compilers perspective and loading anything with non-matching fp
-    // signatures or not behaving as expected will lead to undefined behavior.
-    let lic = unsafe { LicenseVerifier::new(&user_config.license_lib_file) };
-
     // Ensure the program ends if a task panics
     panic::set_hook(Box::new(|info| {
         let backtrace = Backtrace::capture();
@@ -92,25 +85,40 @@ doc.beegfs.io.",
         std::process::exit(1);
     }));
 
+    let network_addrs = shared::ethernet_interfaces(&user_config.interfaces)?;
+
     // Configure the tokio runtime
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_stack_size(16 * 1024 * 1024)
         .build()?;
 
-    let network_addrs = shared::ethernet_interfaces(&user_config.interfaces)?;
-
     // Run the tokio executor
     rt.block_on(async move {
-        if let Err(err) = lic
-            .load_and_verify_cert(user_config.license_cert_file.as_path())
-            .await
-        {
-            log::warn!(
-                "Initializing licensing library failed.\
-                Licensed features will be unavailable: {err}"
-            );
-        }
+        // Load the licensing library
+        let license = if !user_config.license_disable {
+            // SAFETY:
+            // There is no way to verify that the user loaded dynamic library matches the
+            // requirements of LicenseVerifier. After all, users can load anything they
+            // want. Therefore, this is just not safe to do from the Rust compilers
+            // perspective and loading anything with non-matching fp signatures or not
+            // behaving as expected will lead to undefined behavior.
+            let license = unsafe { LicenseVerifier::with_lib(&user_config.license_lib_file) };
+
+            if let Err(err) = license
+                .load_and_verify_cert(&user_config.license_cert_file)
+                .await
+            {
+                log::warn!(
+                    "Initializing licensing library failed. \
+                    Licensed features will be unavailable: {err}"
+                );
+            }
+
+            license
+        } else {
+            LicenseVerifier::with_no_lib()
+        };
 
         // Start the actual daemon
         let run = start(
@@ -119,7 +127,7 @@ doc.beegfs.io.",
                 auth_secret,
                 network_addrs,
             },
-            lic,
+            license,
         )
         .await?;
 
