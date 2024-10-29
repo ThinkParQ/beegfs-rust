@@ -65,6 +65,9 @@
 # Defines after which time without contact a client is considered gone and will be removed.
 # client-auto-remove-timeout = "30m"
 
+# Disables loading the license library. This disables all enterprise features.
+# license-disable = false
+
 # The BeeGFS license certificate file.
 # license-cert-file = "/etc/beegfs/license.pem"
 

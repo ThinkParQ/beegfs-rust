@@ -2,7 +2,7 @@
 
 use crate::cap_pool::{CapPoolDynamicLimits, CapPoolLimits};
 use anyhow::{bail, Context, Result};
-use clap::{ArgAction, Parser, ValueEnum};
+use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::{Deserialize, Deserializer};
 use shared::parser::{duration, integer_range};
@@ -103,7 +103,7 @@ generate_structs! {
     /// Uses `--db-file` for the files location or the default if not given. Denies overwriting an
     /// existing database file.
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     #[serde(skip)]
     init: bool = false,
 
@@ -111,7 +111,7 @@ generate_structs! {
     ///
     /// Automatically creates a backup of the existing database file in the same directory.
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     #[serde(skip)]
     upgrade: bool = false,
 
@@ -172,7 +172,7 @@ generate_structs! {
 
     /// Disables TLS for gRPC communication.
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     tls_disable: bool = false,
 
     /// The PEM encoded .X509 certificate file that provides the identity of the gRPC server.
@@ -200,7 +200,7 @@ generate_structs! {
 
     /// Disables requiring authentication (BeeMsg and gRPC).
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     auth_disable: bool = false,
 
     /// The authentication file location [default: /etc/beegfs/conn.auth]
@@ -212,7 +212,7 @@ generate_structs! {
 
     /// Disables registration of new nodes and targets (clients excluded).
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     registration_disable: bool = false,
 
     /// Defines after which time without contact a node/target is considered offline. [default: 180s]
@@ -233,6 +233,13 @@ generate_structs! {
     #[serde(deserialize_with = "deserialize_duration")]
     client_auto_remove_timeout: Duration = Duration::from_secs(30 * 60),
 
+    /// Disables loading the license library.
+    ///
+    /// This disables all enterprise features.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    license_disable: bool = false,
+
     /// The BeeGFS license certificate file. [default: /etc/beegfs/license.pem]
     #[arg(long)]
     #[arg(value_name = "PATH")]
@@ -250,7 +257,7 @@ generate_structs! {
     /// Allows querying the state and setting limits (which do nothing without enforcement being
     /// enabled). Causes higher system load.
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     quota_enable: bool = false,
 
     /// Enables quota enforcement.
@@ -258,7 +265,7 @@ generate_structs! {
     /// Exceeded IDs are calculated and pushed to the servers on a regular basis. Requires
     /// quota_enable = true. Causes higher system load.
     #[arg(long)]
-    #[arg(action = ArgAction::SetTrue)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
     quota_enforce: bool = false,
 
     /// Update interval of quota information. [default: 30s]
@@ -446,6 +453,7 @@ const fn version_str() -> &'static str {
 
 /// Defines where log messages shall be sent to
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum LogTarget {
     Std,
     Journald,
@@ -453,6 +461,7 @@ pub enum LogTarget {
 
 /// Defines the log level
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum LogLevel {
     Off,
     Error,
