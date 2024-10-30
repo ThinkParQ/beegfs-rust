@@ -8,7 +8,6 @@
 # binary with `--help` to display it.
 
 
-
 # Managements database file location.
 # db-file = "/var/lib/beegfs/mgmtd.sqlite"
 
@@ -17,7 +16,6 @@
 
 # The log level to use (valid are "error", "warn", "info", "debug", "trace").
 # log-level = "warn"
-
 
 
 ### Connection ###
@@ -32,10 +30,10 @@
 # tls-disable = false
 
 # The PEM encoded .X509 certificate file that provides the identity of the gRPC server.
-# tls-cert-file = /etc/beegfs/cert.pem
+# tls-cert-file = "/etc/beegfs/cert.pem"
 
 # The private key file belonging to the above certificate.
-# tls-key-file = /etc/beegfs/key.pem
+# tls-key-file = "/etc/beegfs/key.pem"
 
 # Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
 # Can be specified multiple times. If not given, all suitable interfaces can be used.
@@ -49,7 +47,6 @@
 
 # The authentication file location.
 # auth-file = "/etc/beegfs/conn.auth"
-
 
 
 ### Generic ###
@@ -73,6 +70,7 @@
 
 # The BeeGFS license library file.
 # license-lib-file = "/opt/beegfs/lib/libbeegfs_license.so"
+
 
 ### Quota ###
 
@@ -105,7 +103,6 @@
 
 # Defines a range of user ids to be quota queried and enforced.
 # quota-user-ids-range = "1000-1100"
-
 
 # Same as above, but for group IDs
 
