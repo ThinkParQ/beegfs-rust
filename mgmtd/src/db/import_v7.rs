@@ -183,7 +183,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             .split_once('=')
             .ok_or_else(|| anyhow!("invalid line '{l}'"))?;
 
-        let g: BuddyGroupId = g.parse()?;
+        let g = BuddyGroupId::from_str_radix(g.trim(), 16)?;
         let (p_id, s_id) = ts
             .trim()
             .split_once(',')
@@ -194,8 +194,8 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             g,
             &format!("buddy_group_{}_{}", nt.user_str(), g).try_into()?,
             nt,
-            p_id.parse()?,
-            s_id.parse()?,
+            BuddyGroupId::from_str_radix(p_id.trim(), 16)?,
+            BuddyGroupId::from_str_radix(s_id.trim(), 16)?,
         )?;
     }
 
@@ -221,8 +221,8 @@ fn storage_targets(
                 .split_once('=')
                 .ok_or_else(|| anyhow!("invalid line '{}'", l.0))?;
 
-        let node_id: NodeId = node.parse()?;
-        let target_id: TargetId = target.parse()?;
+        let node_id = NodeId::from_str_radix(node.trim(), 16)?;
+        let target_id = TargetId::from_str_radix(target.trim(), 16)?;
 
         target::insert_storage(tx, target_id, None)?;
         target::update_storage_node_mappings(tx, &[target_id], node_id)?;
