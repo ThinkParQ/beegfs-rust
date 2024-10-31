@@ -164,14 +164,10 @@ pub(crate) async fn delete(
                 }
 
                 // There should be exactly one meta target per meta node
-                let affected = tx.execute(
-                    sql!("DELETE FROM targets WHERE node_id = ?1"),
+                tx.execute(
+                    sql!("DELETE FROM targets WHERE node_id = ?1 AND node_type = ?2"),
                     params![node.num_id(), NodeType::Meta.sql_variant()],
                 )?;
-
-                if affected != 1 {
-                    bail!("Expected to delete 1 meta target but deleted {affected}");
-                }
             } else {
                 let assigned_targets: usize = tx.query_row_cached(
                     sql!("SELECT COUNT(*) FROM targets_ext WHERE node_uid = ?1"),
