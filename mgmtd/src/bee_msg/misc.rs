@@ -117,8 +117,8 @@ fn load_buddy_groups_info_by_type(
                 MIN(p_t.free_space, s_t.free_space),
                 MIN(p_t.free_inodes, s_t.free_inodes)
             FROM buddy_groups_ext AS g
-            INNER JOIN targets AS p_t ON p_t.target_id = g.p_target_uid AND p_t.node_type = g.node_type
-            INNER JOIN targets AS s_t ON s_t.target_id = g.s_target_uid AND s_t.node_type = g.node_type
+            INNER JOIN targets AS p_t ON p_t.target_uid = g.p_target_uid AND p_t.node_type = g.node_type
+            INNER JOIN targets AS s_t ON s_t.target_uid = g.s_target_uid AND s_t.node_type = g.node_type
             WHERE g.node_type = ?1"
         ),
         [node_type.sql_variant()],
