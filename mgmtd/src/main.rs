@@ -81,13 +81,6 @@ doc.beegfs.io.",
         None
     };
 
-    // Ensure the program ends if a task panics
-    panic::set_hook(Box::new(|info| {
-        let backtrace = Backtrace::capture();
-        eprintln!("PANIC occurred: {info}\n\nBACKTRACE:\n{backtrace}");
-        std::process::exit(1);
-    }));
-
     let network_addrs = shared::ethernet_interfaces(&user_config.interfaces)?;
 
     // Configure the tokio runtime
