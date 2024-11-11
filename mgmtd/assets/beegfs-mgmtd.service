@@ -1,5 +1,5 @@
 [Unit]
-Description=BeeGFS managment service prototype
+Description=BeeGFS Management Server
 Documentation=https://doc.beegfs.io
 After=network.target
 
