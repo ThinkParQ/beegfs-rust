@@ -23,7 +23,7 @@ use shared::conn::{incoming, Pool};
 use shared::run_state::{self, RunStateControl};
 use shared::types::{AuthSecret, NicType, NodeId, NodeType, MGMTD_UID};
 use shared::NetworkAddr;
-use sqlite::{ConnectionExt, TransactionExt};
+use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::future::Future;
@@ -76,7 +76,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         info.auth_secret,
     );
 
-    let mut db = sqlite::open_async(info.user_config.db_file.as_path()).await?;
+    let mut db = sqlite::Connections::new(info.user_config.db_file.as_path());
     sqlite::check_schema_async(&mut db, db::MIGRATIONS).await?;
 
     log::info!(
@@ -84,7 +84,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         info.user_config.db_file.as_path()
     );
 
-    db.op(|tx| {
+    db.write_tx(|tx| {
         // Update management node entry in db
         db::node::update(tx, MGMTD_UID, info.user_config.beemsg_port, None)?;
 
@@ -102,7 +102,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     .await?;
 
     // Fill node addrs store from db
-    db.op(db::node_nic::get_all_addrs)
+    db.read_tx(db::node_nic::get_all_addrs)
         .await?
         .into_iter()
         .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
@@ -176,7 +176,7 @@ impl RunControl {
         let client_list: HashSet<ClientPulledStateNotification> = self
             .ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 let buddy_groups: i64 =
                     tx.query_row(sql!("SELECT COUNT(*) FROM buddy_groups"), [], |row| {
                         row.get(0)

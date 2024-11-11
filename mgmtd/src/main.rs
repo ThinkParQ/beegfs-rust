@@ -6,7 +6,8 @@ use mgmtd::license::LicenseVerifier;
 use mgmtd::{start, StaticInfo};
 use shared::journald_logger;
 use shared::types::AuthSecret;
-use std::backtrace::Backtrace;
+use std::backtrace::{Backtrace, BacktraceStatus};
+use std::fmt::Write;
 use std::path::Path;
 use std::{fs, panic};
 use tokio::signal::ctrl_c;
@@ -24,6 +25,8 @@ fn main() -> Result<(), i32> {
 ///
 /// The binary related setup is made here, before execution is passed to the actual app.
 fn inner_main() -> Result<()> {
+    panic::set_hook(Box::new(panic_handler));
+
     let (user_config, info_log) = mgmtd::config::load_and_parse()?;
 
     // Initialize logging
@@ -189,4 +192,19 @@ fn upgrade_db(db_file: &Path) -> Result<()> {
 
     println!("Upgraded database to version {version}");
     Ok(())
+}
+
+fn panic_handler(info: &std::panic::PanicHookInfo) {
+    let backtrace = Backtrace::capture();
+
+    let mut s = format!("PANIC: {info}");
+    if backtrace.status() == BacktraceStatus::Captured {
+        let _ = write!(s, "\n\nBACKTRACE:\n{backtrace}");
+    }
+
+    if log::log_enabled!(log::Level::Error) {
+        log::error!("{s}");
+    } else {
+        eprintln!("{s}");
+    }
 }

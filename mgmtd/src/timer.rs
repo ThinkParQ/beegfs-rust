@@ -7,7 +7,6 @@ use crate::quota::update_and_distribute;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::run_state::RunStateHandle;
 use shared::types::NodeType;
-use sqlite::ConnectionExt;
 use tokio::time::{sleep, MissedTickBehavior};
 
 /// Starts the timed tasks.
@@ -41,7 +40,7 @@ async fn delete_stale_clients(ctx: Context, mut run_state: RunStateHandle) {
 
         match ctx
             .db
-            .op(move |tx| db::node::delete_stale_clients(tx, timeout))
+            .write_tx(move |tx| db::node::delete_stale_clients(tx, timeout))
             .await
         {
             Ok(affected) => {
@@ -103,7 +102,7 @@ async fn switchover(ctx: Context, mut run_state: RunStateHandle) {
 
         match ctx
             .db
-            .op(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
+            .write_tx(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
             .await
         {
             Ok(swapped) => {

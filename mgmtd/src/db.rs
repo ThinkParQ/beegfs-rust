@@ -33,8 +33,7 @@ use uuid::Uuid;
 
 /// Include the generated migration list. First element is the migration number, second is the
 /// SQL text to execute. The elements are guaranteed to be contiguous, but may start later than 1.
-pub const MIGRATIONS: &[sqlite::Migration] =
-    include!(concat!(env!("OUT_DIR"), "/migrations.slice"));
+pub const MIGRATIONS: &[sqlite::Migration] = include!(concat!(env!("OUT_DIR"), "/migrations.rs"));
 
 /// Inserts initial entries into a new database. Remember to commit the transaction after calling
 /// this function.

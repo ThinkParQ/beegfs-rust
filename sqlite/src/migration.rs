@@ -1,4 +1,4 @@
-use crate::ConnectionExt;
+use crate::Connections;
 use anyhow::{anyhow, bail, Context, Result};
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -143,13 +143,13 @@ pub fn create_db_file(db_file: impl AsRef<Path>) -> Result<()> {
 
 /// Checks that the database schema is up to date to the current latest migrations
 pub async fn check_schema_async(
-    conn: &mut tokio_rusqlite::Connection,
+    conn: &mut Connections,
     migrations: &'static [Migration],
 ) -> Result<()> {
     let (base, latest) = check_migration_versions(migrations.iter().map(|m| m.version))?;
 
     let version: u32 = conn
-        .op(|tx| {
+        .read_tx(|tx| {
             // The databases version is stored in this special sqlite header variable
             Ok(tx.query_row("PRAGMA user_version", [], |row| row.get(0))?)
         })

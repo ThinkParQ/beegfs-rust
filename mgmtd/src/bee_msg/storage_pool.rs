@@ -27,7 +27,7 @@ impl HandleWithResponse for GetStoragePools {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let (pools, targets, buddy_groups) = ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 let pools: Vec<(PoolId, String)> = tx.query_map_collect(
                     sql!(
                         "SELECT pool_id, alias FROM storage_pools

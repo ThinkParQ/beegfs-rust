@@ -146,7 +146,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             CapacityPoolQueryType::Meta => {
                 let targets = ctx
                     .db
-                    .op(|tx| load_targets_info_by_type(tx, NodeTypeServer::Meta))
+                    .read_tx(|tx| load_targets_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
@@ -169,7 +169,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             CapacityPoolQueryType::Storage => {
                 let (targets, pools) = ctx
                     .db
-                    .op(|tx| {
+                    .read_tx(|tx| {
                         let targets = load_targets_info_by_type(tx, NodeTypeServer::Storage)?;
 
                         let pools: Vec<PoolId> = tx.query_map_collect(
@@ -210,7 +210,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             CapacityPoolQueryType::MetaMirrored => {
                 let groups = ctx
                     .db
-                    .op(|tx| load_buddy_groups_info_by_type(tx, NodeTypeServer::Meta))
+                    .read_tx(|tx| load_buddy_groups_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
@@ -234,7 +234,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             CapacityPoolQueryType::StorageMirrored => {
                 let (groups, pools) = ctx
                     .db
-                    .op(|tx| {
+                    .read_tx(|tx| {
                         let groups = load_buddy_groups_info_by_type(tx, NodeTypeServer::Storage)?;
 
                         let pools: Vec<PoolId> = tx.query_map_collect(

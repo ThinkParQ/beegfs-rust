@@ -6,7 +6,7 @@ use std::net::Ipv4Addr;
 pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
     let (mut nodes, nics, meta_root_node) = ctx
         .db
-        .op(move |tx| {
+        .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
             let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {
                 tx.query_map_collect(
@@ -129,8 +129,8 @@ pub(crate) async fn delete(
 
     let node = ctx
         .db
-        .op_with_conn(move |conn| {
-            let tx = conn.transaction()?;
+        .conn(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
             let node = node.resolve(&tx, EntityType::Node)?;
 

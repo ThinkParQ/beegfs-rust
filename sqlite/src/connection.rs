@@ -1,124 +1,173 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use rusqlite::config::DbConfig;
-use rusqlite::{Connection, OpenFlags, Transaction};
-use std::path::Path;
+use rusqlite::{Connection, Transaction, TransactionBehavior};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Sets connection parameters on an SQLite connection.
 pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     // We use the carray extension to bind arrays to parameters
     rusqlite::vtab::array::load_module(conn)?;
 
+    // We want foreign keys and triggers enabled
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
     conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, true)?;
+
+    // Maximum waiting time on immediate transactions if the write lock is already taken.
+    // Note that this does NOT apply to upgrading a deferred transaction from read to write,
+    // these will fail immediately.
+    conn.busy_timeout(Duration::from_secs(30))?;
+
+    // We want to use WAL mode (https://www.sqlite.org/wal.html) as we write a lot and in this
+    // mode, a writer does not block readers (they will just see the old state if they started a
+    // transaction before the write happened) and writing also should be faster.
+    // Note that the WAL is merged into the main db file automatically by SQLite after it has
+    // reached a certain size and on the last connection being closed. This could be configured or
+    // even disabled so we can run it manually.
+    conn.pragma_update(None, "journal_mode", "WAL")?;
 
     Ok(())
 }
 
-/// Opens an existing sqlite database for read and write, applying the common config options
+/// Opens an existing sqlite database for read and write and configures the connection
 pub fn open(db_file: impl AsRef<Path>) -> Result<rusqlite::Connection> {
     let conn = rusqlite::Connection::open_with_flags(
         db_file,
+        // We don't want to accidentally create a nonexisting file, thus we pass this flag
+        // explicitly instead of just using open()
         rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
     )?;
     setup_connection(&conn)?;
     Ok(conn)
 }
 
-/// Opens an existing sqlite database for async read and write, applying the common config options
-pub async fn open_async(db_file: impl AsRef<Path>) -> Result<tokio_rusqlite::Connection> {
-    let conn =
-        tokio_rusqlite::Connection::open_with_flags(&db_file, OpenFlags::SQLITE_OPEN_READ_WRITE)
-            .await?;
-    conn.call(|conn| setup_connection(conn).map_err(|err| err.into()))
-        .await?;
-    Ok(conn)
-}
-
-/// Opens an in-memory sqlite database, applying the common config
+/// Opens an in-memory sqlite database and configures the connection
 pub fn open_in_memory() -> Result<rusqlite::Connection> {
     let conn = rusqlite::Connection::open_in_memory()?;
     setup_connection(&conn)?;
     Ok(conn)
 }
 
-/// Adds useful methods to an async rusqlite connection
-pub trait ConnectionExt {
-    /// Automatically wraps the provided closure in a transaction that is committed on successful
-    /// completion or rolled back in case of an Error. Accepts anyhow::Result as Result and handles
-    /// conversion between it and internally expected tokio_rusqlite::Result.
-    ///
-    /// Database access is provided using a single thread, so blocking or heavy computation must be
-    /// avoided inside.
-    fn op<T: Send + 'static + FnOnce(&Transaction) -> Result<R>, R: Send + 'static>(
-        &self,
-        op: T,
-    ) -> impl std::future::Future<Output = Result<R>> + Send;
-
-    /// Takes the provided closure and executes db operations on it.
-    /// Accepts anyhow::Result as Result and handles conversion between it and internally expected
-    /// tokio_rusqlite::Result.
-    ///
-    /// Same as `op()`, but without the automatic transaction. Should only be used if manual
-    /// transaction control is required, e.g. committing or rolling back based on external input.
-    ///
-    /// Database access is provided using a single thread, so blocking or heavy computation must be
-    /// avoided inside.
-    fn op_with_conn<T: Send + 'static + FnOnce(&mut Connection) -> Result<R>, R: Send + 'static>(
-        &self,
-        op: T,
-    ) -> impl std::future::Future<Output = Result<R>> + Send;
+/// Provides access to the database
+#[derive(Debug, Clone)]
+pub struct Connections {
+    inner: Arc<InnerConnections>,
 }
 
-impl ConnectionExt for tokio_rusqlite::Connection {
-    async fn op<T: Send + 'static + FnOnce(&Transaction) -> Result<R>, R: Send + 'static>(
-        &self,
-        op: T,
-    ) -> Result<R> {
-        let res = self
-            .call(move |conn| {
-                let tx = conn.transaction()?;
-                let res = op(&tx).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
-                tx.commit()?;
+impl Deref for Connections {
+    type Target = InnerConnections;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
 
-                Ok(res)
-            })
-            .await;
+#[derive(Debug)]
+pub struct InnerConnections {
+    conns: Mutex<Vec<Connection>>,
+    db_file: PathBuf,
+}
 
-        match res {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                if let tokio_rusqlite::Error::Other(other) = err {
-                    return Err(anyhow!(other));
-                }
-
-                Err(err.into())
-            }
+impl Connections {
+    pub fn new(db_file: impl AsRef<Path>) -> Self {
+        Self {
+            inner: Arc::new(InnerConnections {
+                conns: Mutex::new(vec![]),
+                db_file: db_file.as_ref().to_path_buf(),
+            }),
         }
     }
 
-    async fn op_with_conn<
+    /// Start a new write (immediate) transaction. If doing writes, it is important to use this
+    /// instead of `.read()` because here the busy timeout / busy handler actually works as it is
+    /// applied before the transaction starts.
+    pub async fn write_tx<
+        T: Send + 'static + FnOnce(&Transaction) -> Result<R>,
+        R: Send + 'static,
+    >(
+        &self,
+        op: T,
+    ) -> Result<R> {
+        self.run_op(|conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let res = op(&tx)?;
+            tx.commit()?;
+
+            Ok(res)
+        })
+        .await
+    }
+
+    /// Start a new read (deferred) transaction. Note that this does not deny writes, instead tries
+    /// to upgrade the transaction lazily. If that fails because there is another write going on,
+    /// the whole transaction is spoiled and needs to be rolled back
+    /// (that's at least what SQLite recommends: https://sqlite.org/lang_transaction.html).
+    /// The busy handler / timeout does not apply here.
+    pub async fn read_tx<
+        T: Send + 'static + FnOnce(&Transaction) -> Result<R>,
+        R: Send + 'static,
+    >(
+        &self,
+        op: T,
+    ) -> Result<R> {
+        self.run_op(|conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+            let res = op(&tx)?;
+            tx.commit()?;
+
+            Ok(res)
+        })
+        .await
+    }
+
+    /// Execute code using a connection handle. This requires the caller to start a transaction
+    /// manually if required. Can be used to do custom rollbacks (e.g. for implementing dry runs).
+    /// When using this be aware of the different transaction modes (deferred and immediate) and
+    /// their consequences with read and write operations.
+    pub async fn conn<
         T: Send + 'static + FnOnce(&mut Connection) -> Result<R>,
         R: Send + 'static,
     >(
         &self,
         op: T,
     ) -> Result<R> {
-        let res = self
-            .call(move |conn| {
-                let res = op(conn).map_err(|err| tokio_rusqlite::Error::Other(err.into()))?;
-                Ok(res)
-            })
-            .await;
+        self.run_op(op).await
+    }
 
-        match res {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                if let tokio_rusqlite::Error::Other(other) = err {
-                    return Err(anyhow!(other));
-                }
+    async fn run_op<T: Send + 'static + FnOnce(&mut Connection) -> Result<R>, R: Send + 'static>(
+        &self,
+        op: T,
+    ) -> Result<R> {
+        let this = self.clone();
+        tokio::task::spawn_blocking(move || {
+            // Pop a connection from the stack
+            let conn = {
+                let mut conns = this.conns.lock().unwrap();
+                conns.pop()
+            };
 
-                Err(err.into())
+            // If there wasn't one left, open a new one.
+            let mut conn = if let Some(conn) = conn {
+                conn
+            } else {
+                open(this.db_file.as_path())?
+            };
+
+            let res = op(&mut conn);
+
+            // Push the connection to the stack
+            // We assume that sqlite connections never invalidate on errors, so there is no need to
+            // drop them. There might be severe cases where connections don't work anymore (e.g.
+            // one removing or corrupting the database file, the file system breaks, ...), but these
+            // are unrecoverable anyway and new connections won't fix anything there.
+            {
+                let mut conns = this.conns.lock().unwrap();
+                conns.push(conn);
             }
-        }
+
+            res
+        })
+        .await?
     }
 }

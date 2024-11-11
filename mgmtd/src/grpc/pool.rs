@@ -6,7 +6,7 @@ use shared::bee_msg::storage_pool::RefreshStoragePools;
 pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {
     let (mut pools, targets, buddy_groups) = ctx
         .db
-        .op(move |tx| {
+        .read_tx(move |tx| {
             let make_sp = |row: &Row| -> rusqlite::Result<pm::get_pools_response::StoragePool> {
                 Ok(pm::get_pools_response::StoragePool {
                     id: Some(pb::EntityIdSet {
@@ -149,7 +149,7 @@ pub(crate) async fn create(
 
     let (pool_uid, alias, pool_id) = ctx
         .db
-        .op(move |tx| {
+        .write_tx(move |tx| {
             let (pool_uid, pool_id) = db::storage_pool::insert(tx, num_id, &alias)?;
             assign_pool(tx, pool_id, req.targets, req.buddy_groups)?;
             Ok((pool_uid, alias, pool_id))
@@ -191,7 +191,7 @@ pub(crate) async fn assign(
 
     let pool = ctx
         .db
-        .op(move |tx| {
+        .write_tx(move |tx| {
             let pool = pool.resolve(tx, EntityType::Pool)?;
             assign_pool(tx, pool.num_id().try_into()?, req.targets, req.buddy_groups)?;
             Ok(pool)
@@ -285,8 +285,8 @@ pub(crate) async fn delete(
 
     let pool = ctx
         .db
-        .op_with_conn(move |conn| {
-            let tx = conn.transaction()?;
+        .conn(move |conn| {
+            let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
             let pool = pool.resolve(&tx, EntityType::Pool)?;
 

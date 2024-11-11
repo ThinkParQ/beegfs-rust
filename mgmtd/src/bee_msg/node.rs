@@ -13,7 +13,7 @@ impl HandleWithResponse for GetNodes {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let res = ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 let node_type = self.node_type;
                 let res = (
                     db::node::get_with_type(tx, node_type)?,
@@ -106,7 +106,7 @@ impl HandleWithResponse for HeartbeatRequest {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let (alias, nics) = ctx
             .db
-            .op(|tx| {
+            .read_tx(|tx| {
                 Ok((
                     db::entity::get_alias(tx, MGMTD_UID)?
                         .ok_or_else(|| TypedError::value_not_found("management uid", MGMTD_UID))?,
@@ -178,7 +178,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
 
     let (node, meta_root, is_new) = ctx
         .db
-        .op(move |tx| {
+        .write_tx(move |tx| {
             let node = if msg.node_id == 0 {
                 // No node ID given => new node
                 None
@@ -348,7 +348,7 @@ impl HandleWithResponse for RemoveNode {
 
         let node = ctx
             .db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 if self.node_type != NodeType::Client {
                     bail!(
                         "This BeeMsg handler can only delete client nodes. \

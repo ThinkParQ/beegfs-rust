@@ -45,7 +45,6 @@ tokio = { workspace = true, features = [
     "io-util",
 ] }
 tokio-stream = { workspace = true }
-tokio-rusqlite = { workspace = true }
 toml = "0"
 tonic = { workspace = true }
 uuid = { workspace = true }

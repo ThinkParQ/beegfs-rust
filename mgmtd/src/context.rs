@@ -23,7 +23,7 @@ pub(crate) struct Context(Arc<InnerContext>);
 #[derive(Debug)]
 pub(crate) struct InnerContext {
     pub conn: Pool,
-    pub db: tokio_rusqlite::Connection,
+    pub db: sqlite::Connections,
     pub license: LicenseVerifier,
     pub info: &'static StaticInfo,
     pub run_state: WeakRunStateHandle,
@@ -36,7 +36,7 @@ impl Context {
     /// Takes all the stored handles.
     pub(crate) fn new(
         conn: Pool,
-        db: tokio_rusqlite::Connection,
+        db: sqlite::Connections,
         license: LicenseVerifier,
         info: &'static StaticInfo,
         run_state: WeakRunStateHandle,

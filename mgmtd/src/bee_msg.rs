@@ -13,7 +13,7 @@ use shared::bee_msg::{Msg, OpsErr};
 use shared::bee_serde::{Deserializable, Serializable};
 use shared::conn::msg_dispatch::*;
 use shared::types::*;
-use sqlite::{ConnectionExt, TransactionExt};
+use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -198,7 +198,10 @@ pub async fn notify_nodes<M: Msg + Serializable>(
 
     if let Err(err) = async {
         for t in node_types {
-            let nodes = ctx.db.op(move |tx| db::node::get_with_type(tx, *t)).await?;
+            let nodes = ctx
+                .db
+                .read_tx(move |tx| db::node::get_with_type(tx, *t))
+                .await?;
 
             ctx.conn
                 .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)

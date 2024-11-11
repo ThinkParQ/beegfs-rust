@@ -49,7 +49,7 @@ pub(crate) async fn set_alias(
     if entity_type == EntityType::Node {
         let (entity, node, nic_list) = ctx
             .db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 let entity = update_alias_fn(tx, &new_alias)?;
 
                 let node = db::node::get_by_alias(tx, new_alias.as_ref())?;
@@ -88,7 +88,9 @@ pub(crate) async fn set_alias(
 
     // If not a node, just update the alias
     } else {
-        ctx.db.op(move |tx| update_alias_fn(tx, &new_alias)).await?;
+        ctx.db
+            .write_tx(move |tx| update_alias_fn(tx, &new_alias))
+            .await?;
     }
 
     Ok(pm::SetAliasResponse {})

@@ -11,7 +11,7 @@ impl HandleWithResponse for GetTargetMappings {
     async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
         let mapping: HashMap<TargetId, NodeId> = ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 tx.query_map_collect(
                     sql!(
                         "SELECT target_id, node_id
@@ -40,7 +40,7 @@ impl HandleWithResponse for GetTargetStates {
 
         let targets = ctx
             .db
-            .op(move |tx| {
+            .read_tx(move |tx| {
                 get_targets_with_states(
                     tx,
                     pre_shutdown,
@@ -112,7 +112,7 @@ impl HandleWithResponse for RegisterTarget {
 
         let (id, is_new) = ctx
             .db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 // Do not do anything if the target already exists
                 if let Some(id) = try_resolve_num_id(
                     tx,
@@ -157,7 +157,7 @@ impl HandleWithResponse for MapTargets {
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
         ctx.db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 // Check node Id exists
                 let node = LegacyId {
                     node_type: NodeType::Storage,
@@ -229,7 +229,7 @@ impl HandleWithResponse for SetStorageTargetInfo {
 
         let node_type = self.node_type;
         ctx.db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 db::target::get_and_update_capacities(
                     tx,
                     self.info.into_iter().map(|e| {
@@ -278,7 +278,7 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
 
         let changed = ctx
             .db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 let node_type = self.node_type.try_into()?;
 
                 // Check given target Ids exist
@@ -339,7 +339,7 @@ impl HandleWithResponse for SetTargetConsistencyStates {
         let msg = self.clone();
 
         ctx.db
-            .op(move |tx| {
+            .write_tx(move |tx| {
                 // Check given target Ids exist
                 db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
