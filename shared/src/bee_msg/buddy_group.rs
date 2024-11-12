@@ -164,3 +164,114 @@ impl Deserializable for SetMirrorBuddyGroupResp {
         Ok(r)
     }
 }
+
+/// Overrides the last buddy communication timestamp on the primary node.
+/// Resynchronizes all changes after the specified timestamp to the secondary node.
+///
+/// Used by old ctl, storage and self
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct SetLastBuddyCommOverride {
+    pub target_id: TargetId,
+    pub timestamp: i64,
+    pub abort_resync: u8,
+}
+
+impl Msg for SetLastBuddyCommOverride {
+    const ID: MsgId = 2095;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct SetLastBuddyCommOverrideResp {
+    pub result: OpsErr,
+}
+
+impl Msg for SetLastBuddyCommOverrideResp {
+    const ID: MsgId = 2096;
+}
+
+/// Fetch resynchronization statistics from storage node
+///
+/// Used by old ctl, new ctl, storage and self
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetStorageResyncStats {
+    pub target_id: TargetId,
+}
+
+impl Msg for GetStorageResyncStats {
+    const ID: MsgId = 2093;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetStorageResyncStatsResp {
+    #[bee_serde(as = Int<i32>)]
+    pub state: BuddyResyncJobState,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub discovered_files: u64,
+    pub discovered_dirs: u64,
+    pub matched_files: u64,
+    pub matched_dirs: u64,
+    pub synced_files: u64,
+    pub synced_dirs: u64,
+    pub error_files: u64,
+    pub error_dirs: u64,
+}
+
+impl Msg for GetStorageResyncStatsResp {
+    const ID: MsgId = 2094;
+}
+
+/// Fetch resynchronization statistics for meta node
+///
+/// Used by old ctl, meta, new ctl and self
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetMetaResyncStats {
+    pub target_id: TargetId,
+}
+
+impl Msg for GetMetaResyncStats {
+    const ID: MsgId = 2117;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetMetaResyncStatsResp {
+    #[bee_serde(as = Int<i32>)]
+    pub state: BuddyResyncJobState,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub discovered_dirs: u64,
+    pub gather_errors: u64,
+    pub synced_dirs: u64,
+    pub synced_files: u64,
+    pub error_dirs: u64,
+    pub error_files: u64,
+    pub sessions_to_sync: u64,
+    pub synced_sessions: u64,
+    pub session_sync_errors: u8,
+    pub mod_objects_synced: u64,
+    pub mod_sync_errors: u64,
+}
+
+impl Msg for GetMetaResyncStatsResp {
+    const ID: MsgId = 2118;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum BuddyResyncJobState {
+    #[default]
+    NotStarted,
+    Running,
+    Success,
+    Interrupted,
+    Failure,
+    Errors,
+}
+
+impl_enum_bee_msg_traits!(BuddyResyncJobState,
+    NotStarted => 0,
+    Running => 1,
+    Success => 2,
+    Interrupted => 3,
+    Failure => 4,
+    Errors => 5
+);

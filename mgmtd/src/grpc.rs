@@ -121,6 +121,11 @@ impl pm::management_server::Management for ManagementService {
         pm::MirrorRootInodeRequest => pm::MirrorRootInodeResponse,
         "Mirror root inode"
     }
+    impl_grpc_handler! {
+        start_resync => buddy_group::start_resync,
+        pm::StartResyncRequest => pm::StartResyncResponse,
+        "Start resync"
+    }
 
     impl_grpc_handler! {
         set_default_quota_limits => quota::set_default_quota_limits,
