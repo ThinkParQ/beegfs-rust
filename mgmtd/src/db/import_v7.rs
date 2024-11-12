@@ -185,7 +185,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
         buddy_group::insert(
             tx,
             g,
-            &format!("buddy_group_{}_{}", nt.user_str(), g).try_into()?,
+            None,
             nt,
             BuddyGroupId::from_str_radix(p_id.trim(), 16)?,
             BuddyGroupId::from_str_radix(s_id.trim(), 16)?,
