@@ -7,6 +7,7 @@ use shared::bee_msg::storage_pool::StoragePool;
 use shared::bee_serde::{Deserializable, Deserializer};
 use shared::types::*;
 use sqlite_check::sql;
+use std::io::Write;
 use std::path::Path;
 
 /// Import v7 management data into the database. The database must be new, there must be no entries
@@ -231,18 +232,48 @@ fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
     let mut des = Deserializer::new(&s, 0);
     // Serialized as size_t, which should usually be 64 bit.
     let count = des.i64()?;
+    let mut used_aliases = vec![];
     for _ in 0..count {
         let pool = StoragePool::deserialize(&mut des)?;
 
+        let mut alias_input = String::from_utf8_lossy(&pool.alias).to_string();
+
+        let alias = loop {
+            match Alias::try_from(alias_input.trim()) {
+                Ok(a) => {
+                    if used_aliases.contains(&a) {
+                        println!(
+                            "Storage pool {}: Alias '{a}' is already used by another pool",
+                            pool.id
+                        );
+                    } else {
+                        break a;
+                    }
+                }
+                Err(err) => {
+                    println!("Storage pool {}: {err}", pool.id);
+                }
+            }
+
+            print!("Please provide a new alias for this pool: ");
+            std::io::stdout().flush().ok();
+            alias_input.clear();
+            std::io::stdin().read_line(&mut alias_input).ok();
+        };
+
         if pool.id == DEFAULT_STORAGE_POOL {
-            continue;
+            tx.execute(
+                sql!("UPDATE entities SET alias = ?1 WHERE uid = 2"),
+                [alias.as_ref()],
+            )?;
+        } else {
+            storage_pool::insert(tx, pool.id, &alias)?;
         }
 
-        let alias: Alias = std::str::from_utf8(&pool.alias)?.try_into()?;
-
-        storage_pool::insert(tx, pool.id, &alias)?;
         target::update_storage_pools(tx, pool.id, &pool.targets)?;
         buddy_group::update_storage_pools(tx, pool.id, &pool.buddy_groups)?;
+
+        used_aliases.push(alias);
     }
     des.finish()?;
 
