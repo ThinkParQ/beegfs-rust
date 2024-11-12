@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use log::LevelFilter;
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
@@ -47,11 +47,7 @@ fn inner_main() -> Result<()> {
     }
 
     if user_config.init || user_config.import_from_v7.is_some() {
-        setup_db(
-            &user_config.db_file,
-            user_config.init,
-            user_config.import_from_v7.as_deref(),
-        )?;
+        init_db(&user_config.db_file, user_config.import_from_v7.as_deref())?;
         return Ok(());
     }
 
@@ -137,36 +133,57 @@ doc.beegfs.io.",
     })
 }
 
-/// Create and initialize a new database and / or import data from old v7 management
-fn setup_db(db_file: impl AsRef<Path>, init: bool, v7_path: Option<&Path>) -> Result<()> {
-    let db_file = db_file.as_ref();
-
-    // Create database file
-    if init {
-        sqlite::create_db_file(db_file)
-            .with_context(|| format!("Creating database file {db_file:?} failed"))?;
-        println!("Database file created at {db_file:?}");
+/// Create and initialize a new database. Optionally import v7 data from the given path.
+///
+/// The database file is only written to disk if the initialization succeeds.
+fn init_db(db_file: &Path, v7_path: Option<&Path>) -> Result<()> {
+    if db_file.try_exists()? {
+        bail!("Database file {db_file:?} already exists");
     }
 
-    // Connect
-    let mut conn = sqlite::open(db_file)?;
+    let mut conn = sqlite::open_in_memory()?;
 
-    // Fill database
-    if init {
+    // Create db in memory
+    let version = (|| -> Result<_> {
         let tx = conn.transaction()?;
 
-        let version = sqlite::migrate_schema(&tx, db::MIGRATIONS)
-            .context("Creating database schema failed")?;
-        db::initial_entries(&tx).context("Creating initial database entries failed")?;
+        let version =
+            sqlite::migrate_schema(&tx, db::MIGRATIONS).context("Creating schema failed")?;
+        db::initial_entries(&tx).context("Creating initial entries failed")?;
+
+        if let Some(v7_path) = v7_path {
+            db::import_v7(&tx, v7_path).context("v7 management data import failed")?;
+        }
 
         tx.commit()?;
-        println!("Created and migrated new database to version {version}");
-    }
+        Ok(version)
+    })()
+    .context("Initializing database failed")?;
 
-    // Import data from v7 management
+    // Import into memory succeeded, now write it to disk
+    (|| -> Result<_> {
+        std::fs::create_dir_all(
+            db_file
+                .parent()
+                .ok_or_else(|| anyhow!("File does not have a parent folder"))?,
+        )?;
+        conn.backup(rusqlite::DatabaseName::Main, db_file, None)?;
+
+        Ok(())
+    })()
+    .with_context(|| format!("Creating database file {db_file:?} failed"))?;
+
+    print!("Created new database version {version} at {db_file:?}.");
     if let Some(v7_path) = v7_path {
-        db::import_v7(&mut conn, v7_path).context("v7 management data import failed")?;
-        println!("v7 management data imported");
+        println!(
+            " Successfully imported v7 management data from {v7_path:?}.
+
+IMPORTANT: The import only contains managements data store, no configuration from \
+beegfs-mgmtd.conf. Before starting the management, you must MANUALLY transfer your old settings \
+(if they still apply) to the new config file (/etc/beegfs/beegfs-mgmtd.toml by default)."
+        );
+    } else {
+        println!();
     }
 
     Ok(())

@@ -17,9 +17,7 @@ use std::path::Path;
 /// automatically on the running management. This includes quota usage data, client nodes and the
 /// nodes nic lists. The old BeeGFS should be completely shut down before upgrading and all targets
 /// must be in GOOD state.
-pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()> {
-    let tx = conn.transaction()?;
-
+pub fn import_v7(tx: &rusqlite::Transaction, base_path: &Path) -> Result<()> {
     // Check DB is new
     let max_uid: Uid = tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
     if max_uid > 2 {
@@ -35,38 +33,33 @@ pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()
     // Read from files, write to database. Order is important.
 
     // Storage
-    storage_nodes(&tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
+    storage_nodes(tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
     storage_targets(
-        &tx,
+        tx,
         &base_path.join("targets"),
         &base_path.join("targetNumIDs"),
     )
     .context("storage targets (target + targetNumIDs)")?;
     buddy_groups(
-        &tx,
+        tx,
         &base_path.join("storagebuddygroups"),
         NodeTypeServer::Storage,
     )
     .context("storage buddy groups (storagebuddygroups)")?;
-    storage_pools(&tx, &base_path.join("storagePools")).context("storagePools")?;
+    storage_pools(tx, &base_path.join("storagePools")).context("storagePools")?;
 
     // Meta
     let (root_id, root_mirrored) =
-        meta_nodes(&tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
-    buddy_groups(
-        &tx,
-        &base_path.join("metabuddygroups"),
-        NodeTypeServer::Meta,
-    )
-    .context("meta buddy groups (metabuddygroups)")?;
-    set_meta_root(&tx, root_id, root_mirrored).context("meta root")?;
+        meta_nodes(tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
+    buddy_groups(tx, &base_path.join("metabuddygroups"), NodeTypeServer::Meta)
+        .context("meta buddy groups (metabuddygroups)")?;
+    set_meta_root(tx, root_id, root_mirrored).context("meta root")?;
 
     // Quota
     if std::path::Path::try_exists(&base_path.join("quota"))? {
-        quota(&tx, &base_path.join("quota"))?;
+        quota(tx, &base_path.join("quota"))?;
     }
 
-    tx.commit()?;
     Ok(())
 }
 
