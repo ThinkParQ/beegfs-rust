@@ -124,23 +124,6 @@ pub fn flatten_migrations(migrations: &[OwnedMigration]) -> Result<String> {
     Ok(sql)
 }
 
-/// Creates a new sqlite database file. Created parent dirs if they don't exist.
-pub fn create_db_file(db_file: impl AsRef<Path>) -> Result<()> {
-    let db_file = db_file.as_ref();
-
-    if db_file.try_exists()? {
-        bail!("{db_file:?} already exists");
-    }
-    std::fs::create_dir_all(
-        db_file
-            .parent()
-            .ok_or_else(|| anyhow!("{db_file:?} does not have a parent folder"))?,
-    )?;
-    std::fs::File::create(db_file)?;
-
-    Ok(())
-}
-
 /// Checks that the database schema is up to date to the current latest migrations
 pub async fn check_schema_async(
     conn: &mut Connections,

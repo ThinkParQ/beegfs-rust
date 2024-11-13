@@ -44,7 +44,7 @@ pub(crate) fn validate_ids(
 pub(crate) fn insert(
     tx: &Transaction,
     group_id: BuddyGroupId,
-    alias: &Alias,
+    alias: Option<Alias>,
     node_type: NodeTypeServer,
     p_target_id: TargetId,
     s_target_id: TargetId,
@@ -109,8 +109,14 @@ pub(crate) fn insert(
         bail!("The secondary meta target {s_target_id} must not own the root inode");
     }
 
+    let alias = if let Some(alias) = alias {
+        alias
+    } else {
+        format!("buddy_group_{}_{}", node_type.user_str(), group_id).try_into()?
+    };
+
     // Insert entity
-    let new_uid = entity::insert(tx, EntityType::BuddyGroup, alias)?;
+    let new_uid = entity::insert(tx, EntityType::BuddyGroup, &alias)?;
 
     let pool_id: Option<PoolId> = if matches!(node_type, NodeTypeServer::Storage) {
         tx.query_row(
@@ -290,7 +296,7 @@ mod test {
             super::insert(
                 tx,
                 1234,
-                &"g1".try_into().unwrap(),
+                Some("g1".try_into().unwrap()),
                 NodeTypeServer::Meta,
                 3,
                 4,
@@ -299,7 +305,7 @@ mod test {
             super::insert(
                 tx,
                 1,
-                &"g2".try_into().unwrap(),
+                Some("g2".try_into().unwrap()),
                 NodeTypeServer::Storage,
                 3,
                 7,

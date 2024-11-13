@@ -108,7 +108,7 @@ pub(crate) async fn create(
             let (group_uid, group_id) = db::buddy_group::insert(
                 tx,
                 num_id,
-                &alias,
+                Some(alias.clone()),
                 node_type,
                 p_target.num_id().try_into()?,
                 s_target.num_id().try_into()?,

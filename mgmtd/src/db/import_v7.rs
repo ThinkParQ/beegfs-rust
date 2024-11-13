@@ -7,6 +7,7 @@ use shared::bee_msg::storage_pool::StoragePool;
 use shared::bee_serde::{Deserializable, Deserializer};
 use shared::types::*;
 use sqlite_check::sql;
+use std::io::Write;
 use std::path::Path;
 
 /// Import v7 management data into the database. The database must be new, there must be no entries
@@ -17,9 +18,7 @@ use std::path::Path;
 /// automatically on the running management. This includes quota usage data, client nodes and the
 /// nodes nic lists. The old BeeGFS should be completely shut down before upgrading and all targets
 /// must be in GOOD state.
-pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()> {
-    let tx = conn.transaction()?;
-
+pub fn import_v7(tx: &rusqlite::Transaction, base_path: &Path) -> Result<()> {
     // Check DB is new
     let max_uid: Uid = tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
     if max_uid > 2 {
@@ -35,38 +34,33 @@ pub fn import_v7(conn: &mut rusqlite::Connection, base_path: &Path) -> Result<()
     // Read from files, write to database. Order is important.
 
     // Storage
-    storage_nodes(&tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
+    storage_nodes(tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
     storage_targets(
-        &tx,
+        tx,
         &base_path.join("targets"),
         &base_path.join("targetNumIDs"),
     )
     .context("storage targets (target + targetNumIDs)")?;
     buddy_groups(
-        &tx,
+        tx,
         &base_path.join("storagebuddygroups"),
         NodeTypeServer::Storage,
     )
     .context("storage buddy groups (storagebuddygroups)")?;
-    storage_pools(&tx, &base_path.join("storagePools")).context("storagePools")?;
+    storage_pools(tx, &base_path.join("storagePools")).context("storagePools")?;
 
     // Meta
     let (root_id, root_mirrored) =
-        meta_nodes(&tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
-    buddy_groups(
-        &tx,
-        &base_path.join("metabuddygroups"),
-        NodeTypeServer::Meta,
-    )
-    .context("meta buddy groups (metabuddygroups)")?;
-    set_meta_root(&tx, root_id, root_mirrored).context("meta root")?;
+        meta_nodes(tx, &base_path.join("meta.nodes")).context("meta.nodes")?;
+    buddy_groups(tx, &base_path.join("metabuddygroups"), NodeTypeServer::Meta)
+        .context("meta buddy groups (metabuddygroups)")?;
+    set_meta_root(tx, root_id, root_mirrored).context("meta root")?;
 
     // Quota
     if std::path::Path::try_exists(&base_path.join("quota"))? {
-        quota(&tx, &base_path.join("quota"))?;
+        quota(tx, &base_path.join("quota"))?;
     }
 
-    tx.commit()?;
     Ok(())
 }
 
@@ -192,7 +186,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
         buddy_group::insert(
             tx,
             g,
-            &format!("buddy_group_{}_{}", nt.user_str(), g).try_into()?,
+            None,
             nt,
             BuddyGroupId::from_str_radix(p_id.trim(), 16)?,
             BuddyGroupId::from_str_radix(s_id.trim(), 16)?,
@@ -238,18 +232,48 @@ fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
     let mut des = Deserializer::new(&s, 0);
     // Serialized as size_t, which should usually be 64 bit.
     let count = des.i64()?;
+    let mut used_aliases = vec![];
     for _ in 0..count {
         let pool = StoragePool::deserialize(&mut des)?;
 
+        let mut alias_input = String::from_utf8_lossy(&pool.alias).to_string();
+
+        let alias = loop {
+            match Alias::try_from(alias_input.trim()) {
+                Ok(a) => {
+                    if used_aliases.contains(&a) {
+                        println!(
+                            "Storage pool {}: Alias '{a}' is already used by another pool",
+                            pool.id
+                        );
+                    } else {
+                        break a;
+                    }
+                }
+                Err(err) => {
+                    println!("Storage pool {}: {err}", pool.id);
+                }
+            }
+
+            print!("Please provide a new alias for this pool: ");
+            std::io::stdout().flush().ok();
+            alias_input.clear();
+            std::io::stdin().read_line(&mut alias_input).ok();
+        };
+
         if pool.id == DEFAULT_STORAGE_POOL {
-            continue;
+            tx.execute(
+                sql!("UPDATE entities SET alias = ?1 WHERE uid = 2"),
+                [alias.as_ref()],
+            )?;
+        } else {
+            storage_pool::insert(tx, pool.id, &alias)?;
         }
 
-        let alias: Alias = std::str::from_utf8(&pool.alias)?.try_into()?;
-
-        storage_pool::insert(tx, pool.id, &alias)?;
         target::update_storage_pools(tx, pool.id, &pool.targets)?;
         buddy_group::update_storage_pools(tx, pool.id, &pool.buddy_groups)?;
+
+        used_aliases.push(alias);
     }
     des.finish()?;
 

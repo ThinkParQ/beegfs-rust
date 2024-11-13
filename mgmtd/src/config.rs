@@ -117,12 +117,12 @@ generate_structs! {
 
     /// Imports a BeeGFS v7 installation from the provided directory into a new database.
     ///
-    /// The database must be new, e.g. freshly generated using --init. The two
-    /// flags can be combined. Before importing a production BeeGFS, ensure
-    /// that all targets are in GOOD state, all clients are unmounted and the
-    /// whole system has been shutdown. After importing the data, verify its
-    /// correctness by only starting the management and checking the existing
-    /// nodes, targets, buddy groups, storage pools and quota settings.
+    /// The database file must not exist yet. Before importing a production BeeGFS, ensure that
+    /// all targets are in GOOD state, all clients are unmounted and the whole system has been
+    /// shutdown. After importing the data, verify its correctness by only starting the management
+    /// and checking the existing nodes, targets, buddy groups, storage pools and quota settings.
+    ///
+    /// The database file will only be created if the whole import succeeds.
     #[arg(long)]
     #[arg(num_args = 1)]
     #[arg(value_name = "PATH")]
