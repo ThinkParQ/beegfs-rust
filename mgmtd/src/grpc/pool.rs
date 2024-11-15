@@ -3,9 +3,11 @@ use rusqlite::{Row, named_params};
 use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Delivers the list of pools
-pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::GetPoolsResponse> {
-    let (mut pools, targets, buddy_groups) = ctx
-        .db
+pub(crate) async fn get(
+    app: &impl AppExt,
+    req: pm::GetPoolsRequest,
+) -> Result<pm::GetPoolsResponse> {
+    let (mut pools, targets, buddy_groups) = app
         .read_tx(move |tx| {
             let make_sp = |row: &Row| -> rusqlite::Result<pm::get_pools_response::StoragePool> {
                 Ok(pm::get_pools_response::StoragePool {
@@ -134,11 +136,11 @@ pub(crate) async fn get(ctx: Context, req: pm::GetPoolsRequest) -> Result<pm::Ge
 
 /// Creates a new pool, optionally assigning targets and groups
 pub(crate) async fn create(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::CreatePoolRequest,
 ) -> Result<pm::CreatePoolResponse> {
-    needs_license(&ctx, LicensedFeature::Storagepool)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Storagepool)?;
+    app.fail_on_pre_shutdown()?;
 
     if req.node_type() != pb::NodeType::Storage {
         bail!("node type must be storage");
@@ -147,8 +149,7 @@ pub(crate) async fn create(
     let alias: Alias = required_field(req.alias)?.try_into()?;
     let num_id: PoolId = req.num_id.unwrap_or_default().try_into()?;
 
-    let (pool_uid, alias, pool_id) = ctx
-        .db
+    let (pool_uid, alias, pool_id) = app
         .write_tx(move |tx| {
             let (pool_uid, pool_id) = db::storage_pool::insert(tx, num_id, &alias)?;
             assign_pool(tx, pool_id, req.targets, req.buddy_groups)?;
@@ -167,8 +168,7 @@ pub(crate) async fn create(
 
     log::info!("Pool created: {pool}");
 
-    notify_nodes(
-        &ctx,
+    app.send_notifications(
         &[NodeType::Meta, NodeType::Storage],
         &RefreshStoragePools { ack_id: "".into() },
     )
@@ -181,16 +181,15 @@ pub(crate) async fn create(
 
 /// Assigns a pool to a list of targets and buddy groups.
 pub(crate) async fn assign(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::AssignPoolRequest,
 ) -> Result<pm::AssignPoolResponse> {
-    needs_license(&ctx, LicensedFeature::Storagepool)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Storagepool)?;
+    app.fail_on_pre_shutdown()?;
 
     let pool: EntityId = required_field(req.pool)?.try_into()?;
 
-    let pool = ctx
-        .db
+    let pool = app
         .write_tx(move |tx| {
             let pool = pool.resolve(tx, EntityType::Pool)?;
             assign_pool(tx, pool.num_id().try_into()?, req.targets, req.buddy_groups)?;
@@ -200,8 +199,7 @@ pub(crate) async fn assign(
 
     log::info!("Pool assigned: {pool}");
 
-    notify_nodes(
-        &ctx,
+    app.send_notifications(
         &[NodeType::Meta, NodeType::Storage],
         &RefreshStoragePools { ack_id: "".into() },
     )
@@ -274,17 +272,16 @@ fn assign_pool(
 
 /// Deletes a pool. The pool must be empty.
 pub(crate) async fn delete(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::DeletePoolRequest,
 ) -> Result<pm::DeletePoolResponse> {
-    needs_license(&ctx, LicensedFeature::Storagepool)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Storagepool)?;
+    app.fail_on_pre_shutdown()?;
 
     let pool: EntityId = required_field(req.pool)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
-    let pool = ctx
-        .db
+    let pool = app
         .conn(move |conn| {
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
@@ -322,8 +319,7 @@ are still assigned to this pool"
     if execute {
         log::info!("Pool deleted: {pool}");
 
-        notify_nodes(
-            &ctx,
+        app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
             &RefreshStoragePools { ack_id: "".into() },
         )

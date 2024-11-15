@@ -46,7 +46,11 @@ macro_rules! impl_grpc_handler {
             Self: 'async_trait,
         {
             Box::pin(async move {
-                let res = $handle_fn(self.ctx.clone(), req.into_inner()).await;
+                // The self.app is misplaced here as this is supposed to be a reusable macro.
+                // It assumes what is passed to the handler function and that might be different
+                // for different users of this.
+                // I don't have a quick idea how to fix this in an elegant way, so we keep it for.
+                let res = $handle_fn(&self.app, req.into_inner()).await;
 
                 match res {
                     Ok(res) => Ok(Response::new(res)),

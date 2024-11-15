@@ -5,9 +5,8 @@ use target::get_targets_with_states;
 impl HandleWithResponse for GetMirrorBuddyGroups {
     type Response = GetMirrorBuddyGroupsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = ctx
-            .db
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = app
             .read_tx(move |tx| {
                 tx.query_map_collect(
                     sql!(
@@ -42,7 +41,7 @@ impl HandleWithResponse for GetMirrorBuddyGroups {
 }
 
 impl HandleNoResponse for SetMirrorBuddyGroupResp {
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
+    async fn handle(self, _app: &impl AppExt, _req: &mut impl Request) -> Result<()> {
         // response from server nodes to SetMirrorBuddyGroup notification
         Ok(())
     }
@@ -51,14 +50,13 @@ impl HandleNoResponse for SetMirrorBuddyGroupResp {
 impl HandleWithResponse for GetStatesAndBuddyGroups {
     type Response = GetStatesAndBuddyGroupsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
         let node_type: NodeTypeServer = self.node_type.try_into()?;
 
-        let pre_shutdown = ctx.run_state.pre_shutdown();
-        let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
+        let pre_shutdown = app.pre_shutdown();
+        let node_offline_timeout = app.static_info().user_config.node_offline_timeout;
 
-        let (targets, groups) = ctx
-            .db
+        let (targets, groups) = app
             .read_tx(move |tx| {
                 let targets = get_targets_with_states(
                     tx,
@@ -111,7 +109,7 @@ impl HandleWithResponse for GetStatesAndBuddyGroups {
 
         // If it's a client that requested it, notify the run controller that it pulled states
         if self.requested_by_client_id != 0 {
-            ctx.notify_client_pulled_state(self.node_type, self.requested_by_client_id);
+            app.notify_client_pulled_state(self.node_type, self.requested_by_client_id);
         }
 
         Ok(resp)

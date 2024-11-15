@@ -6,13 +6,13 @@ use std::fmt::Write;
 const QUOTA_NOT_ENABLED: &str = "Quota support is not enabled";
 
 pub(crate) async fn set_default_quota_limits(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::SetDefaultQuotaLimitsRequest,
 ) -> Result<pm::SetDefaultQuotaLimitsResponse> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Quota)?;
+    app.fail_on_pre_shutdown()?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
 
@@ -55,104 +55,102 @@ pub(crate) async fn set_default_quota_limits(
         Ok(())
     }
 
-    ctx.db
-        .write_tx(move |tx| {
-            let pool = pool.resolve(tx, EntityType::Pool)?;
-            let pool_id: PoolId = pool.num_id().try_into()?;
+    app.write_tx(move |tx| {
+        let pool = pool.resolve(tx, EntityType::Pool)?;
+        let pool_id: PoolId = pool.num_id().try_into()?;
 
-            if let Some(l) = req.user_space_limit {
-                update(tx, l, pool_id, QuotaIdType::User, QuotaType::Space)?;
-            }
-            if let Some(l) = req.user_inode_limit {
-                update(tx, l, pool_id, QuotaIdType::User, QuotaType::Inode)?;
-            }
-            if let Some(l) = req.group_space_limit {
-                update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Space)?;
-            }
-            if let Some(l) = req.group_inode_limit {
-                update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Inode)?;
-            }
+        if let Some(l) = req.user_space_limit {
+            update(tx, l, pool_id, QuotaIdType::User, QuotaType::Space)?;
+        }
+        if let Some(l) = req.user_inode_limit {
+            update(tx, l, pool_id, QuotaIdType::User, QuotaType::Inode)?;
+        }
+        if let Some(l) = req.group_space_limit {
+            update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Space)?;
+        }
+        if let Some(l) = req.group_inode_limit {
+            update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Inode)?;
+        }
 
-            Ok(())
-        })
-        .await?;
+        Ok(())
+    })
+    .await?;
 
     Ok(pm::SetDefaultQuotaLimitsResponse {})
 }
 
 pub(crate) async fn set_quota_limits(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::SetQuotaLimitsRequest,
 ) -> Result<pm::SetQuotaLimitsResponse> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Quota)?;
+    app.fail_on_pre_shutdown()?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
 
-    ctx.db
-        .write_tx(|tx| {
-            let mut insert_stmt = tx.prepare_cached(sql!(
-                "REPLACE INTO quota_limits
+    app.write_tx(|tx| {
+        let mut insert_stmt = tx.prepare_cached(sql!(
+            "REPLACE INTO quota_limits
                 (quota_id, id_type, quota_type, pool_id, value)
                 VALUES (?1, ?2, ?3, ?4, ?5)"
-            ))?;
+        ))?;
 
-            let mut delete_stmt = tx.prepare_cached(sql!(
-                "DELETE FROM quota_limits
+        let mut delete_stmt = tx.prepare_cached(sql!(
+            "DELETE FROM quota_limits
                 WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND pool_id = ?4"
-            ))?;
+        ))?;
 
-            for lim in req.limits {
-                let id_type: QuotaIdType = lim.id_type().try_into()?;
-                let quota_id = required_field(lim.quota_id)?;
+        for lim in req.limits {
+            let id_type: QuotaIdType = lim.id_type().try_into()?;
+            let quota_id = required_field(lim.quota_id)?;
 
-                let pool: EntityId = required_field(lim.pool)?.try_into()?;
-                let pool_id = pool.resolve(tx, EntityType::Pool)?.num_id();
+            let pool: EntityId = required_field(lim.pool)?.try_into()?;
+            let pool_id = pool.resolve(tx, EntityType::Pool)?.num_id();
 
-                if let Some(l) = lim.space_limit {
-                    if l > -1 {
-                        insert_stmt.execute(params![
-                            quota_id,
-                            id_type.sql_variant(),
-                            QuotaType::Space.sql_variant(),
-                            pool_id,
-                            l
-                        ])?
-                    } else {
-                        delete_stmt.execute(params![
-                            quota_id,
-                            id_type.sql_variant(),
-                            QuotaType::Space.sql_variant(),
-                            pool_id,
-                        ])?
-                    };
-                }
-
-                if let Some(l) = lim.inode_limit {
-                    if l > -1 {
-                        insert_stmt.execute(params![
-                            quota_id,
-                            id_type.sql_variant(),
-                            QuotaType::Inode.sql_variant(),
-                            pool_id,
-                            l
-                        ])?
-                    } else {
-                        delete_stmt.execute(params![
-                            quota_id,
-                            id_type.sql_variant(),
-                            QuotaType::Inode.sql_variant(),
-                            pool_id,
-                        ])?
-                    };
-                }
+            if let Some(l) = lim.space_limit {
+                if l > -1 {
+                    insert_stmt.execute(params![
+                        quota_id,
+                        id_type.sql_variant(),
+                        QuotaType::Space.sql_variant(),
+                        pool_id,
+                        l
+                    ])?
+                } else {
+                    delete_stmt.execute(params![
+                        quota_id,
+                        id_type.sql_variant(),
+                        QuotaType::Space.sql_variant(),
+                        pool_id,
+                    ])?
+                };
             }
 
-            Ok(())
-        })
-        .await?;
+            if let Some(l) = lim.inode_limit {
+                if l > -1 {
+                    insert_stmt.execute(params![
+                        quota_id,
+                        id_type.sql_variant(),
+                        QuotaType::Inode.sql_variant(),
+                        pool_id,
+                        l
+                    ])?
+                } else {
+                    delete_stmt.execute(params![
+                        quota_id,
+                        id_type.sql_variant(),
+                        QuotaType::Inode.sql_variant(),
+                        pool_id,
+                    ])?
+                };
+            }
+        }
+
+        Ok(())
+    })
+    .await?;
 
     Ok(pm::SetQuotaLimitsResponse {})
 }
@@ -169,19 +167,18 @@ const PAGE_LIMIT: usize = 1_000_000;
 const BUF_SIZE: usize = 100_000;
 
 pub(crate) async fn get_quota_limits(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::GetQuotaLimitsRequest,
 ) -> Result<RespStream<pm::GetQuotaLimitsResponse>> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
+    app.fail_on_missing_license(LicensedFeature::Quota)?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
 
     let pool_id = if let Some(pool) = req.pool {
         let pool: EntityId = pool.try_into()?;
-        let pool_id = ctx
-            .db
+        let pool_id = app
             .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .num_id();
@@ -245,13 +242,14 @@ pub(crate) async fn get_quota_limits(
         inode = QuotaType::Inode.sql_variant()
     );
 
+    let app = app.clone();
     let stream = resp_stream(BUF_SIZE, async move |stream| {
         let mut offset = 0;
 
         loop {
             let sql = sql.clone();
-            let entries: Vec<_> = ctx
-                .db
+            let entries: Vec<_> = app
+                .clone()
                 .read_tx(move |tx| {
                     tx.query_map_collect(&sql, [offset, PAGE_LIMIT], |row| {
                         Ok(pm::QuotaInfo {
@@ -299,12 +297,12 @@ pub(crate) async fn get_quota_limits(
 }
 
 pub(crate) async fn get_quota_usage(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::GetQuotaUsageRequest,
 ) -> Result<RespStream<pm::GetQuotaUsageResponse>> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
+    app.fail_on_missing_license(LicensedFeature::Quota)?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED);
     }
 
@@ -351,8 +349,7 @@ pub(crate) async fn get_quota_usage(
 
     if let Some(pool) = req.pool {
         let pool: EntityId = pool.try_into()?;
-        let pool_uid = ctx
-            .db
+        let pool_uid = app
             .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .uid;
@@ -392,13 +389,13 @@ pub(crate) async fn get_quota_usage(
         inode = QuotaType::Inode.sql_variant()
     );
 
+    let app = app.clone();
     let stream = resp_stream(BUF_SIZE, async move |stream| {
         let mut offset = 0;
 
         loop {
             let sql = sql.clone();
-            let entries: Vec<_> = ctx
-                .db
+            let entries: Vec<_> = app
                 .read_tx(move |tx| {
                     tx.query_map_collect(&sql, [offset, PAGE_LIMIT], |row| {
                         Ok(pm::QuotaInfo {
@@ -433,7 +430,10 @@ pub(crate) async fn get_quota_usage(
                         .send(pm::GetQuotaUsageResponse {
                             entry: Some(entry),
                             refresh_period_s: Some(
-                                ctx.info.user_config.quota_update_interval.as_secs(),
+                                app.static_info()
+                                    .user_config
+                                    .quota_update_interval
+                                    .as_secs(),
                             ),
                         })
                         .await?;

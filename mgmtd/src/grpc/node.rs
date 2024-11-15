@@ -2,9 +2,11 @@ use super::*;
 use shared::bee_msg::node::RemoveNode;
 
 /// Delivers a list of nodes
-pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
-    let (mut nodes, nics, meta_root_node, fs_uuid) = ctx
-        .db
+pub(crate) async fn get(
+    app: &impl AppExt,
+    req: pm::GetNodesRequest,
+) -> Result<pm::GetNodesResponse> {
+    let (mut nodes, nics, meta_root_node, fs_uuid) = app
         .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
             let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {
@@ -121,16 +123,15 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
 
 /// Deletes a node. If it is a meta node, deletes its target first.
 pub(crate) async fn delete(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::DeleteNodeRequest,
 ) -> Result<pm::DeleteNodeResponse> {
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_pre_shutdown()?;
 
     let node: EntityId = required_field(req.node)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
-    let node = ctx
-        .db
+    let node = app
         .conn(move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
@@ -194,8 +195,7 @@ pub(crate) async fn delete(
     if execute {
         log::info!("Node deleted: {node}");
 
-        notify_nodes(
-            &ctx,
+        app.send_notifications(
             match node.node_type() {
                 NodeType::Meta => &[NodeType::Meta, NodeType::Client],
                 NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],

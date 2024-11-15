@@ -11,9 +11,8 @@ use std::sync::Arc;
 impl HandleWithResponse for GetNodes {
     type Response = GetNodesResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let res = ctx
-            .db
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        let res = app
             .read_tx(move |tx| {
                 let node_type = self.node_type;
                 let res = (
@@ -66,8 +65,8 @@ impl HandleWithResponse for GetNodes {
 impl HandleWithResponse for Heartbeat {
     type Response = Ack;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
         update_node(
             RegisterNode {
@@ -83,7 +82,7 @@ impl HandleWithResponse for Heartbeat {
                 port_tcp_unused: self.port_tcp_unused,
                 machine_uuid: self.machine_uuid,
             },
-            ctx,
+            app,
         )
         .await?;
 
@@ -96,9 +95,8 @@ impl HandleWithResponse for Heartbeat {
 impl HandleWithResponse for HeartbeatRequest {
     type Response = Heartbeat;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let (alias, nics) = ctx
-            .db
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        let (alias, nics) = app
             .read_tx(|tx| {
                 Ok((
                     db::entity::get_alias(tx, MGMTD_UID)?
@@ -120,8 +118,8 @@ impl HandleWithResponse for HeartbeatRequest {
             node_num_id: MGMTD_ID,
             root_num_id: 0,
             is_root_mirrored: 0,
-            port: ctx.info.user_config.beemsg_port,
-            port_tcp_unused: ctx.info.user_config.beemsg_port,
+            port: app.static_info().user_config.beemsg_port,
+            port_tcp_unused: app.static_info().user_config.beemsg_port,
             nic_list: nics,
             machine_uuid: vec![], // No need for the other nodes to know machine UUIDs
         };
@@ -133,32 +131,31 @@ impl HandleWithResponse for HeartbeatRequest {
 impl HandleWithResponse for RegisterNode {
     type Response = RegisterNodeResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
-        let node_id = update_node(self, ctx).await?;
+        let node_id = update_node(self, app).await?;
 
-        let fs_uuid: String = ctx
-            .db
+        let fs_uuid: String = app
             .read_tx(|tx| db::config::get(tx, db::config::Config::FsUuid))
             .await?
             .ok_or_else(|| anyhow!("Could not read file system UUID from database"))?;
 
         Ok(RegisterNodeResp {
             node_num_id: node_id,
-            grpc_port: ctx.info.user_config.grpc_port,
+            grpc_port: app.static_info().user_config.grpc_port,
             fs_uuid: fs_uuid.into_bytes(),
         })
     }
 }
 
 /// Processes incoming node information. Registers new nodes if config allows it
-async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
+async fn update_node(msg: RegisterNode, app: &impl AppExt) -> Result<NodeId> {
     let nics = msg.nics.clone();
     let requested_node_id = msg.node_id;
-    let info = ctx.info;
+    let registration_disable = app.static_info().user_config.registration_disable;
 
-    let licensed_machines = match ctx.license.get_num_machines() {
+    let licensed_machines = match app.get_num_machines() {
         Ok(n) => n,
         Err(err) => {
             log::debug!(
@@ -168,8 +165,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
         }
     };
 
-    let (node, meta_root, is_new) = ctx
-        .db
+    let (node, meta_root, is_new) = app
         .write_tx_no_sync(move |tx| {
             let node = if msg.node_id == 0 {
                 // No node ID given => new node
@@ -205,7 +201,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
 
                 // Check node registration is allowed. This should ignore registering client
                 // nodes.
-                if msg.node_type != NodeType::Client && info.user_config.registration_disable {
+                if msg.node_type != NodeType::Client && registration_disable {
                     bail!("Registration of new nodes is not allowed");
                 }
 
@@ -274,7 +270,7 @@ client version < 8.0)"
         })
         .await?;
 
-    ctx.conn.replace_node_addrs(
+    app.replace_node_addrs(
         node.uid,
         nics.clone()
             .into_iter()
@@ -291,8 +287,7 @@ client version < 8.0)"
     let node_num_id = node.num_id();
 
     // notify all nodes
-    notify_nodes(
-        ctx,
+    app.send_notifications(
         match node.node_type() {
             NodeType::Meta => &[NodeType::Meta, NodeType::Client],
             NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
@@ -335,11 +330,10 @@ impl HandleWithResponse for RemoveNode {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
-        let node = ctx
-            .db
+        let node = app
             .write_tx(move |tx| {
                 if self.node_type != NodeType::Client {
                     bail!(
@@ -362,8 +356,7 @@ For server nodes, the grpc handler must be used."
 
         log::info!("Node deleted: {node}");
 
-        notify_nodes(
-            ctx,
+        app.send_notifications(
             match self.node_type {
                 shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
                 shared::types::NodeType::Storage => {
@@ -385,7 +378,7 @@ For server nodes, the grpc handler must be used."
 }
 
 impl HandleNoResponse for RemoveNodeResp {
-    async fn handle(self, _ctx: &Context, req: &mut impl Request) -> Result<()> {
+    async fn handle(self, _app: &impl AppExt, req: &mut impl Request) -> Result<()> {
         // response from server nodes to the RemoveNode notification
         log::debug!("Ignoring RemoveNodeResp msg from {:?}", req.addr());
         Ok(())

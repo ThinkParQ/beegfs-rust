@@ -8,9 +8,8 @@ use std::time::Duration;
 impl HandleWithResponse for GetTargetMappings {
     type Response = GetTargetMappingsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let mapping: HashMap<TargetId, NodeId> = ctx
-            .db
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        let mapping: HashMap<TargetId, NodeId> = app
             .read_tx(move |tx| {
                 tx.query_map_collect(
                     sql!(
@@ -34,12 +33,11 @@ impl HandleWithResponse for GetTargetMappings {
 impl HandleWithResponse for GetTargetStates {
     type Response = GetTargetStatesResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let pre_shutdown = ctx.run_state.pre_shutdown();
-        let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        let pre_shutdown = app.pre_shutdown();
+        let node_offline_timeout = app.static_info().user_config.node_offline_timeout;
 
-        let targets = ctx
-            .db
+        let targets = app
             .read_tx(move |tx| {
                 get_targets_with_states(
                     tx,
@@ -119,13 +117,12 @@ pub(crate) fn get_targets_with_states(
 impl HandleWithResponse for RegisterTarget {
     type Response = RegisterTargetResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
-        let ctx2 = ctx.clone();
+        let registration_disable = app.static_info().user_config.registration_disable;
 
-        let (id, is_new) = ctx
-            .db
+        let (id, is_new) = app
             .write_tx(move |tx| {
                 // Do not do anything if the target already exists
                 if let Some(id) = try_resolve_num_id(
@@ -137,7 +134,7 @@ impl HandleWithResponse for RegisterTarget {
                     return Ok((id.num_id().try_into()?, false));
                 }
 
-                if ctx2.info.user_config.registration_disable {
+                if registration_disable {
                     bail!("Registration of new targets is not allowed");
                 }
 
@@ -165,26 +162,25 @@ impl HandleWithResponse for RegisterTarget {
 impl HandleWithResponse for MapTargets {
     type Response = MapTargetsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
-        ctx.db
-            .write_tx(move |tx| {
-                // Check node Id exists
-                let node = LegacyId {
-                    node_type: NodeType::Storage,
-                    num_id: self.node_id,
-                }
-                .resolve(tx, EntityType::Node)?;
-                // Check all target Ids exist
-                db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
-                // Due to the check above, this must always match all the given ids
-                db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
-                Ok(())
-            })
-            .await?;
+        app.write_tx(move |tx| {
+            // Check node Id exists
+            let node = LegacyId {
+                node_type: NodeType::Storage,
+                num_id: self.node_id,
+            }
+            .resolve(tx, EntityType::Node)?;
+            // Check all target Ids exist
+            db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
+            // Due to the check above, this must always match all the given ids
+            db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
+            Ok(())
+        })
+        .await?;
 
         // At this point, all mappings must have been successful
 
@@ -194,8 +190,7 @@ impl HandleWithResponse for MapTargets {
             self.node_id
         );
 
-        notify_nodes(
-            ctx,
+        app.send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
             &MapTargets {
                 target_ids: self.target_ids.clone(),
@@ -222,7 +217,7 @@ impl HandleWithResponse for MapTargets {
 }
 
 impl HandleNoResponse for MapTargetsResp {
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
+    async fn handle(self, _app: &impl AppExt, _req: &mut impl Request) -> Result<()> {
         // This is sent from the nodes as a result of the MapTargets notification after
         // map_targets was called. We just ignore it.
         Ok(())
@@ -238,29 +233,28 @@ impl HandleWithResponse for SetStorageTargetInfo {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
         let node_type = self.node_type;
-        ctx.db
-            .write_tx(move |tx| {
-                db::target::get_and_update_capacities(
-                    tx,
-                    self.info.into_iter().map(|e| {
-                        Ok((
-                            e.target_id,
-                            TargetCapacities {
-                                total_space: Some(e.total_space.try_into()?),
-                                total_inodes: Some(e.total_inodes.try_into()?),
-                                free_space: Some(e.free_space.try_into()?),
-                                free_inodes: Some(e.free_inodes.try_into()?),
-                            },
-                        ))
-                    }),
-                    self.node_type.try_into()?,
-                )
-            })
-            .await?;
+        app.write_tx(move |tx| {
+            db::target::get_and_update_capacities(
+                tx,
+                self.info.into_iter().map(|e| {
+                    Ok((
+                        e.target_id,
+                        TargetCapacities {
+                            total_space: Some(e.total_space.try_into()?),
+                            total_inodes: Some(e.total_inodes.try_into()?),
+                            free_space: Some(e.free_space.try_into()?),
+                            free_inodes: Some(e.free_inodes.try_into()?),
+                        },
+                    ))
+                }),
+                self.node_type.try_into()?,
+            )
+        })
+        .await?;
 
         log::debug!("Updated {:?} target info", node_type,);
 
@@ -283,15 +277,14 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         }
     }
 
-    async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
         // self.old_states is currently completely ignored. If something reports a non-GOOD state, I
         // see no apparent reason to that the old state matches before setting. We have the
         // authority, whatever nodes think their old state was doesn't matter.
 
-        let changed = ctx
-            .db
+        let changed = app
             .write_tx(move |tx| {
                 let node_type = self.node_type.try_into()?;
 
@@ -320,8 +313,7 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         );
 
         if changed {
-            notify_nodes(
-                ctx,
+            app.send_notifications(
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &RefreshTargetStates { ack_id: "".into() },
             )
@@ -343,33 +335,31 @@ impl HandleWithResponse for SetTargetConsistencyStates {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl AppExt, _req: &mut impl Request) -> Result<Self::Response> {
+        app.fail_on_pre_shutdown()?;
 
         let node_type = self.node_type.try_into()?;
         let msg = self.clone();
 
-        ctx.db
-            .write_tx(move |tx| {
-                // Check given target Ids exist
-                db::target::validate_ids(tx, &msg.target_ids, node_type)?;
+        app.write_tx(move |tx| {
+            // Check given target Ids exist
+            db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
-                if msg.set_online > 0 {
-                    update_times(tx, &msg.target_ids, node_type)?;
-                }
+            if msg.set_online > 0 {
+                update_times(tx, &msg.target_ids, node_type)?;
+            }
 
-                db::target::update_consistency_states(
-                    tx,
-                    msg.target_ids.into_iter().zip(msg.states.iter().copied()),
-                    node_type,
-                )
-            })
-            .await?;
+            db::target::update_consistency_states(
+                tx,
+                msg.target_ids.into_iter().zip(msg.states.iter().copied()),
+                node_type,
+            )
+        })
+        .await?;
 
         log::info!("Set consistency state for targets {:?}", self.target_ids,);
 
-        notify_nodes(
-            ctx,
+        app.send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
             &RefreshTargetStates { ack_id: "".into() },
         )

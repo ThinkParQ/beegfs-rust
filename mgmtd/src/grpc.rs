@@ -1,7 +1,6 @@
 //! gRPC server and handlers
 
-use crate::bee_msg::notify_nodes;
-use crate::context::Context;
+use crate::app::*;
 use crate::db;
 use crate::license::LicensedFeature;
 use crate::types::{ResolveEntityId, SqliteEnumExt};
@@ -32,7 +31,7 @@ mod target;
 /// Management gRPC service implementation struct
 #[derive(Debug)]
 pub(crate) struct ManagementService {
-    pub ctx: Context,
+    pub app: App,
 }
 
 /// Implementation of the management gRPC service. Use the shared::impl_grpc_handler! macro to
@@ -156,21 +155,21 @@ impl pm::management_server::Management for ManagementService {
 }
 
 /// Serve gRPC requests on the `grpc_port` extracted from the config
-pub(crate) fn serve(ctx: Context, mut shutdown: RunStateHandle) -> Result<()> {
+pub(crate) fn serve(app: App, mut shutdown: RunStateHandle) -> Result<()> {
     let builder = Server::builder();
 
     // If gRPC TLS is enabled, configure the server accordingly
-    let mut builder = if !ctx.info.user_config.tls_disable {
-        let tls_cert = std::fs::read(&ctx.info.user_config.tls_cert_file).with_context(|| {
+    let mut builder = if !app.info.user_config.tls_disable {
+        let tls_cert = std::fs::read(&app.info.user_config.tls_cert_file).with_context(|| {
             format!(
                 "Could not read TLS certificate file {:?}",
-                &ctx.info.user_config.tls_cert_file
+                &app.info.user_config.tls_cert_file
             )
         })?;
-        let tls_key = std::fs::read(&ctx.info.user_config.tls_key_file).with_context(|| {
+        let tls_key = std::fs::read(&app.info.user_config.tls_key_file).with_context(|| {
             format!(
                 "Could not read TLS key file {:?}",
-                &ctx.info.user_config.tls_key_file
+                &app.info.user_config.tls_key_file
             )
         })?;
 
@@ -181,13 +180,13 @@ pub(crate) fn serve(ctx: Context, mut shutdown: RunStateHandle) -> Result<()> {
         builder
     };
 
-    let serve_addr = SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.grpc_port);
+    let serve_addr = SocketAddr::new("0.0.0.0".parse()?, app.info.user_config.grpc_port);
 
     let service = pm::management_server::ManagementServer::with_interceptor(
-        ManagementService { ctx: ctx.clone() },
+        ManagementService { app: app.clone() },
         move |req: Request<()>| {
             // If authentication is enabled, require the secret passed with every request
-            if let Some(required_secret) = ctx.info.auth_secret {
+            if let Some(required_secret) = app.info.auth_secret {
                 let check = || -> Result<()> {
                     let Some(request_secret) = req.metadata().get("auth-secret") else {
                         bail!("Request requires authentication but no secret was provided")
@@ -226,18 +225,43 @@ pub(crate) fn serve(ctx: Context, mut shutdown: RunStateHandle) -> Result<()> {
     Ok(())
 }
 
-/// Checks if the given license feature is enabled or fails with "Unauthenticated" if not
-fn needs_license(ctx: &Context, feature: LicensedFeature) -> Result<()> {
-    ctx.license
-        .verify_feature(feature)
-        .status_code(Code::Unauthenticated)
+trait AppExt: AppAll {
+    fn fail_on_pre_shutdown(&self) -> Result<()>;
+    fn fail_on_missing_license(&self, feature: LicensedFeature) -> Result<()>;
 }
 
-/// Checks if the management is in pre shutdown state
-fn fail_on_pre_shutdown(ctx: &Context) -> Result<()> {
-    if ctx.run_state.pre_shutdown() {
-        return Err(anyhow!("Management is shutting down")).status_code(Code::Unavailable);
+impl AppExt for App {
+    fn fail_on_pre_shutdown(&self) -> Result<()> {
+        if self.run_state.pre_shutdown() {
+            return Err(anyhow!("Management is shutting down")).status_code(Code::Unavailable);
+        }
+
+        Ok(())
     }
 
-    Ok(())
+    fn fail_on_missing_license(&self, feature: LicensedFeature) -> Result<()> {
+        self.license
+            .verify_feature(feature)
+            .status_code(Code::Unauthenticated)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::TestApp;
+
+    impl AppExt for TestApp {
+        fn fail_on_pre_shutdown(&self) -> Result<()> {
+            if self.pre_shutdown() {
+                bail!("Pre shutdown");
+            } else {
+                Ok(())
+            }
+        }
+
+        fn fail_on_missing_license(&self, _feature: LicensedFeature) -> Result<()> {
+            Ok(())
+        }
+    }
 }

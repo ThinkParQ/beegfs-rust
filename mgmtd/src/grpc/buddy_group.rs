@@ -12,11 +12,10 @@ use tokio::time::{Duration, Instant, sleep};
 
 /// Delivers the list of buddy groups
 pub(crate) async fn get(
-    ctx: Context,
+    app: &impl AppExt,
     _req: pm::GetBuddyGroupsRequest,
 ) -> Result<pm::GetBuddyGroupsResponse> {
-    let buddy_groups = ctx
-        .db
+    let buddy_groups = app
         .read_tx(|tx| {
             Ok(tx.query_map_collect(
                 sql!(
@@ -87,11 +86,11 @@ pub(crate) async fn get(
 
 /// Creates a new buddy group
 pub(crate) async fn create(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::CreateBuddyGroupRequest,
 ) -> Result<pm::CreateBuddyGroupResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Mirroring)?;
+    app.fail_on_pre_shutdown()?;
 
     let node_type: NodeTypeServer = req.node_type().try_into()?;
     let alias: Alias = required_field(req.alias)?.try_into()?;
@@ -99,8 +98,7 @@ pub(crate) async fn create(
     let p_target: EntityId = required_field(req.primary_target)?.try_into()?;
     let s_target: EntityId = required_field(req.secondary_target)?.try_into()?;
 
-    let (group, p_target, s_target) = ctx
-        .db
+    let (group, p_target, s_target) = app
         .write_tx(move |tx| {
             let p_target = p_target.resolve(tx, EntityType::Target)?;
             let s_target = s_target.resolve(tx, EntityType::Target)?;
@@ -130,8 +128,7 @@ pub(crate) async fn create(
 
     log::info!("Buddy group created: {group}");
 
-    notify_nodes(
-        &ctx,
+    app.send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &SetMirrorBuddyGroup {
             ack_id: "".into(),
@@ -152,18 +149,17 @@ pub(crate) async fn create(
 /// Deletes a buddy group. This function is racy as it is a two step process, talking to other
 /// nodes in between. Since it is rarely used, that's ok though.
 pub(crate) async fn delete(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::DeleteBuddyGroupRequest,
 ) -> Result<pm::DeleteBuddyGroupResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Mirroring)?;
+    app.fail_on_pre_shutdown()?;
 
     let group: EntityId = required_field(req.group)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
     // 1. Check deletion is allowed
-    let (group, p_node_uid, s_node_uid) = ctx
-        .db
+    let (group, p_node_uid, s_node_uid) = app
         .conn(move |conn| {
             let tx = conn.transaction()?;
 
@@ -192,8 +188,8 @@ pub(crate) async fn delete(
         force: 0,
     };
 
-    let p_res: RemoveBuddyGroupResp = ctx.conn.request(p_node_uid, &remove_bee_msg).await?;
-    let s_res: RemoveBuddyGroupResp = ctx.conn.request(s_node_uid, &remove_bee_msg).await?;
+    let p_res: RemoveBuddyGroupResp = app.request(p_node_uid, &remove_bee_msg).await?;
+    let s_res: RemoveBuddyGroupResp = app.request(s_node_uid, &remove_bee_msg).await?;
 
     if p_res.result != OpsErr::SUCCESS || s_res.result != OpsErr::SUCCESS {
         bail!(
@@ -205,18 +201,17 @@ Primary result: {:?}, Secondary result: {:?}",
     }
 
     // 3. If the deletion request succeeded, remove the group from the database
-    ctx.db
-        .conn(move |conn| {
-            let tx = conn.transaction()?;
+    app.conn(move |conn| {
+        let tx = conn.transaction()?;
 
-            db::buddy_group::delete_storage(&tx, group_id)?;
+        db::buddy_group::delete_storage(&tx, group_id)?;
 
-            if execute {
-                tx.commit()?;
-            }
-            Ok(())
-        })
-        .await?;
+        if execute {
+            tx.commit()?;
+        }
+        Ok(())
+    })
+    .await?;
 
     if execute {
         log::info!("Buddy group deleted: {}", group);
@@ -229,14 +224,13 @@ Primary result: {:?}, Secondary result: {:?}",
 
 /// Enable metadata mirroring for the root directory
 pub(crate) async fn mirror_root_inode(
-    ctx: Context,
+    app: &impl AppExt,
     _req: pm::MirrorRootInodeRequest,
 ) -> Result<pm::MirrorRootInodeResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Mirroring)?;
+    app.fail_on_pre_shutdown()?;
 
-    let meta_root = ctx
-        .db
+    let meta_root = app
         .read_tx(|tx| {
             let node_uid = match db::misc::get_meta_root(tx)? {
                 MetaRoot::Normal(_, node_uid) => node_uid,
@@ -274,13 +268,10 @@ pub(crate) async fn mirror_root_inode(
         })
         .await?;
 
-    let resp: SetMetadataMirroringResp = ctx
-        .conn
-        .request(meta_root, &SetMetadataMirroring {})
-        .await?;
+    let resp: SetMetadataMirroringResp = app.request(meta_root, &SetMetadataMirroring {}).await?;
 
     match resp.result {
-        OpsErr::SUCCESS => ctx.db.write_tx(db::misc::enable_metadata_mirroring).await?,
+        OpsErr::SUCCESS => app.write_tx(db::misc::enable_metadata_mirroring).await?,
         _ => bail!(
             "The root meta server failed to mirror the root inode: {:?}",
             resp.result
@@ -293,19 +284,18 @@ pub(crate) async fn mirror_root_inode(
 
 /// Starts a resync of a storage or metadata target from its buddy target
 pub(crate) async fn start_resync(
-    ctx: Context,
+    app: &impl AppExt,
     req: pm::StartResyncRequest,
 ) -> Result<pm::StartResyncResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    app.fail_on_missing_license(LicensedFeature::Mirroring)?;
+    app.fail_on_pre_shutdown()?;
 
     let buddy_group: EntityId = required_field(req.buddy_group)?.try_into()?;
     let timestamp: i64 = required_field(req.timestamp)?;
     let restart: bool = required_field(req.restart)?;
 
     // For resync source is always primary target and destination is secondary target
-    let (src_target_id, dest_target_id, src_node_uid, node_type, group) = ctx
-        .db
+    let (src_target_id, dest_target_id, src_node_uid, node_type, group) = app
         .read_tx(move |tx| {
             let group = buddy_group.resolve(tx, EntityType::BuddyGroup)?;
             let node_type: NodeTypeServer = group.node_type().try_into()?;
@@ -347,8 +337,7 @@ not supported."
                 bail!("Resync cannot be restarted or aborted for metadata servers.");
             }
 
-            let resp: GetMetaResyncStatsResp = ctx
-                .conn
+            let resp: GetMetaResyncStatsResp = app
                 .request(
                     src_node_uid,
                     &GetMetaResyncStats {
@@ -363,8 +352,7 @@ not supported."
         }
         NodeTypeServer::Storage => {
             if !restart {
-                let resp: GetStorageResyncStatsResp = ctx
-                    .conn
+                let resp: GetStorageResyncStatsResp = app
                     .request(
                         src_node_uid,
                         &GetStorageResyncStats {
@@ -378,7 +366,7 @@ not supported."
                 }
 
                 if timestamp > -1 {
-                    override_last_buddy_comm(&ctx, src_node_uid, src_target_id, &group, timestamp)
+                    override_last_buddy_comm(app, src_node_uid, src_target_id, &group, timestamp)
                         .await?;
                 }
             } else {
@@ -386,7 +374,7 @@ not supported."
                     bail!("Resync for storage targets can only be restarted with timestamp.");
                 }
 
-                override_last_buddy_comm(&ctx, src_node_uid, src_target_id, &group, timestamp)
+                override_last_buddy_comm(app, src_node_uid, src_target_id, &group, timestamp)
                     .await?;
 
                 log::info!("Waiting for the already running resync operations to abort.");
@@ -399,8 +387,7 @@ not supported."
                 // tells us the resync is finished, but that is a bit more complex and, with the
                 // current system, still unreliable.
                 loop {
-                    let resp: GetStorageResyncStatsResp = ctx
-                        .conn
+                    let resp: GetStorageResyncStatsResp = app
                         .request(
                             src_node_uid,
                             &GetStorageResyncStats {
@@ -424,16 +411,15 @@ not supported."
     }
 
     // set destination target state as needs-resync in mgmtd database
-    ctx.db
-        .write_tx(move |tx| {
-            db::target::update_consistency_states(
-                tx,
-                [(dest_target_id, TargetConsistencyState::NeedsResync)],
-                node_type,
-            )?;
-            Ok(())
-        })
-        .await?;
+    app.write_tx(move |tx| {
+        db::target::update_consistency_states(
+            tx,
+            [(dest_target_id, TargetConsistencyState::NeedsResync)],
+            node_type,
+        )?;
+        Ok(())
+    })
+    .await?;
 
     // This also triggers the source node to fetch the new needs resync state and start the resync
     // using the internode syncer loop. In case of overriding last buddy communication on storage
@@ -443,8 +429,7 @@ not supported."
     //
     // Note that sending a SetTargetConsistencyStateMsg does have no effect on making this quicker,
     // so we omit it.
-    notify_nodes(
-        &ctx,
+    app.send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &RefreshTargetStates { ack_id: "".into() },
     )
@@ -455,14 +440,13 @@ not supported."
     /// Override last buddy communication timestamp on source storage node
     /// Note that this might be overwritten again on the storage server between
     async fn override_last_buddy_comm(
-        ctx: &Context,
+        app: &impl AppExt,
         src_node_uid: Uid,
         src_target_id: TargetId,
         group: &EntityIdSet,
         timestamp: i64,
     ) -> Result<()> {
-        let resp: SetTargetConsistencyStatesResp = ctx
-            .conn
+        let resp: SetTargetConsistencyStatesResp = app
             .request(
                 src_node_uid,
                 &SetLastBuddyCommOverride {
