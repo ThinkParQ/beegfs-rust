@@ -4,10 +4,9 @@ use shared::bee_msg::target::*;
 impl HandleWithResponse for GetTargetMappings {
     type Response = GetTargetMappingsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let mapping: HashMap<TargetId, NodeId> = ctx
-            .db
-            .read_tx(move |tx| {
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        let mapping: HashMap<TargetId, NodeId> = app
+            .db_read_tx(move |tx| {
                 tx.query_map_collect(
                     sql!(
                         "SELECT target_id, node_id

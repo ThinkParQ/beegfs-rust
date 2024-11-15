@@ -2,12 +2,11 @@ use super::*;
 
 /// Delivers the list of buddy groups
 pub(crate) async fn get_buddy_groups(
-    ctx: Context,
+    app: &impl App,
     _req: pm::GetBuddyGroupsRequest,
 ) -> Result<pm::GetBuddyGroupsResponse> {
-    let buddy_groups = ctx
-        .db
-        .read_tx(|tx| {
+    let buddy_groups = app
+        .db_read_tx(|tx| {
             Ok(tx.query_map_collect(
                 sql!(
                     "SELECT group_uid, group_id, bg.alias, bg.node_type,

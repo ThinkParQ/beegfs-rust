@@ -5,19 +5,18 @@ use shared::bee_msg::buddy_group::{RemoveBuddyGroup, RemoveBuddyGroupResp};
 /// Deletes a buddy group. This function is racy as it is a two step process, talking to other
 /// nodes in between. Since it is rarely used, that's ok though.
 pub(crate) async fn delete_buddy_group(
-    ctx: Context,
+    app: &impl App,
     req: pm::DeleteBuddyGroupRequest,
 ) -> Result<pm::DeleteBuddyGroupResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(app)?;
 
     let group: EntityId = required_field(req.group)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
     // 1. Check deletion is allowed
-    let (group, p_node_uid, s_node_uid) = ctx
-        .db
-        .conn(move |conn| {
+    let (group, p_node_uid, s_node_uid) = app
+        .db_conn(move |conn| {
             let tx = conn.transaction()?;
 
             let group = group.resolve(&tx, EntityType::BuddyGroup)?;
@@ -45,8 +44,8 @@ pub(crate) async fn delete_buddy_group(
         force: 0,
     };
 
-    let p_res: RemoveBuddyGroupResp = ctx.conn.request(p_node_uid, &remove_bee_msg).await?;
-    let s_res: RemoveBuddyGroupResp = ctx.conn.request(s_node_uid, &remove_bee_msg).await?;
+    let p_res: RemoveBuddyGroupResp = app.beemsg_request(p_node_uid, &remove_bee_msg).await?;
+    let s_res: RemoveBuddyGroupResp = app.beemsg_request(s_node_uid, &remove_bee_msg).await?;
 
     if p_res.result != OpsErr::SUCCESS || s_res.result != OpsErr::SUCCESS {
         bail!(
@@ -58,18 +57,17 @@ Primary result: {:?}, Secondary result: {:?}",
     }
 
     // 3. If the deletion request succeeded, remove the group from the database
-    ctx.db
-        .conn(move |conn| {
-            let tx = conn.transaction()?;
+    app.db_conn(move |conn| {
+        let tx = conn.transaction()?;
 
-            db::buddy_group::delete_storage(&tx, group_id)?;
+        db::buddy_group::delete_storage(&tx, group_id)?;
 
-            if execute {
-                tx.commit()?;
-            }
-            Ok(())
-        })
-        .await?;
+        if execute {
+            tx.commit()?;
+        }
+        Ok(())
+    })
+    .await?;
 
     if execute {
         log::info!("Buddy group deleted: {group}");

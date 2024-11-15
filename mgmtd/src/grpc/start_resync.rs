@@ -10,20 +10,19 @@ use tokio::time::sleep;
 
 /// Starts a resync of a storage or metadata target from its buddy target
 pub(crate) async fn start_resync(
-    ctx: Context,
+    app: &impl App,
     req: pm::StartResyncRequest,
 ) -> Result<pm::StartResyncResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(app)?;
 
     let buddy_group: EntityId = required_field(req.buddy_group)?.try_into()?;
     let timestamp: i64 = required_field(req.timestamp)?;
     let restart: bool = required_field(req.restart)?;
 
     // For resync source is always primary target and destination is secondary target
-    let (src_target_id, dest_target_id, src_node_uid, node_type, group) = ctx
-        .db
-        .read_tx(move |tx| {
+    let (src_target_id, dest_target_id, src_node_uid, node_type, group) = app
+        .db_read_tx(move |tx| {
             let group = buddy_group.resolve(tx, EntityType::BuddyGroup)?;
             let node_type: NodeTypeServer = group.node_type().try_into()?;
 
@@ -64,9 +63,8 @@ not supported."
                 bail!("Resync cannot be restarted or aborted for metadata servers.");
             }
 
-            let resp: GetMetaResyncStatsResp = ctx
-                .conn
-                .request(
+            let resp: GetMetaResyncStatsResp = app
+                .beemsg_request(
                     src_node_uid,
                     &GetMetaResyncStats {
                         target_id: src_target_id,
@@ -80,9 +78,8 @@ not supported."
         }
         NodeTypeServer::Storage => {
             if !restart {
-                let resp: GetStorageResyncStatsResp = ctx
-                    .conn
-                    .request(
+                let resp: GetStorageResyncStatsResp = app
+                    .beemsg_request(
                         src_node_uid,
                         &GetStorageResyncStats {
                             target_id: src_target_id,
@@ -95,7 +92,7 @@ not supported."
                 }
 
                 if timestamp > -1 {
-                    override_last_buddy_comm(&ctx, src_node_uid, src_target_id, &group, timestamp)
+                    override_last_buddy_comm(app, src_node_uid, src_target_id, &group, timestamp)
                         .await?;
                 }
             } else {
@@ -103,7 +100,7 @@ not supported."
                     bail!("Resync for storage targets can only be restarted with timestamp.");
                 }
 
-                override_last_buddy_comm(&ctx, src_node_uid, src_target_id, &group, timestamp)
+                override_last_buddy_comm(app, src_node_uid, src_target_id, &group, timestamp)
                     .await?;
 
                 log::info!("Waiting for the already running resync operations to abort.");
@@ -116,9 +113,8 @@ not supported."
                 // tells us the resync is finished, but that is a bit more complex and, with the
                 // current system, still unreliable.
                 loop {
-                    let resp: GetStorageResyncStatsResp = ctx
-                        .conn
-                        .request(
+                    let resp: GetStorageResyncStatsResp = app
+                        .beemsg_request(
                             src_node_uid,
                             &GetStorageResyncStats {
                                 target_id: src_target_id,
@@ -141,16 +137,15 @@ not supported."
     }
 
     // set destination target state as needs-resync in mgmtd database
-    ctx.db
-        .write_tx(move |tx| {
-            db::target::update_consistency_states(
-                tx,
-                [(dest_target_id, TargetConsistencyState::NeedsResync)],
-                node_type,
-            )?;
-            Ok(())
-        })
-        .await?;
+    app.db_write_tx(move |tx| {
+        db::target::update_consistency_states(
+            tx,
+            [(dest_target_id, TargetConsistencyState::NeedsResync)],
+            node_type,
+        )?;
+        Ok(())
+    })
+    .await?;
 
     // This also triggers the source node to fetch the new needs resync state and start the resync
     // using the internode syncer loop. In case of overriding last buddy communication on storage
@@ -160,8 +155,7 @@ not supported."
     //
     // Note that sending a SetTargetConsistencyStateMsg does have no effect on making this quicker,
     // so we omit it.
-    notify_nodes(
-        &ctx,
+    app.beemsg_send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &RefreshTargetStates { ack_id: "".into() },
     )
@@ -172,15 +166,14 @@ not supported."
     /// Override last buddy communication timestamp on source storage node
     /// Note that this might be overwritten again on the storage server between
     async fn override_last_buddy_comm(
-        ctx: &Context,
+        app: &impl App,
         src_node_uid: Uid,
         src_target_id: TargetId,
         group: &EntityIdSet,
         timestamp: i64,
     ) -> Result<()> {
-        let resp: SetTargetConsistencyStatesResp = ctx
-            .conn
-            .request(
+        let resp: SetTargetConsistencyStatesResp = app
+            .beemsg_request(
                 src_node_uid,
                 &SetLastBuddyCommOverride {
                     target_id: src_target_id,

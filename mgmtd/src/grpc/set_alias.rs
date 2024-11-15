@@ -4,10 +4,10 @@ use shared::bee_msg::node::Heartbeat;
 
 /// Sets the entity alias for any entity
 pub(crate) async fn set_alias(
-    ctx: Context,
+    app: &impl App,
     req: pm::SetAliasRequest,
 ) -> Result<pm::SetAliasResponse> {
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_pre_shutdown(app)?;
 
     // Parse proto msg
     let entity_type: EntityType = req.entity_type().try_into()?;
@@ -48,9 +48,8 @@ pub(crate) async fn set_alias(
 
     // If the entity is a node, notify all nodes about the changed alias
     if entity_type == EntityType::Node {
-        let (entity, node, nic_list) = ctx
-            .db
-            .write_tx(move |tx| {
+        let (entity, node, nic_list) = app
+            .db_write_tx(move |tx| {
                 let entity = update_alias_fn(tx, &new_alias)?;
 
                 let node = db::node::get_by_alias(tx, new_alias.as_ref())?;
@@ -60,8 +59,7 @@ pub(crate) async fn set_alias(
             })
             .await?;
 
-        notify_nodes(
-            &ctx,
+        app.beemsg_send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
             &Heartbeat {
                 instance_version: 0,
@@ -82,8 +80,7 @@ pub(crate) async fn set_alias(
 
     // If not a node, just update the alias
     } else {
-        ctx.db
-            .write_tx(move |tx| update_alias_fn(tx, &new_alias))
+        app.db_write_tx(move |tx| update_alias_fn(tx, &new_alias))
             .await?;
     }
 
