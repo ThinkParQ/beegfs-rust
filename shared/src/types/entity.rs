@@ -159,6 +159,26 @@ impl TryFrom<pb::EntityIdSet> for EntityId {
     }
 }
 
+#[cfg(feature = "grpc")]
+impl From<EntityId> for pb::EntityIdSet {
+    fn from(value: EntityId) -> Self {
+        match value {
+            EntityId::Alias(a) => pb::EntityIdSet {
+                alias: Some(a.into()),
+                ..Default::default()
+            },
+            EntityId::LegacyID(id) => pb::EntityIdSet {
+                legacy_id: Some(id.into()),
+                ..Default::default()
+            },
+            EntityId::Uid(uid) => pb::EntityIdSet {
+                uid: Some(uid),
+                ..Default::default()
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct EntityIdSet {
     pub uid: Uid,
