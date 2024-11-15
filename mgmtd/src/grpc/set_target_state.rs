@@ -6,17 +6,16 @@ use shared::bee_msg::target::{
 
 /// Set consistency state for a target
 pub(crate) async fn set_target_state(
-    ctx: Context,
+    app: &impl App,
     req: pm::SetTargetStateRequest,
 ) -> Result<pm::SetTargetStateResponse> {
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_pre_shutdown(app)?;
 
     let state: TargetConsistencyState = req.consistency_state().try_into()?;
     let target: EntityId = required_field(req.target)?.try_into()?;
 
-    let (target, node_uid) = ctx
-        .db
-        .write_tx(move |tx| {
+    let (target, node_uid) = app
+        .db_write_tx(move |tx| {
             let target = target.resolve(tx, EntityType::Target)?;
 
             let node: i64 = tx.query_row_cached(
@@ -35,9 +34,8 @@ pub(crate) async fn set_target_state(
         })
         .await?;
 
-    let resp: SetTargetConsistencyStatesResp = ctx
-        .conn
-        .request(
+    let resp: SetTargetConsistencyStatesResp = app
+        .beemsg_request(
             node_uid,
             &SetTargetConsistencyStates {
                 node_type: target.node_type(),
@@ -55,8 +53,7 @@ pub(crate) async fn set_target_state(
         );
     }
 
-    notify_nodes(
-        &ctx,
+    app.beemsg_send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &RefreshTargetStates { ack_id: "".into() },
     )

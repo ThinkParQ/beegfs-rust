@@ -3,11 +3,11 @@ use shared::bee_msg::buddy_group::SetMirrorBuddyGroup;
 
 /// Creates a new buddy group
 pub(crate) async fn create_buddy_group(
-    ctx: Context,
+    app: &impl App,
     req: pm::CreateBuddyGroupRequest,
 ) -> Result<pm::CreateBuddyGroupResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(app)?;
 
     let node_type: NodeTypeServer = req.node_type().try_into()?;
     let alias: Alias = required_field(req.alias)?.try_into()?;
@@ -15,9 +15,8 @@ pub(crate) async fn create_buddy_group(
     let p_target: EntityId = required_field(req.primary_target)?.try_into()?;
     let s_target: EntityId = required_field(req.secondary_target)?.try_into()?;
 
-    let (group, p_target, s_target) = ctx
-        .db
-        .write_tx(move |tx| {
+    let (group, p_target, s_target) = app
+        .db_write_tx(move |tx| {
             let p_target = p_target.resolve(tx, EntityType::Target)?;
             let s_target = s_target.resolve(tx, EntityType::Target)?;
 
@@ -46,8 +45,7 @@ pub(crate) async fn create_buddy_group(
 
     log::info!("Buddy group created: {group}");
 
-    notify_nodes(
-        &ctx,
+    app.beemsg_send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
         &SetMirrorBuddyGroup {
             ack_id: "".into(),

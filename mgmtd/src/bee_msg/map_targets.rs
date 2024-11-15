@@ -4,26 +4,25 @@ use shared::bee_msg::target::*;
 impl HandleWithResponse for MapTargets {
     type Response = MapTargetsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
-        ctx.db
-            .write_tx(move |tx| {
-                // Check node Id exists
-                let node = LegacyId {
-                    node_type: NodeType::Storage,
-                    num_id: self.node_id,
-                }
-                .resolve(tx, EntityType::Node)?;
-                // Check all target Ids exist
-                db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
-                // Due to the check above, this must always match all the given ids
-                db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
-                Ok(())
-            })
-            .await?;
+        app.db_write_tx(move |tx| {
+            // Check node Id exists
+            let node = LegacyId {
+                node_type: NodeType::Storage,
+                num_id: self.node_id,
+            }
+            .resolve(tx, EntityType::Node)?;
+            // Check all target Ids exist
+            db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
+            // Due to the check above, this must always match all the given ids
+            db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
+            Ok(())
+        })
+        .await?;
 
         // At this point, all mappings must have been successful
 
@@ -33,8 +32,7 @@ impl HandleWithResponse for MapTargets {
             self.node_id
         );
 
-        notify_nodes(
-            ctx,
+        app.beemsg_send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
             &MapTargets {
                 target_ids: self.target_ids.clone(),

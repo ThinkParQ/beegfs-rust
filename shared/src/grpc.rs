@@ -50,7 +50,7 @@ macro_rules! impl_grpc_handler {
                 // It assumes what is passed to the handler function and that might be different
                 // for different users of this.
                 // I don't have a quick idea how to fix this in an elegant way, so we keep it for.
-                let res = $impl_fn::$impl_fn(self.ctx.clone(), req.into_inner()).await;
+                let res = $impl_fn::$impl_fn(&self.app, req.into_inner()).await;
 
                 match res {
                     Ok(res) => Ok(Response::new(res)),

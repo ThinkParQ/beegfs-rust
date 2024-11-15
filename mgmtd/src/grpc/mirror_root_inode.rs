@@ -5,16 +5,15 @@ use shared::bee_msg::buddy_group::{SetMetadataMirroring, SetMetadataMirroringRes
 
 /// Enable metadata mirroring for the root directory
 pub(crate) async fn mirror_root_inode(
-    ctx: Context,
+    app: &impl App,
     _req: pm::MirrorRootInodeRequest,
 ) -> Result<pm::MirrorRootInodeResponse> {
-    needs_license(&ctx, LicensedFeature::Mirroring)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Mirroring)?;
+    fail_on_pre_shutdown(app)?;
 
-    let offline_timeout = ctx.info.user_config.node_offline_timeout.as_secs();
-    let meta_root = ctx
-        .db
-        .read_tx(move |tx| {
+    let offline_timeout = app.static_info().user_config.node_offline_timeout.as_secs();
+    let meta_root = app
+        .db_read_tx(move |tx| {
             let node_uid = match db::misc::get_meta_root(tx)? {
                 MetaRoot::Normal(_, node_uid) => node_uid,
                 MetaRoot::Mirrored(_) => bail!("Root inode is already mirrored"),
@@ -77,13 +76,12 @@ communicated during the last {offline_timeout}s."
         })
         .await?;
 
-    let resp: SetMetadataMirroringResp = ctx
-        .conn
-        .request(meta_root, &SetMetadataMirroring {})
+    let resp: SetMetadataMirroringResp = app
+        .beemsg_request(meta_root, &SetMetadataMirroring {})
         .await?;
 
     match resp.result {
-        OpsErr::SUCCESS => ctx.db.write_tx(db::misc::enable_metadata_mirroring).await?,
+        OpsErr::SUCCESS => app.db_write_tx(db::misc::enable_metadata_mirroring).await?,
         _ => bail!(
             "The root meta server failed to mirror the root inode: {:?}",
             resp.result
