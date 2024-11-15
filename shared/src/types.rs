@@ -1,6 +1,7 @@
 //! Various BeeGFS type definitions, mainly for use by BeeMsg.
 
 use crate::bee_serde::*;
+use crate::impl_macros::*;
 use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;
 use core::hash::Hash;

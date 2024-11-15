@@ -1,6 +1,7 @@
 //! BeeGFS network message definitions
 
 use crate::bee_serde::*;
+use crate::impl_macros::*;
 use crate::types::*;
 use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;

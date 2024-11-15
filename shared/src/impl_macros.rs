@@ -38,6 +38,8 @@ macro_rules! impl_enum_bee_msg_traits {
     };
 }
 
+pub(crate) use impl_enum_bee_msg_traits;
+
 macro_rules! impl_enum_user_str {
     ($type:ty, $($variant:path => $text:literal),+ $(,)?) => {
         impl $type {
@@ -57,6 +59,8 @@ macro_rules! impl_enum_user_str {
         }
     };
 }
+
+pub(crate) use impl_enum_user_str;
 
 #[cfg(feature = "grpc")]
 macro_rules! impl_enum_protobuf_traits {
@@ -93,3 +97,6 @@ macro_rules! impl_enum_protobuf_traits {
         }
     };
 }
+
+#[cfg(feature = "grpc")]
+pub(crate) use impl_enum_protobuf_traits;

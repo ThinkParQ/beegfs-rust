@@ -4,14 +4,12 @@
 //! from, the [serializer](bee_serde), [connection](conn) handling and other utilities and
 //! definitions.
 
-#[macro_use]
-mod impl_macros;
-
 pub mod bee_msg;
 pub mod bee_serde;
 pub mod conn;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+pub(crate) mod impl_macros;
 pub mod journald_logger;
 pub mod parser;
 pub mod run_state;
