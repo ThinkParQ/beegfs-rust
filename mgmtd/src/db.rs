@@ -54,6 +54,26 @@ pub(crate) mod test {
     use super::*;
     use rusqlite::{Connection, Transaction};
 
+    pub(crate) async fn setup_with_test_data() -> Connections {
+        let conns = Connections::new_in_memory();
+
+        conns
+            .conn(|conn| {
+                let tx = conn.transaction().unwrap();
+                sqlite::migrate_schema(&tx, MIGRATIONS).unwrap();
+                // Setup test data
+                tx.execute_batch(include_str!("db/schema/test_data.sql"))
+                    .unwrap();
+                tx.commit().unwrap();
+
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        conns
+    }
+
     /// Sets ups a fresh database instance in memory and fills, with the test data set and provides
     /// a transaction handle.
     pub(crate) fn with_test_data(op: impl FnOnce(&Transaction)) {
