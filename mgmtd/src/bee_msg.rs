@@ -3,7 +3,7 @@
 //! Dispatches the incoming requests (coming from the BeeMsg connection pool), takes appropriate
 //! action in the matching handler and provides a response.
 
-use crate::context::Context;
+use crate::app::*;
 use crate::db;
 use crate::error::TypedError;
 use crate::types::*;
@@ -49,14 +49,14 @@ mod set_target_consistency_states;
 /// Msg request handler for requests where no response is expected.
 /// To handle a message, implement this and add it to the dispatch list with `=> _`.
 trait HandleNoResponse: Msg + Deserializable {
-    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Result<()>;
+    async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<()>;
 }
 
 /// Msg request handler for requests where a response is expected.
 /// To handle a message, implement this and add it to the dispatch list with `=> R`.
 trait HandleWithResponse: Msg + Deserializable {
     type Response: Msg + Serializable;
-    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Result<Self::Response>;
+    async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<Self::Response>;
 
     /// Defines the message to send back on an error during `handle()`. Defaults to
     /// `Response::default()`.
@@ -87,7 +87,7 @@ impl Display for PreShutdownError {
 /// The `=> R` tells the macro that this message handler returns a response. For non-response
 /// messages, put a `=> _` there. Implement the appropriate handler trait for that message or you
 /// will get errors
-pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Result<()> {
+pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) -> Result<()> {
     /// Creates the dispatching match statement
     macro_rules! dispatch_msg {
         ($({$msg_type:path => $r:tt, $ctx_str:literal})*) => {
@@ -106,7 +106,7 @@ pub(crate) async fn dispatch_request(ctx: &Context, mut req: impl Request) -> Re
 
                         log::trace!("INCOMING from {:?}: {:?}", req.addr(), des);
 
-                        let res = des.handle(ctx, &mut req).await;
+                        let res = des.handle(app, &mut req).await;
                         dispatch_msg!(@HANDLE res, $msg_type => $r, $ctx_str)
                     }
                 ),*
@@ -201,38 +201,11 @@ async fn handle_unspecified_msg(req: impl Request) -> Result<()> {
     Ok(())
 }
 
-/// Checks if the management is in pre shutdown state
-fn fail_on_pre_shutdown(ctx: &Context) -> Result<()> {
-    if ctx.run_state.pre_shutdown() {
+/// Fails if the management is in pre shutdown state
+fn fail_on_pre_shutdown(app: &impl App) -> Result<()> {
+    if app.is_pre_shutdown() {
         return Err(anyhow!(PreShutdownError {}));
     }
 
     Ok(())
-}
-
-pub async fn notify_nodes<M: Msg + Serializable>(
-    ctx: &Context,
-    node_types: &'static [NodeType],
-    msg: &M,
-) {
-    log::trace!("NOTIFICATION to {node_types:?}: {msg:?}");
-
-    for t in node_types {
-        if let Err(err) = async {
-            let nodes = ctx
-                .db
-                .read_tx(move |tx| db::node::get_with_type(tx, *t))
-                .await?;
-
-            ctx.conn
-                .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)
-                .await?;
-
-            Ok(()) as Result<_>
-        }
-        .await
-        {
-            log::error!("Notification could not be sent to all {t} nodes: {err:#}");
-        }
-    }
 }

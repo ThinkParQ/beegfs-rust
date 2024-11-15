@@ -4,9 +4,8 @@ use shared::bee_msg::buddy_group::*;
 impl HandleWithResponse for GetMirrorBuddyGroups {
     type Response = GetMirrorBuddyGroupsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = ctx
-            .db
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        let groups: Vec<(BuddyGroupId, TargetId, TargetId)> = app
             .read_tx(move |tx| {
                 tx.query_map_collect(
                     sql!(

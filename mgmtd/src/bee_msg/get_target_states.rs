@@ -5,12 +5,11 @@ use shared::bee_msg::target::*;
 impl HandleWithResponse for GetTargetStates {
     type Response = GetTargetStatesResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let pre_shutdown = ctx.run_state.pre_shutdown();
-        let node_offline_timeout = ctx.info.user_config.node_offline_timeout;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        let pre_shutdown = app.is_pre_shutdown();
+        let node_offline_timeout = app.static_info().user_config.node_offline_timeout;
 
-        let targets = ctx
-            .db
+        let targets = app
             .read_tx(move |tx| {
                 get_targets_with_states(
                     tx,

@@ -3,17 +3,16 @@ use shared::bee_msg::node::RemoveNode;
 
 /// Deletes a node. If it is a meta node, deletes its target first.
 pub(crate) async fn delete_node(
-    ctx: Context,
+    app: &impl App,
     req: pm::DeleteNodeRequest,
 ) -> Result<pm::DeleteNodeResponse> {
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_pre_shutdown(app)?;
 
     let node: EntityId = required_field(req.node)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
-    let node = ctx
-        .db
-        .conn(move |conn| {
+    let node = app
+        .db_conn(move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
             let node = node.resolve(&tx, EntityType::Node)?;
@@ -76,8 +75,7 @@ pub(crate) async fn delete_node(
     if execute {
         log::info!("Node deleted: {node}");
 
-        notify_nodes(
-            &ctx,
+        app.send_notifications(
             match node.node_type() {
                 NodeType::Meta => &[NodeType::Meta, NodeType::Client],
                 NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],

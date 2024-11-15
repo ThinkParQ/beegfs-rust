@@ -2,11 +2,10 @@ use super::*;
 
 /// Delivers the list of pools
 pub(crate) async fn get_pools(
-    ctx: Context,
+    app: &impl App,
     req: pm::GetPoolsRequest,
 ) -> Result<pm::GetPoolsResponse> {
-    let (mut pools, targets, buddy_groups) = ctx
-        .db
+    let (mut pools, targets, buddy_groups) = app
         .read_tx(move |tx| {
             let make_sp = |row: &Row| -> rusqlite::Result<pm::get_pools_response::StoragePool> {
                 Ok(pm::get_pools_response::StoragePool {

@@ -11,33 +11,31 @@ impl HandleWithResponse for SetTargetConsistencyStates {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
         let node_type = self.node_type.try_into()?;
         let msg = self.clone();
 
-        ctx.db
-            .write_tx(move |tx| {
-                // Check given target Ids exist
-                db::target::validate_ids(tx, &msg.target_ids, node_type)?;
+        app.write_tx(move |tx| {
+            // Check given target Ids exist
+            db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
-                if msg.set_online > 0 {
-                    update_last_contact_times(tx, &msg.target_ids, node_type)?;
-                }
+            if msg.set_online > 0 {
+                update_last_contact_times(tx, &msg.target_ids, node_type)?;
+            }
 
-                db::target::update_consistency_states(
-                    tx,
-                    msg.target_ids.into_iter().zip(msg.states.iter().copied()),
-                    node_type,
-                )
-            })
-            .await?;
+            db::target::update_consistency_states(
+                tx,
+                msg.target_ids.into_iter().zip(msg.states.iter().copied()),
+                node_type,
+            )
+        })
+        .await?;
 
         log::info!("Set consistency state for targets {:?}", self.target_ids,);
 
-        notify_nodes(
-            ctx,
+        app.send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
             &RefreshTargetStates { ack_id: "".into() },
         )

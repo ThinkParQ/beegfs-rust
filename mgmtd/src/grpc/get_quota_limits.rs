@@ -4,19 +4,18 @@ use itertools::Itertools;
 use std::fmt::Write;
 
 pub(crate) async fn get_quota_limits(
-    ctx: Context,
+    app: &impl App,
     req: pm::GetQuotaLimitsRequest,
 ) -> Result<RespStream<pm::GetQuotaLimitsResponse>> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
+    fail_on_missing_license(app, LicensedFeature::Quota)?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED_STR);
     }
 
     let pool_id = if let Some(pool) = req.pool {
         let pool: EntityId = pool.try_into()?;
-        let pool_id = ctx
-            .db
+        let pool_id = app
             .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .num_id();
@@ -80,13 +79,14 @@ pub(crate) async fn get_quota_limits(
         inode = QuotaType::Inode.sql_variant()
     );
 
+    let app = app.clone();
     let stream = resp_stream(QUOTA_STREAM_BUF_SIZE, async move |stream| {
         let mut offset = 0;
 
         loop {
             let sql = sql.clone();
-            let entries: Vec<_> = ctx
-                .db
+            let entries: Vec<_> = app
+                .clone()
                 .read_tx(move |tx| {
                     tx.query_map_collect(&sql, [offset, QUOTA_STREAM_PAGE_LIMIT], |row| {
                         Ok(pm::QuotaInfo {

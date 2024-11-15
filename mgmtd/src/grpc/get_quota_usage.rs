@@ -4,12 +4,12 @@ use itertools::Itertools;
 use std::fmt::Write;
 
 pub(crate) async fn get_quota_usage(
-    ctx: Context,
+    app: &impl App,
     req: pm::GetQuotaUsageRequest,
 ) -> Result<RespStream<pm::GetQuotaUsageResponse>> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
+    fail_on_missing_license(app, LicensedFeature::Quota)?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED_STR);
     }
 
@@ -56,8 +56,7 @@ pub(crate) async fn get_quota_usage(
 
     if let Some(pool) = req.pool {
         let pool: EntityId = pool.try_into()?;
-        let pool_uid = ctx
-            .db
+        let pool_uid = app
             .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .uid;
@@ -97,13 +96,13 @@ pub(crate) async fn get_quota_usage(
         inode = QuotaType::Inode.sql_variant()
     );
 
+    let app = app.clone();
     let stream = resp_stream(QUOTA_STREAM_BUF_SIZE, async move |stream| {
         let mut offset = 0;
 
         loop {
             let sql = sql.clone();
-            let entries: Vec<_> = ctx
-                .db
+            let entries: Vec<_> = app
                 .read_tx(move |tx| {
                     tx.query_map_collect(&sql, [offset, QUOTA_STREAM_PAGE_LIMIT], |row| {
                         Ok(pm::QuotaInfo {
@@ -138,7 +137,10 @@ pub(crate) async fn get_quota_usage(
                         .send(pm::GetQuotaUsageResponse {
                             entry: Some(entry),
                             refresh_period_s: Some(
-                                ctx.info.user_config.quota_update_interval.as_secs(),
+                                app.static_info()
+                                    .user_config
+                                    .quota_update_interval
+                                    .as_secs(),
                             ),
                         })
                         .await?;

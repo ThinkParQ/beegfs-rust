@@ -3,13 +3,13 @@ use super::*;
 use std::cmp::Ordering;
 
 pub(crate) async fn set_default_quota_limits(
-    ctx: Context,
+    app: &impl App,
     req: pm::SetDefaultQuotaLimitsRequest,
 ) -> Result<pm::SetDefaultQuotaLimitsResponse> {
-    needs_license(&ctx, LicensedFeature::Quota)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Quota)?;
+    fail_on_pre_shutdown(app)?;
 
-    if !ctx.info.user_config.quota_enable {
+    if !app.static_info().user_config.quota_enable {
         bail!(QUOTA_NOT_ENABLED_STR);
     }
 
@@ -52,27 +52,26 @@ pub(crate) async fn set_default_quota_limits(
         Ok(())
     }
 
-    ctx.db
-        .write_tx(move |tx| {
-            let pool = pool.resolve(tx, EntityType::Pool)?;
-            let pool_id: PoolId = pool.num_id().try_into()?;
+    app.write_tx(move |tx| {
+        let pool = pool.resolve(tx, EntityType::Pool)?;
+        let pool_id: PoolId = pool.num_id().try_into()?;
 
-            if let Some(l) = req.user_space_limit {
-                update(tx, l, pool_id, QuotaIdType::User, QuotaType::Space)?;
-            }
-            if let Some(l) = req.user_inode_limit {
-                update(tx, l, pool_id, QuotaIdType::User, QuotaType::Inode)?;
-            }
-            if let Some(l) = req.group_space_limit {
-                update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Space)?;
-            }
-            if let Some(l) = req.group_inode_limit {
-                update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Inode)?;
-            }
+        if let Some(l) = req.user_space_limit {
+            update(tx, l, pool_id, QuotaIdType::User, QuotaType::Space)?;
+        }
+        if let Some(l) = req.user_inode_limit {
+            update(tx, l, pool_id, QuotaIdType::User, QuotaType::Inode)?;
+        }
+        if let Some(l) = req.group_space_limit {
+            update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Space)?;
+        }
+        if let Some(l) = req.group_inode_limit {
+            update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Inode)?;
+        }
 
-            Ok(())
-        })
-        .await?;
+        Ok(())
+    })
+    .await?;
 
     Ok(pm::SetDefaultQuotaLimitsResponse {})
 }

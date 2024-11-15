@@ -1,9 +1,9 @@
 //! The BeeGFS management service
 
+mod app;
 mod bee_msg;
 mod cap_pool;
 pub mod config;
-mod context;
 pub mod db;
 mod error;
 mod grpc;
@@ -12,10 +12,10 @@ mod quota;
 mod timer;
 mod types;
 
+use crate::app::RuntimeApp;
 use crate::config::Config;
-use crate::context::Context;
 use anyhow::Result;
-use bee_msg::notify_nodes;
+use app::App;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use shared::bee_msg::target::RefreshTargetStates;
@@ -117,7 +117,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     let (shutdown_client_tx, shutdown_client_rx) = mpsc::channel(16);
 
     // Combines all handles for sharing between tasks
-    let ctx = Context::new(
+    let app = RuntimeApp::new(
         conn_pool,
         db,
         license,
@@ -130,23 +130,23 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // Fall back to ipv4 socket if ipv6 is not available
     incoming::listen_tcp(
         beemsg_serve_addr,
-        ctx.clone(),
+        app.clone(),
         info.auth_secret.is_some(),
         run_state.clone(),
     )
     .await?;
 
     // Recv UDP datagrams
-    incoming::recv_udp(udp_socket, ctx.clone(), run_state.clone())?;
+    incoming::recv_udp(udp_socket, app.clone(), run_state.clone())?;
 
     // Run the timers
-    timer::start_tasks(ctx.clone(), run_state.clone());
+    timer::start_tasks(app.clone(), run_state.clone());
 
     // Start gRPC service
-    grpc::serve(ctx.clone(), run_state)?;
+    grpc::serve(app.clone(), run_state)?;
 
     Ok(RunControl {
-        ctx: ctx.clone(),
+        app: app.clone(),
         run_state_control,
         shutdown_client_rx,
     })
@@ -155,7 +155,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
 /// Controls the running application.
 #[derive(Debug)]
 pub struct RunControl {
-    ctx: Context,
+    app: RuntimeApp,
     run_state_control: RunStateControl,
     shutdown_client_rx: mpsc::Receiver<ClientPulledStateNotification>,
 }
@@ -181,7 +181,7 @@ impl RunControl {
         self.run_state_control.pre_shutdown();
 
         let client_list: HashSet<ClientPulledStateNotification> = self
-            .ctx
+            .app
             .db
             .read_tx(move |tx| {
                 let buddy_groups: i64 =
@@ -217,18 +217,18 @@ impl RunControl {
             log::warn!(
                 "Buddy groups are in use and clients are registered - \
                 waiting for all clients to pull state (timeout after {:?}) ...",
-                self.ctx.info.user_config.node_offline_timeout
+                self.app.info.user_config.node_offline_timeout
             );
 
             // Let the nodes pull the new states as soon as possible
-            notify_nodes(
-                &self.ctx,
-                &[NodeType::Client, NodeType::Meta, NodeType::Storage],
-                &RefreshTargetStates {
-                    ack_id: b"".to_vec(),
-                },
-            )
-            .await;
+            self.app
+                .send_notifications(
+                    &[NodeType::Client, NodeType::Meta, NodeType::Storage],
+                    &RefreshTargetStates {
+                        ack_id: b"".to_vec(),
+                    },
+                )
+                .await;
 
             tokio::select! {
                 // Wait for all clients having downloaded the state
@@ -254,7 +254,7 @@ impl RunControl {
 
     /// Waits until every client in `client_list` has been received to the `self.shutdown_client_`
     async fn wait_for_clients(&mut self, mut client_list: HashSet<ClientPulledStateNotification>) {
-        let deadline = Instant::now() + self.ctx.info.user_config.node_offline_timeout;
+        let deadline = Instant::now() + self.app.info.user_config.node_offline_timeout;
 
         let receive_client_ids = async {
             while let Some(client_id) = self.shutdown_client_rx.recv().await {

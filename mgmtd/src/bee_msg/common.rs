@@ -10,12 +10,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Processes incoming node information. Registers new nodes if config allows it
-pub(super) async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
+pub(super) async fn update_node(msg: RegisterNode, app: &impl App) -> Result<NodeId> {
     let nics = msg.nics.clone();
     let requested_node_id = msg.node_id;
-    let info = ctx.info;
+    let registration_disable = app.static_info().user_config.registration_disable;
 
-    let licensed_machines = match ctx.license.get_num_machines() {
+    let licensed_machines = match app.get_licensed_machines() {
         Ok(n) => n,
         Err(err) => {
             log::debug!(
@@ -25,8 +25,7 @@ pub(super) async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<Node
         }
     };
 
-    let (node, meta_root, is_new) = ctx
-        .db
+    let (node, meta_root, is_new) = app
         .write_tx_no_sync(move |tx| {
             let node = if msg.node_id == 0 {
                 // No node ID given => new node
@@ -62,7 +61,7 @@ pub(super) async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<Node
 
                 // Check node registration is allowed. This should ignore registering client
                 // nodes.
-                if msg.node_type != NodeType::Client && info.user_config.registration_disable {
+                if msg.node_type != NodeType::Client && registration_disable {
                     bail!("Registration of new nodes is not allowed");
                 }
 
@@ -131,7 +130,7 @@ client version < 8.0)"
         })
         .await?;
 
-    ctx.conn.replace_node_addrs(
+    app.replace_node_addrs(
         node.uid,
         nics.clone()
             .into_iter()
@@ -148,8 +147,7 @@ client version < 8.0)"
     let node_num_id = node.num_id();
 
     // notify all nodes
-    notify_nodes(
-        ctx,
+    app.send_notifications(
         match node.node_type() {
             NodeType::Meta => &[NodeType::Meta, NodeType::Client],
             NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],

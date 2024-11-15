@@ -3,16 +3,15 @@ use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Assigns a pool to a list of targets and buddy groups.
 pub(crate) async fn assign_pool(
-    ctx: Context,
+    app: &impl App,
     req: pm::AssignPoolRequest,
 ) -> Result<pm::AssignPoolResponse> {
-    needs_license(&ctx, LicensedFeature::Storagepool)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Storagepool)?;
+    fail_on_pre_shutdown(app)?;
 
     let pool: EntityId = required_field(req.pool)?.try_into()?;
 
-    let pool = ctx
-        .db
+    let pool = app
         .write_tx(move |tx| {
             let pool = pool.resolve(tx, EntityType::Pool)?;
             do_assign(tx, pool.num_id().try_into()?, req.targets, req.buddy_groups)?;
@@ -22,8 +21,7 @@ pub(crate) async fn assign_pool(
 
     log::info!("Pool assigned: {pool}");
 
-    notify_nodes(
-        &ctx,
+    app.send_notifications(
         &[NodeType::Meta, NodeType::Storage],
         &RefreshStoragePools { ack_id: "".into() },
     )

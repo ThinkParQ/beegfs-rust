@@ -11,29 +11,28 @@ impl HandleWithResponse for SetStorageTargetInfo {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
         let node_type = self.node_type;
-        ctx.db
-            .write_tx(move |tx| {
-                db::target::get_and_update_capacities(
-                    tx,
-                    self.info.into_iter().map(|e| {
-                        Ok((
-                            e.target_id,
-                            TargetCapacities {
-                                total_space: Some(e.total_space.try_into()?),
-                                total_inodes: Some(e.total_inodes.try_into()?),
-                                free_space: Some(e.free_space.try_into()?),
-                                free_inodes: Some(e.free_inodes.try_into()?),
-                            },
-                        ))
-                    }),
-                    self.node_type.try_into()?,
-                )
-            })
-            .await?;
+        app.write_tx(move |tx| {
+            db::target::get_and_update_capacities(
+                tx,
+                self.info.into_iter().map(|e| {
+                    Ok((
+                        e.target_id,
+                        TargetCapacities {
+                            total_space: Some(e.total_space.try_into()?),
+                            total_inodes: Some(e.total_inodes.try_into()?),
+                            free_space: Some(e.free_space.try_into()?),
+                            free_inodes: Some(e.free_inodes.try_into()?),
+                        },
+                    ))
+                }),
+                self.node_type.try_into()?,
+            )
+        })
+        .await?;
 
         log::debug!("Updated {node_type:?} target info");
 

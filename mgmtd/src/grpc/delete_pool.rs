@@ -3,18 +3,17 @@ use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Deletes a pool. The pool must be empty.
 pub(crate) async fn delete_pool(
-    ctx: Context,
+    app: &impl App,
     req: pm::DeletePoolRequest,
 ) -> Result<pm::DeletePoolResponse> {
-    needs_license(&ctx, LicensedFeature::Storagepool)?;
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_missing_license(app, LicensedFeature::Storagepool)?;
+    fail_on_pre_shutdown(app)?;
 
     let pool: EntityId = required_field(req.pool)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
-    let pool = ctx
-        .db
-        .conn(move |conn| {
+    let pool = app
+        .db_conn(move |conn| {
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
             let pool = pool.resolve(&tx, EntityType::Pool)?;
@@ -51,8 +50,7 @@ are still assigned to this pool"
     if execute {
         log::info!("Pool deleted: {pool}");
 
-        notify_nodes(
-            &ctx,
+        app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
             &RefreshStoragePools { ack_id: "".into() },
         )

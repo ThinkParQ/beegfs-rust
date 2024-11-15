@@ -6,9 +6,8 @@ use shared::bee_msg::node::*;
 impl HandleWithResponse for GetNodes {
     type Response = GetNodesResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let res = ctx
-            .db
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        let res = app
             .read_tx(move |tx| {
                 let node_type = self.node_type;
                 let res = (

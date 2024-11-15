@@ -121,7 +121,7 @@ doc.beegfs.io.",
             let license = unsafe { LicenseVerifier::with_lib(&user_config.license_lib_file) };
 
             if let Err(err) = license
-                .load_and_verify_cert(&user_config.license_cert_file)
+                .load_and_verify_license_cert(&user_config.license_cert_file)
                 .await
             {
                 log::warn!(

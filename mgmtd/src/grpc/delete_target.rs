@@ -4,17 +4,16 @@ use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Deletes a target
 pub(crate) async fn delete_target(
-    ctx: Context,
+    app: &impl App,
     req: pm::DeleteTargetRequest,
 ) -> Result<pm::DeleteTargetResponse> {
-    fail_on_pre_shutdown(&ctx)?;
+    fail_on_pre_shutdown(app)?;
 
     let target: EntityId = required_field(req.target)?.try_into()?;
     let execute: bool = required_field(req.execute)?;
 
-    let target = ctx
-        .db
-        .conn(move |conn| {
+    let target = app
+        .db_conn(move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
             let target = target.resolve(&tx, EntityType::Target)?;
@@ -48,16 +47,14 @@ pub(crate) async fn delete_target(
     if execute {
         log::info!("Target deleted: {target}");
 
-        notify_nodes(
-            &ctx,
+        app.send_notifications(
             &[NodeType::Meta],
             &RefreshCapacityPools { ack_id: "".into() },
         )
         .await;
 
         // Storage targets deletion alter pool membership, so trigger an immediate pool refresh
-        notify_nodes(
-            &ctx,
+        app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
             &RefreshStoragePools { ack_id: "".into() },
         )

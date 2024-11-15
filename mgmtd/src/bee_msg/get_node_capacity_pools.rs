@@ -76,20 +76,22 @@ fn load_buddy_groups_info_by_type(
 impl HandleWithResponse for GetNodeCapacityPools {
     type Response = GetNodeCapacityPoolsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
         // either a NodeNUmID, TargetNumID or BuddyGroupID
 
         let pools: HashMap<PoolId, Vec<Vec<u16>>> = match self.query_type {
             CapacityPoolQueryType::Meta => {
-                let targets = ctx
-                    .db
+                let targets = app
                     .read_tx(|tx| load_targets_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
-                    ctx.info.user_config.cap_pool_meta_limits.clone(),
-                    ctx.info.user_config.cap_pool_dynamic_meta_limits.as_ref(),
+                    app.static_info().user_config.cap_pool_meta_limits.clone(),
+                    app.static_info()
+                        .user_config
+                        .cap_pool_dynamic_meta_limits
+                        .as_ref(),
                     &targets,
                 )?;
 
@@ -105,8 +107,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             }
 
             CapacityPoolQueryType::Storage => {
-                let (targets, pools) = ctx
-                    .db
+                let (targets, pools) = app
                     .read_tx(|tx| {
                         let targets = load_targets_info_by_type(tx, NodeTypeServer::Storage)?;
 
@@ -125,8 +126,11 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     let f_targets = targets.iter().filter(|e| e.pool_id == Some(sp));
 
                     let cp_calc = CapPoolCalculator::new(
-                        ctx.info.user_config.cap_pool_storage_limits.clone(),
-                        ctx.info
+                        app.static_info()
+                            .user_config
+                            .cap_pool_storage_limits
+                            .clone(),
+                        app.static_info()
                             .user_config
                             .cap_pool_dynamic_storage_limits
                             .as_ref(),
@@ -146,14 +150,16 @@ impl HandleWithResponse for GetNodeCapacityPools {
             }
 
             CapacityPoolQueryType::MetaMirrored => {
-                let groups = ctx
-                    .db
+                let groups = app
                     .read_tx(|tx| load_buddy_groups_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
-                    ctx.info.user_config.cap_pool_meta_limits.clone(),
-                    ctx.info.user_config.cap_pool_dynamic_meta_limits.as_ref(),
+                    app.static_info().user_config.cap_pool_meta_limits.clone(),
+                    app.static_info()
+                        .user_config
+                        .cap_pool_dynamic_meta_limits
+                        .as_ref(),
                     &groups,
                 )?;
 
@@ -170,8 +176,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             }
 
             CapacityPoolQueryType::StorageMirrored => {
-                let (groups, pools) = ctx
-                    .db
+                let (groups, pools) = app
                     .read_tx(|tx| {
                         let groups = load_buddy_groups_info_by_type(tx, NodeTypeServer::Storage)?;
 
@@ -190,8 +195,11 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     let f_groups = groups.iter().filter(|e| e.pool_id == Some(sp));
 
                     let cp_calc = CapPoolCalculator::new(
-                        ctx.info.user_config.cap_pool_storage_limits.clone(),
-                        ctx.info
+                        app.static_info()
+                            .user_config
+                            .cap_pool_storage_limits
+                            .clone(),
+                        app.static_info()
                             .user_config
                             .cap_pool_dynamic_storage_limits
                             .as_ref(),

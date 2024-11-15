@@ -4,11 +4,10 @@ use std::str::FromStr;
 
 /// Delivers a list of nodes
 pub(crate) async fn get_nodes(
-    ctx: Context,
+    app: &impl App,
     req: pm::GetNodesRequest,
 ) -> Result<pm::GetNodesResponse> {
-    let (mut nodes, nics, meta_root_node, meta_root_buddy_group, fs_uuid) = ctx
-        .db
+    let (mut nodes, nics, meta_root_node, meta_root_buddy_group, fs_uuid) = app
         .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
             let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {

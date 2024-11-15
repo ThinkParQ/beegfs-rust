@@ -6,8 +6,8 @@ use shared::bee_msg::node::*;
 impl HandleWithResponse for Heartbeat {
     type Response = Ack;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
         update_node(
             RegisterNode {
@@ -23,7 +23,7 @@ impl HandleWithResponse for Heartbeat {
                 port_tcp_unused: self.port_tcp_unused,
                 machine_uuid: self.machine_uuid,
             },
-            ctx,
+            app,
         )
         .await?;
 

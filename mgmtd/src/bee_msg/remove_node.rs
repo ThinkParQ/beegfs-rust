@@ -10,11 +10,10 @@ impl HandleWithResponse for RemoveNode {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
-        let node = ctx
-            .db
+        let node = app
             .write_tx(move |tx| {
                 if self.node_type != NodeType::Client {
                     bail!(
@@ -37,8 +36,7 @@ For server nodes, the grpc handler must be used."
 
         log::info!("Node deleted: {node}");
 
-        notify_nodes(
-            ctx,
+        app.send_notifications(
             match self.node_type {
                 shared::types::NodeType::Meta => &[NodeType::Meta, NodeType::Client],
                 shared::types::NodeType::Storage => {

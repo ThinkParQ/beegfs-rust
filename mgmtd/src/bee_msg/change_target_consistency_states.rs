@@ -11,15 +11,14 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         }
     }
 
-    async fn handle(self, ctx: &Context, __req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
         // self.old_states is currently completely ignored. If something reports a non-GOOD state, I
         // see no apparent reason to that the old state matches before setting. We have the
         // authority, whatever nodes think their old state was doesn't matter.
 
-        let changed = ctx
-            .db
+        let changed = app
             .write_tx(move |tx| {
                 let node_type = self.node_type.try_into()?;
 
@@ -48,8 +47,7 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         );
 
         if changed {
-            notify_nodes(
-                ctx,
+            app.send_notifications(
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &RefreshTargetStates { ack_id: "".into() },
             )

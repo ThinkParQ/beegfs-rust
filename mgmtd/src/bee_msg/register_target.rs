@@ -4,13 +4,12 @@ use shared::bee_msg::target::*;
 impl HandleWithResponse for RegisterTarget {
     type Response = RegisterTargetResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        fail_on_pre_shutdown(ctx)?;
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        fail_on_pre_shutdown(app)?;
 
-        let ctx2 = ctx.clone();
+        let registration_disable = app.static_info().user_config.registration_disable;
 
-        let (id, is_new) = ctx
-            .db
+        let (id, is_new) = app
             .write_tx(move |tx| {
                 // Do not do anything if the target already exists
                 if let Some(id) = try_resolve_num_id(
@@ -22,7 +21,7 @@ impl HandleWithResponse for RegisterTarget {
                     return Ok((id.num_id().try_into()?, false));
                 }
 
-                if ctx2.info.user_config.registration_disable {
+                if registration_disable {
                     bail!("Registration of new targets is not allowed");
                 }
 
