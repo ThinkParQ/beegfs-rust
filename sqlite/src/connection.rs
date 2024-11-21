@@ -148,6 +148,10 @@ impl Connections {
             };
 
             // If there wasn't one left, open a new one.
+            // There is currently no explicit limit set to the number of parallel opens.
+            // There is an implicit limit though defined by the max number of parallel blocking
+            // threads spawned by tokio which can be set by configuring `max_blocking_threads` on
+            // the runtime.
             let mut conn = if let Some(conn) = conn {
                 conn
             } else {
