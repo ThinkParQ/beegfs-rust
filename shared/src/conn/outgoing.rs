@@ -1,9 +1,9 @@
 //! Outgoing communication functionality
-use super::msg_buf::MsgBuf;
 use super::store::Store;
-use crate::bee_msg::Msg;
 use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
+use crate::conn::TCP_BUF_LEN;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::types::{AuthSecret, Uid};
@@ -53,27 +53,27 @@ impl Pool {
     ) -> Result<R> {
         log::trace!("REQUEST to {node_uid:?}: {msg:?}");
 
-        let mut buf = self.store.pop_buf().unwrap_or_default();
+        let mut buf = self.store.pop_buf_or_create();
 
-        buf.serialize_msg(msg)?;
-        self.comm_stream(node_uid, &mut buf, true).await?;
-        let resp = buf.deserialize_msg()?;
+        let msg_len = serialize(msg, &mut buf)?;
+        let resp_header = self.comm_stream(node_uid, &mut buf, msg_len, true).await?;
+        let resp_msg = deserialize_body(&resp_header, &buf[Header::LEN..])?;
 
         self.store.push_buf(buf);
 
-        log::trace!("RESPONSE RECEIVED from {node_uid:?}: {resp:?}");
+        log::trace!("RESPONSE RECEIVED from {node_uid:?}: {resp_msg:?}");
 
-        Ok(resp)
+        Ok(resp_msg)
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
     pub async fn send<M: Msg + Serializable>(&self, node_uid: Uid, msg: &M) -> Result<()> {
         log::trace!("SEND to {node_uid:?}: {msg:?}");
 
-        let mut buf = self.store.pop_buf().unwrap_or_default();
+        let mut buf = self.store.pop_buf_or_create();
 
-        buf.serialize_msg(msg)?;
-        self.comm_stream(node_uid, &mut buf, false).await?;
+        let msg_len = serialize(msg, &mut buf)?;
+        self.comm_stream(node_uid, &mut buf, msg_len, false).await?;
 
         self.store.push_buf(buf);
 
@@ -95,16 +95,19 @@ impl Pool {
     async fn comm_stream(
         &self,
         node_uid: Uid,
-        buf: &mut MsgBuf,
+        buf: &mut [u8],
+        send_len: usize,
         expect_response: bool,
-    ) -> Result<()> {
+    ) -> Result<Header> {
+        debug_assert_eq!(buf.len(), TCP_BUF_LEN);
+
         // 1. Pop open streams until communication succeeds or none are left
         while let Some(stream) = self.store.try_pop_stream(node_uid) {
             match self
-                .write_and_read_stream(buf, stream, expect_response)
+                .write_and_read_stream(buf, stream, send_len, expect_response)
                 .await
             {
-                Ok(_) => return Ok(()),
+                Ok(header) => return Ok(header),
                 Err(err) => {
                     // If the stream doesn't work anymore, just discard it and try the next one
                     log::debug!("Communication using existing stream to {node_uid:?} failed: {err}")
@@ -136,22 +139,27 @@ impl Pool {
                         if let Some(auth_secret) = self.auth_secret {
                             // The provided buffer contains the actual message to be sent later -
                             // obtain an additional one for the auth message
-                            let mut auth_buf = self.store.pop_buf().unwrap_or_default();
-                            auth_buf.serialize_msg(&AuthenticateChannel { auth_secret })?;
-                            auth_buf
-                                .write_to_stream(stream.as_mut())
+                            let mut auth_buf = self.store.pop_buf_or_create();
+                            let msg_len =
+                                serialize(&AuthenticateChannel { auth_secret }, &mut auth_buf)?;
+
+                            stream
+                                .as_mut()
+                                .write_all(&auth_buf[0..msg_len])
                                 .await
                                 .with_context(err_context)?;
+
                             self.store.push_buf(auth_buf);
                         }
 
                         // Communication using the newly opened stream should usually not fail. If
                         // it does, abort. It might be better to just try the next address though.
-                        self.write_and_read_stream(buf, stream, expect_response)
+                        let resp_header = self
+                            .write_and_read_stream(buf, stream, send_len, expect_response)
                             .await
                             .with_context(err_context)?;
 
-                        return Ok(());
+                        return Ok(resp_header);
                     }
                     // If connecting failed, try the next address
                     Err(err) => log::debug!("Connecting to {node_uid:?} via {addr} failed: {err}"),
@@ -165,31 +173,44 @@ impl Pool {
         // 3. Wait for an already open stream becoming available
         let stream = self.store.pop_stream(node_uid).await?;
 
-        self.write_and_read_stream(buf, stream, expect_response)
+        let resp_header = self
+            .write_and_read_stream(buf, stream, send_len, expect_response)
             .await
             .with_context(|| {
                 format!("Communication using existing stream to {node_uid:?} failed")
             })?;
 
-        Ok(())
+        Ok(resp_header)
     }
 
     /// Writes data to the given stream, optionally receives a response and pushes the stream to
     /// the store
     async fn write_and_read_stream(
         &self,
-        buf: &mut MsgBuf,
+        buf: &mut [u8],
         mut stream: StoredStream,
+        send_len: usize,
         expect_response: bool,
-    ) -> Result<()> {
-        buf.write_to_stream(stream.as_mut()).await?;
+    ) -> Result<Header> {
+        stream.as_mut().write_all(&buf[0..send_len]).await?;
 
-        if expect_response {
-            buf.read_from_stream(stream.as_mut()).await?;
-        }
+        let header = if expect_response {
+            // Read header
+            stream.as_mut().read_exact(&mut buf[0..Header::LEN]).await?;
+            let header = deserialize_header(&buf[0..Header::LEN])?;
+
+            // Read body
+            stream
+                .as_mut()
+                .read_exact(&mut buf[Header::LEN..header.msg_len()])
+                .await?;
+            header
+        } else {
+            Header::default()
+        };
 
         self.store.push_stream(stream);
-        Ok(())
+        Ok(header)
     }
 
     /// Broadcasts a BeeMsg datagram to all given nodes using all their known addresses
@@ -202,8 +223,9 @@ impl Pool {
         peers: impl IntoIterator<Item = Uid>,
         msg: &M,
     ) -> Result<()> {
-        let mut buf = self.store.pop_buf().unwrap_or_default();
-        buf.serialize_msg(msg)?;
+        let mut buf = self.store.pop_buf_or_create();
+
+        let msg_len = serialize(msg, &mut buf)?;
 
         for node_uid in peers {
             let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
@@ -221,7 +243,7 @@ impl Pool {
                     continue;
                 }
 
-                if let Err(err) = buf.send_to_socket(&self.udp_socket, addr).await {
+                if let Err(err) = self.udp_socket.send_to(&buf[0..msg_len], addr).await {
                     log::debug!(
                         "Sending datagram to node with uid {node_uid} using {addr} failed: {err}"
                     );
