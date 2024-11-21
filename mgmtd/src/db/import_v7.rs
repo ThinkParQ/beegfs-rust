@@ -86,7 +86,7 @@ targetStates=1
 fn check_target_states(f: &Path) -> Result<()> {
     let s = std::fs::read(f)?;
 
-    let mut des = Deserializer::new(&s, 0);
+    let mut des = Deserializer::new(&s);
     let states = des.map(
         false,
         |des| TargetId::deserialize(des),
@@ -188,7 +188,7 @@ struct ReadNodesResult {
 fn read_nodes(f: &Path) -> Result<ReadNodesResult> {
     let s = std::fs::read(f)?;
 
-    let mut des = Deserializer::new(&s, 0);
+    let mut des = Deserializer::new(&s);
     let version = des.u32()?;
     let root_id = des.u32()?;
     let root_mirrored = des.u8()?;
@@ -299,7 +299,7 @@ fn storage_targets(
 fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
     let s = std::fs::read(f)?;
 
-    let mut des = Deserializer::new(&s, 0);
+    let mut des = Deserializer::new(&s);
     // Serialized as size_t, which should usually be 64 bit.
     let count = des.i64()?;
     let mut used_aliases = vec![];
@@ -428,7 +428,7 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
         Err(err) => return Err(err.into()),
     };
 
-    let mut des = Deserializer::new(&s, 0);
+    let mut des = Deserializer::new(&s);
     let user_inode_limit = des.u64()?;
     let user_space_limit = des.u64()?;
     let group_inode_limit = des.u64()?;
@@ -510,7 +510,7 @@ fn quota_limits(
         Err(err) => return Err(err.into()),
     };
 
-    let mut des = Deserializer::new(&s, 0);
+    let mut des = Deserializer::new(&s);
     let limits = des.seq(false, |des| QuotaEntry::deserialize(des))?;
     des.finish()?;
 
