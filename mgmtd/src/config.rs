@@ -208,7 +208,7 @@ generate_structs! {
     #[arg(value_name = "PATH")]
     auth_file: PathBuf = "/etc/beegfs/conn.auth".into(),
 
-    /// Generic
+    /// General
 
     /// Disables registration of new nodes and targets (clients excluded).
     #[arg(long)]
@@ -249,6 +249,20 @@ generate_structs! {
     #[arg(long)]
     #[arg(value_name = "PATH")]
     license_lib_file: PathBuf = "/opt/beegfs/lib/libbeegfs_license.so".into(),
+
+
+    /// Maximum number of blocking worker threads. [default: 128]
+    ///
+    /// These are started on demand and kept running for some time in idle state before being
+    /// dropped again. Currently, they are only used for parallel database operations. Each thread
+    /// uses its own sqlite connection, meaning an extra open file. Therefore, this settings also
+    /// limits the maximum number of open sqlite files of the process.
+    ///
+    /// This setting only affects systems with high read operation load and should usually be left
+    /// alone.
+    #[arg(long)]
+    #[arg(value_name = "LIMIT")]
+    max_blocking_threads: usize = 128,
 
     // Quota
 
@@ -323,6 +337,8 @@ generate_structs! {
     #[arg(value_parser = integer_range::parse::<u32>)]
     #[serde(deserialize_with = "deserialize_optional_u32_range")]
     quota_group_ids_range: Option<RangeInclusive<u32>> = None,
+
+    // Capacity pools
 
     /// Sets the limits / boundaries of the meta capacity pools.
     #[arg(skip)]

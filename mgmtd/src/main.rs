@@ -83,6 +83,7 @@ doc.beegfs.io.",
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .thread_stack_size(16 * 1024 * 1024)
+        .max_blocking_threads(user_config.max_blocking_threads)
         .build()?;
 
     // Run the tokio executor

@@ -143,7 +143,6 @@ mod test {
             let mut s = s.clone();
             tokio::spawn(async move {
                 s.wait_for_shutdown().await;
-                eprintln!("hello");
             });
         }
 

@@ -1,9 +1,9 @@
 SHELL = /bin/bash
 
 # By default, we don't set a target and use the current default toolchain.
-ifneq ($(TARGET),)
-	export CARGO_BUILD_TARGET := $(TARGET)
-	TARGET_FLAG := --target=$(TARGET)
+ifneq ($(CARGO_TARGET),)
+	export CARGO_BUILD_TARGET := $(CARGO_TARGET)
+	TARGET_FLAG := --target=$(CARGO_TARGET)
 endif
 
 # Defines VERSION from the git history. Used by the binaries to build their own version string.
@@ -11,6 +11,10 @@ endif
 VERSION := $(shell git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0.0.0")
 # Strip the first character, which is usually "v" to allow usage in semver contexts
 VERSION_TRIMMED := $(shell V="$(VERSION)" && echo $${V:1})
+
+ifneq ($(CARGO_LOCKED),)
+	LOCKED_FLAG := --locked
+endif
 
 
 
@@ -25,28 +29,28 @@ all: build
 .PHONY: check
 check:
 	cargo +nightly fmt --check
-	cargo clippy --all-features -- -D warnings
+	cargo clippy $(LOCKED_FLAG) --all-features -- -D warnings
 
 # Run cargo deny
 .PHONY: deny
 deny:
-	cargo deny --all-features check
+	cargo deny $(LOCKED_FLAG) --all-features check
 
 # Run tests
 .PHONY: test
 test:
-	cargo test --all-features
+	cargo test $(LOCKED_FLAG) --all-features
 
 # Build the normal dev/debug profile
 .PHONY: build
 .ONESHELL: build
 build:
 	@set -xe
-	VERSION="$(VERSION)" cargo build
+	VERSION="$(VERSION)" cargo build $(LOCKED_FLAG)
 
 .PHONY: clean
 clean:
-	cargo clean
+	cargo clean $(LOCKED_FLAG)
 
 
 
@@ -56,14 +60,14 @@ clean:
 PACKAGE_DIR := target/package
 
 # Output dir of all artifacts, including the manually generated
-TARGET_DIR := target/$(TARGET)/release
+TARGET_DIR := target/$(CARGO_TARGET)/release
 
 # Define the command to build the release binaries based on configuration
-ifneq ($(TARGET),)
+ifneq ($(CARGO_TARGET),)
 	ifneq ($(GLIBC_VERSION),)
-		RELEASE_BUILD_CMD := cargo zigbuild --target=$(TARGET).$(GLIBC_VERSION)
+		RELEASE_BUILD_CMD := cargo zigbuild --target=$(CARGO_TARGET).$(GLIBC_VERSION)
 	else
-		RELEASE_BUILD_CMD := cargo build --target=$(TARGET)
+		RELEASE_BUILD_CMD := cargo build --target=$(CARGO_TARGET)
 	endif
 else
 	RELEASE_BUILD_CMD := cargo build
@@ -91,7 +95,7 @@ package:
 
 	# Build after cleaning the binary generating crates to prevent accidental reuse of already
 	# stripped binaries.
-	cargo clean $(TARGET_FLAG) --release -p mgmtd
+	cargo clean --locked $(TARGET_FLAG) --release -p mgmtd
 	$(RELEASE_BUILD_CMD)
 
 	# Post process binaries
@@ -101,10 +105,10 @@ package:
 
 	# Build packages
 	# These don't respect CARGO_BUILD_TARGET, so we need to add --target manually using $(TARGET_FLAG)
-	cargo deb $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ \
+	cargo deb --locked $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ \
 		--deb-version="20:$(VERSION_TRIMMED)" \
 		--deb-revision=""
-	cargo deb $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
+	cargo deb --locked $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
 		--deb-version="20:$(VERSION_TRIMMED)" \
 		--deb-revision=""
 
@@ -112,11 +116,11 @@ package:
 	find $(PACKAGE_DIR) -name "*_20:*.deb" -exec bash -c 'mv "$$1" $$(echo "$$1" | sed "s/_20:/_/g")' bash {} \;
 
 	# We add a license field since generate-rpm fails if it is not there (even if license-file is given)
-	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
+	cargo generate-rpm --locked $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
 		--set-metadata='license="BeeGFS EULA"'
-	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
+	cargo generate-rpm --locked $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
 		--set-metadata='license="BeeGFS EULA"'
