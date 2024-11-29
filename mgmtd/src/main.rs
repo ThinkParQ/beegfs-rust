@@ -29,6 +29,21 @@ fn inner_main() -> Result<()> {
 
     let (user_config, info_log) = mgmtd::config::load_and_parse()?;
 
+    // Daemonization
+    // It has to happen as early as possible to make sure all the logs go into the redirected
+    // stderr file. This also means there is no success or failure indication, except for the
+    // daemonization itself.
+    if user_config.daemonize {
+        std::fs::create_dir_all(
+            user_config
+                .daemonize_pid_file
+                .parent()
+                .ok_or_else(|| anyhow!("File does not have a parent folder"))?,
+        )?;
+        let daemonize = daemonize::Daemonize::new().pid_file(&user_config.daemonize_pid_file);
+        daemonize.start().context("Daemonization failed")?;
+    }
+
     // Initialize logging
     match user_config.log_target {
         LogTarget::Std => Ok(env_logger::Builder::from_env(

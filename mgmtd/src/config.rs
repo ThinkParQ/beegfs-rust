@@ -365,6 +365,22 @@ generate_structs! {
     /// which limits shall be used.
     #[arg(skip)]
     cap_pool_dynamic_storage_limits: Option<CapPoolDynamicLimits> = None,
+
+    // Daemonization
+
+    /// Daemonize the process by forking.
+    ///
+    /// Not very user friendly due to the logging, thus hidden. Normal users should use systemd.
+    #[arg(long)]
+    #[arg(hide = true)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    daemonize: bool = false,
+
+    /// The pid file location for the daemonized process.
+    #[arg(long)]
+    #[arg(hide = true)]
+    #[arg(value_name = "PATH")]
+    daemonize_pid_file: PathBuf = "/run/beegfs/mgmtd.pid".into(),
 }
 
 impl Config {
