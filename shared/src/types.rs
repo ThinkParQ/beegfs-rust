@@ -220,8 +220,6 @@ impl Deserializable for TargetConsistencyState {
     }
 }
 
-/// A node type only accepting server nodes.
-
 /// Type of a quota ID as used by BeeMsg
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum QuotaIdType {

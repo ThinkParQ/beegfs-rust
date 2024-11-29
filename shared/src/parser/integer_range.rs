@@ -50,7 +50,7 @@ impl<T> Default for Visitor<T> {
     }
 }
 
-impl<'a, T: FromStr + Copy + Ord> VisitorT<'a> for Visitor<T> {
+impl<T: FromStr + Copy + Ord> VisitorT<'_> for Visitor<T> {
     type Value = RangeInclusive<T>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

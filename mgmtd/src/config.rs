@@ -481,7 +481,7 @@ const fn version_str() -> &'static str {
     }
 }
 
-/// Custom types for user input
+// Custom types for user input
 
 /// Defines where log messages shall be sent to
 #[derive(Clone, Debug, ValueEnum, Deserialize)]

@@ -64,7 +64,7 @@ pub fn parse(input: &str) -> Result<u64> {
 #[derive(Debug, Default)]
 struct Visitor {}
 
-impl<'a> VisitorT<'a> for Visitor {
+impl VisitorT<'_> for Visitor {
     type Value = u64;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
