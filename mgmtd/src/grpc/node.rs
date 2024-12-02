@@ -1,6 +1,5 @@
 use super::*;
 use shared::bee_msg::node::RemoveNode;
-use std::net::Ipv4Addr;
 
 /// Delivers a list of nodes
 pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
@@ -9,13 +8,13 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
         .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
             let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {
-                tx.query_map_collect(
+                tx.prepare_cached(
                     sql!(
                         "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
                         FROM node_nics AS nn
                         INNER JOIN nodes AS n USING(node_uid)
                         ORDER BY nn.node_uid ASC"
-                    ),
+                    ))?.query_and_then(
                     [],
                     |row| {
                         let nic_type = NicType::from_row(row, 3)?.into_proto_i32();
@@ -23,13 +22,13 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
                         Ok((
                             row.get(0)?,
                             pm::get_nodes_response::node::Nic {
-                                addr: Ipv4Addr::from(row.get::<_, [u8; 4]>(1)?).to_string(),
+                                addr: row.get(1)?,
                                 name: row.get(4)?,
                                 nic_type,
                             },
                         ))
                     },
-                )?
+                )?.collect::<Result<Vec<_>>>()?
             } else {
                 vec![]
             };

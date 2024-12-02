@@ -1,6 +1,6 @@
 use super::*;
 use anyhow::bail;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
 /// Fetch all nodes of the given type
 ///
@@ -45,7 +45,7 @@ pub struct Node {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Nic {
-    pub addr: Ipv4Addr,
+    pub addr: IpAddr,
     pub name: Vec<u8>,
     pub nic_type: NicType,
 }
@@ -53,7 +53,7 @@ pub struct Nic {
 impl Default for Nic {
     fn default() -> Self {
         Self {
-            addr: Ipv4Addr::UNSPECIFIED,
+            addr: Ipv4Addr::UNSPECIFIED.into(),
             name: Default::default(),
             nic_type: Default::default(),
         }
@@ -62,7 +62,12 @@ impl Default for Nic {
 
 impl Serializable for Nic {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        ser.u32(u32::from_le_bytes(self.addr.octets()))?;
+        // TODO Ipv6: Change according to the new protocol (https://github.com/ThinkParQ/beegfs-rs/issues/145)
+        if let IpAddr::V4(addr) = self.addr {
+            ser.u32(u32::from_le_bytes(addr.octets()))?;
+        } else {
+            bail!("Ipv6 addresses are not yet allowed");
+        }
 
         if self.name.len() > 16 {
             bail!("Nic alias can not be longer than 16 bytes");

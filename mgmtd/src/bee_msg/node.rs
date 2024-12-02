@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
+use db::node_nic::map_bee_msg_nics;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
 use shared::types::{NodeId, TargetId, MGMTD_ID, MGMTD_UID};
@@ -34,15 +35,7 @@ impl HandleWithResponse for GetNodes {
             .map(|n| Node {
                 alias: n.alias.into_bytes(),
                 num_id: n.id,
-                nic_list: res
-                    .1
-                    .iter()
-                    .filter(|e| e.node_uid == n.uid)
-                    .map(|e| Nic {
-                        addr: e.addr,
-                        name: e.name.to_string().into_bytes(),
-                        nic_type: e.nic_type,
-                    })
+                nic_list: map_bee_msg_nics(res.1.iter().filter(|e| e.node_uid == n.uid).cloned())
                     .collect(),
                 port: n.port,
                 _unused_tcp_port: n.port,
@@ -116,16 +109,7 @@ impl HandleWithResponse for HeartbeatRequest {
             .await
             .unwrap_or_default();
 
-        let (alias, nics) = (
-            alias,
-            nics.into_iter()
-                .map(|e| Nic {
-                    addr: e.addr,
-                    name: e.name.into_bytes(),
-                    nic_type: shared::types::NicType::Ethernet,
-                })
-                .collect(),
-        );
+        let (alias, nics) = (alias, map_bee_msg_nics(nics).collect());
 
         let resp = Heartbeat {
             instance_version: 0,
@@ -286,7 +270,7 @@ client version < 8.0)"
         node.uid,
         nics.clone()
             .into_iter()
-            .map(|e| SocketAddr::new(e.addr.into(), msg.port))
+            .map(|e| SocketAddr::new(e.addr, msg.port))
             .collect::<Arc<_>>(),
     );
 
