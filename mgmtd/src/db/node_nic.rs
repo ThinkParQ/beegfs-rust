@@ -1,6 +1,6 @@
 //! Functions for node nic management.
 use super::*;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 /// Retrieves all node addresses grouped by EntityUID.
@@ -21,7 +21,8 @@ pub(crate) fn get_all_addrs(tx: &Transaction) -> Result<Vec<(Uid, Vec<SocketAddr
     let mut cur: Option<&mut (Uid, Vec<SocketAddr>)> = None;
     while let Some(row) = rows.next()? {
         let node_uid = row.get(0)?;
-        let addr = SocketAddr::new(row.get::<_, [u8; 4]>(1)?.into(), row.get(2)?);
+        let addr: IpAddr = row.get_ref(1)?.as_str()?.parse()?;
+        let addr = SocketAddr::new(addr, row.get(2)?);
 
         if cur.is_some() && cur.as_ref().unwrap().0 == node_uid {
             #[allow(clippy::unnecessary_unwrap)]
@@ -40,17 +41,17 @@ pub(crate) fn get_all_addrs(tx: &Transaction) -> Result<Vec<(Uid, Vec<SocketAddr
 #[allow(dead_code)]
 pub(crate) struct NodeNic {
     pub node_uid: Uid,
-    pub addr: Ipv4Addr,
+    pub addr: IpAddr,
     pub port: Port,
     pub nic_type: NicType,
     pub name: String,
 }
 
 impl NodeNic {
-    fn from_row(row: &Row) -> rusqlite::Result<Self> {
+    fn from_row(row: &Row) -> Result<Self> {
         Ok(NodeNic {
             node_uid: row.get(0)?,
-            addr: row.get::<_, [u8; 4]>(1)?.into(),
+            addr: row.get_ref(1)?.as_str()?.parse::<IpAddr>()?,
             port: row.get(2)?,
             nic_type: NicType::from_row(row, 3)?,
             name: row.get(4)?,
@@ -58,40 +59,50 @@ impl NodeNic {
     }
 }
 
+/// Maps a list of NodeNic to an iterator of shared::bee_msg::node::Nic for use with BeeMsg
+pub(crate) fn map_bee_msg_nics(
+    nics: impl IntoIterator<Item = NodeNic>,
+) -> impl Iterator<Item = shared::bee_msg::node::Nic> {
+    nics.into_iter()
+        // TODO Ipv6: Remove the Ipv4 filter when protocol changes (https://github.com/ThinkParQ/beegfs-rs/issues/145)
+        .filter(|e| e.addr.is_ipv4())
+        .map(|e| shared::bee_msg::node::Nic {
+            addr: e.addr,
+            name: e.name.into_bytes(),
+            nic_type: e.nic_type,
+        })
+}
+
 /// Retrieves all node nics for a specific node
 pub(crate) fn get_with_node(tx: &Transaction, node_uid: Uid) -> Result<Vec<NodeNic>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+    tx.prepare_cached(sql!(
+        "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
             FROM node_nics AS nn
             INNER JOIN nodes AS n USING(node_uid)
             WHERE nn.node_uid = ?1
             ORDER BY nn.node_uid ASC"
-        ),
-        [node_uid],
-        NodeNic::from_row,
-    )?)
+    ))?
+    .query_and_then([node_uid], NodeNic::from_row)?
+    .collect::<Result<Vec<_>>>()
 }
 
 /// Retrieves all node nics for the given node type.
 pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Arc<[NodeNic]>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
+    tx.prepare_cached(sql!(
+        "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
             FROM node_nics AS nn
             INNER JOIN nodes AS n USING(node_uid)
             WHERE n.node_type = ?1
             ORDER BY nn.node_uid ASC"
-        ),
-        [node_type.sql_variant()],
-        NodeNic::from_row,
-    )?)
+    ))?
+    .query_and_then([node_type.sql_variant()], NodeNic::from_row)?
+    .collect::<Result<Arc<_>>>()
 }
 
 #[derive(Debug)]
 pub(crate) struct ReplaceNic<'a> {
     pub nic_type: NicType,
-    pub addr: &'a Ipv4Addr,
+    pub addr: &'a IpAddr,
     pub name: &'a str,
 }
 
@@ -114,7 +125,7 @@ pub(crate) fn replace<'a>(
         stmt.execute(params![
             node_uid,
             nic.nic_type.sql_variant(),
-            nic.addr.octets(),
+            nic.addr.to_string(),
             nic.name
         ])?;
     }
@@ -126,6 +137,7 @@ pub(crate) fn replace<'a>(
 mod test {
     use super::*;
     use shared::types::MGMTD_UID;
+    use std::net::Ipv4Addr;
 
     #[test]
     fn get_all_addrs() {
@@ -162,7 +174,7 @@ mod test {
                 tx,
                 102001i64,
                 [ReplaceNic {
-                    addr: &Ipv4Addr::new(1, 2, 3, 4),
+                    addr: &Ipv4Addr::new(1, 2, 3, 4).into(),
                     name: "test",
                     nic_type: NicType::Ethernet,
                 }],

@@ -1,4 +1,5 @@
 use super::*;
+use db::node_nic::map_bee_msg_nics;
 use shared::bee_msg::node::*;
 
 /// Sets the entity alias for any entity
@@ -73,14 +74,7 @@ pub(crate) async fn set_alias(
                 is_root_mirrored: 0,
                 port: node.port,
                 port_tcp_unused: node.port,
-                nic_list: nic_list
-                    .into_iter()
-                    .map(|e| Nic {
-                        addr: e.addr,
-                        name: e.name.into_bytes(),
-                        nic_type: e.nic_type,
-                    })
-                    .collect(),
+                nic_list: map_bee_msg_nics(nic_list).collect(),
                 machine_uuid: vec![],
             },
         )

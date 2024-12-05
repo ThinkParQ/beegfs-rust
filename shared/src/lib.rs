@@ -18,11 +18,11 @@ pub mod run_state;
 pub mod types;
 
 use anyhow::{bail, Result};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 
 #[derive(Debug, Clone)]
 pub struct NetworkAddr {
-    pub addr: Ipv4Addr,
+    pub addr: IpAddr,
     pub name: String,
 }
 
@@ -48,12 +48,15 @@ pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr
         }
 
         for ip in interface.ips {
-            if let IpAddr::V4(ipv4) = ip.ip() {
-                filtered_nics.push(NetworkAddr {
-                    addr: ipv4,
-                    name: interface.name.clone(),
-                });
+            // TODO Ipv6: Remove the Ipv4 filter when protocol changes (https://github.com/ThinkParQ/beegfs-rs/issues/145)
+            if !ip.is_ipv4() {
+                continue;
             }
+
+            filtered_nics.push(NetworkAddr {
+                addr: ip.ip(),
+                name: interface.name.clone(),
+            });
         }
     }
 
