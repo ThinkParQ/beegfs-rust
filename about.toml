@@ -1,4 +1,4 @@
-accepted = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Unicode-DFS-2016", "OpenSSL"]
+accepted = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Unicode-3.0", "OpenSSL"]
 workarounds = ["ring"]
 targets = ["x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl"]
 private = { ignore = true }

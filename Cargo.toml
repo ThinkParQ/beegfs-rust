@@ -23,7 +23,7 @@ regex = "1"
 ring = "0"
 rusqlite = { version = "0", features = ["bundled", "vtab", "array"]}
 serde = "1"
-thiserror = "~1"
+thiserror = "~2"
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
 tokio-stream = { version = "0" }
 tonic = { version = "0", features = ["tls"] }

@@ -15,6 +15,11 @@ jobs:
     env:
       CARGO_LOCKED: 1
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Important to fetch the tags
+          fetch-depth: 0
       - name: Setup Rust
         uses: moonrepo/setup-rust@v1
         with:
@@ -34,11 +39,6 @@ jobs:
           mkdir -p ${HOME}/zig
           tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
           echo ${HOME}/zig >> ${GITHUB_PATH}
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          # Important to fetch the tags
-          fetch-depth: 0
       - name: Configure foreign git repos
         # Make sure the runner has access to the protobuf repo using an access token
         run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf

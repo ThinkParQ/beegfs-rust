@@ -10,6 +10,8 @@ jobs:
     env:
       CARGO_LOCKED: 1
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Setup Rust
         uses: moonrepo/setup-rust@v1
         with:
@@ -18,8 +20,6 @@ jobs:
         run: |
           rustup toolchain install nightly
           rustup component add --toolchain nightly rustfmt
-      - name: Checkout
-        uses: actions/checkout@v4
       - name: Configure foreign git repos
         # Make sure the runner has access to the protobuf repo using an access token
         run: git config --global url."https://${{ secrets.CI_PROTOBUF_ACCESS }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
