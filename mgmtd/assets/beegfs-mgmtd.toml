@@ -121,15 +121,16 @@
 
 ### Capacity pools ### 
 
-# Sets the limits / boundaries of the meta capacity pools
+# Sets the limits / boundaries of the meta capacity pools. If changed, the whole block must
+# be uncommented and set.
 # [cap-pool-meta-limits]
 # inodes-low = "10M"
 # inodes-emergency = "1M"
 # space-low = "10GiB"
 # space-emergency = "3GiB"
 
-# Sets the limits / boundaries of the dynamic meta capacity pools and the thresholds that determine
-# which limits shall be used.
+# Enables dynamic meta capacity pools and sets the thresholds that determine which limits shall
+# be used. Disabled by default. If enabled, the whole block must be uncommented and set.
 # [cap-pool-dynamic-meta-limits]
 # inodes-normal-threshold = "10M"
 # inodes-low-threshold = "1M"
@@ -140,15 +141,16 @@
 # space-low = "20GiB"
 # space-emergency = "6GiB"
 
-# Sets the limits / boundaries of the storage capacity pools
+# Sets the limits / boundaries of the storage capacity pools. If changed, the whole block must
+# be uncommented and set.
 # [cap-pool-storage-limits]
 # inodes-low = "10M"
 # inodes-emergency = "1M"
 # space-low = "512GiB"
 # space-emergency = "10GiB"
 
-# Sets the limits / boundaries of the dynamic storage capacity pools and the thresholds that determine
-# which limits shall be used.
+# Enables dynamic storage capacity pools and sets the thresholds that determine which limits shall
+# be used. Disabled by default. If enabled, the whole block must be uncommented and set.
 # [cap-pool-dynamic-storage-limits]
 # inodes-normal-threshold = "10M"
 # inodes-low-threshold = "1M"
