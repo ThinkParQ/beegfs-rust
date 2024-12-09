@@ -188,7 +188,8 @@ generate_structs! {
 
     /// Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
     ///
-    /// Can be specified multiple times. If not given, all suitable interfaces can be used.
+    /// Can be specified multiple times. The interfaces are reported in the given order. If not
+    /// given, all suitable interfaces can be used.
     #[arg(long, short = 'i')]
     #[arg(value_name = "NAME")]
     interfaces: Vec<String> = vec![],
