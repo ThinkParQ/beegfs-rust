@@ -4,7 +4,7 @@ members = ["shared", "mgmtd", "sqlite", "sqlite_check", "bee_serde_derive"]
 
 [workspace.package]
 edition = "2021"
-authors = ["ThinkParQ Development Team"]
+authors = ["ThinkParQ GmbH"]
 homepage = "https://www.beegfs.io"
 documentation = "https://doc.beegfs.io"
 publish = false
