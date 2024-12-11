@@ -31,18 +31,8 @@ pub struct NetworkAddr {
 /// Only interfaces matching one of the given names in `filter` will be returned, unless the list
 /// is empty.
 pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr>> {
-    let all_interfaces = pnet_datalink::interfaces();
-
-    for f in filter {
-        if !all_interfaces.iter().any(|g| g.name == f.as_ref()) {
-            bail!("Network interface {} doesn't exist", f.as_ref());
-        }
-    }
-
     let mut filtered_nics = vec![];
-
-    for interface in all_interfaces {
-        // if a filter list is specified, filter interfaces by name
+    for interface in pnet_datalink::interfaces() {
         if !filter.is_empty() && !filter.iter().any(|e| interface.name == e.as_ref()) {
             continue;
         }
@@ -59,6 +49,30 @@ pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr
             });
         }
     }
+
+    // Check all filters have been used
+    if !filter
+        .iter()
+        .all(|e| filtered_nics.iter().any(|g| g.name == e.as_ref()))
+    {
+        bail!("At least one network interface doesn't exist");
+    }
+
+    // Sort
+    filtered_nics.sort_unstable_by_key(|k| {
+        if filter.is_empty() {
+            // Move loopbacks to the back
+            k.addr.is_loopback() as usize
+        } else {
+            // Sort by filter
+            filter
+                .iter()
+                .enumerate()
+                .find(|e| e.1.as_ref() == k.name)
+                .map(|e| e.0)
+                .unwrap_or(usize::MAX)
+        }
+    });
 
     Ok(filtered_nics)
 }
