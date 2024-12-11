@@ -188,10 +188,11 @@ generate_structs! {
 
     /// Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
     ///
-    /// Can be specified multiple times. The interfaces are reported in the given order. If not
-    /// given, all suitable interfaces can be used.
-    #[arg(long, short = 'i')]
-    #[arg(value_name = "NAME")]
+    /// Accepts a comma separated list of interface names. They are reported in the given order. If
+    /// not given, all suitable interfaces can be used.
+    #[arg(long)]
+    #[arg(value_name = "NAMES")]
+    #[arg(value_delimiter = ',')]
     interfaces: Vec<String> = vec![],
 
     /// Maximum number of outgoing BeeMsg connections per node. [default: 12]

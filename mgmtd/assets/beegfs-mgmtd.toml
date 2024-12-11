@@ -36,8 +36,7 @@
 # tls-key-file = "/etc/beegfs/key.pem"
 
 # Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
-# Can be specified multiple times. The interfaces are reported in the given order. If not
-# given, all suitable interfaces can be used.
+# The interfaces are reported in the given order. If not given, all suitable interfaces can be used.
 # interfaces = ["eth0", "eth1"]
 
 # Maximum number of outgoing connections per node.
