@@ -62,11 +62,11 @@ jobs:
         run: |
           set +x
           export GPG_TTY=$(tty)
-          echo "${{ secrets.GPGPACKAGEKEY }}" | gpg --import --pinentry-mode loopback --passphrase ${{ secrets.GPGPACKAGEPASSPHRASE }}
+          echo "${{ secrets.PUBLICREPO_GPGPACKAGEKEY }}" | gpg --import --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}
           set -x
           gpg --list-secret-keys
-          rpm --addsign -D "_gpg_name ${{ vars.GPGKEYNAME }}" --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.GPGPACKAGEPASSPHRASE }}" target/package/*.rpm
-          dpkg-sig -v --sign builder --gpg-options "--pinentry-mode loopback --passphrase ${{ secrets.GPGPACKAGEPASSPHRASE }}" target/package/*.deb
+          rpm --addsign -D "_gpg_name ${{ vars.GPGKEYNAME }}" --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}" target/package/*.rpm
+          dpkg-sig -v --sign builder --gpg-options "--pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}" target/package/*.deb
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
