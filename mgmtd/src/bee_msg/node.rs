@@ -251,7 +251,7 @@ client version < 8.0)"
                 msg.nics.iter().map(|e| ReplaceNic {
                     nic_type: e.nic_type,
                     addr: &e.addr,
-                    name: std::str::from_utf8(&e.name).unwrap_or("INVALID_UTF8"),
+                    name: String::from_utf8_lossy(&e.name),
                 }),
             )?;
 

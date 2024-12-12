@@ -1,5 +1,6 @@
 //! Functions for node nic management.
 use super::*;
+use std::borrow::Cow;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
@@ -103,7 +104,7 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Arc
 pub(crate) struct ReplaceNic<'a> {
     pub nic_type: NicType,
     pub addr: &'a IpAddr,
-    pub name: &'a str,
+    pub name: Cow<'a, str>,
 }
 
 /// Replaces all node nics for the given node by UID.
@@ -175,7 +176,7 @@ mod test {
                 102001i64,
                 [ReplaceNic {
                     addr: &Ipv4Addr::new(1, 2, 3, 4).into(),
-                    name: "test",
+                    name: "test".into(),
                     nic_type: NicType::Ethernet,
                 }],
             )
