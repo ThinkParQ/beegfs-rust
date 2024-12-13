@@ -23,6 +23,7 @@ jobs:
       - name: Setup Rust
         uses: moonrepo/setup-rust@v1
         with:
+          components: clippy
           targets: aarch64-unknown-linux-gnu
           bins: cargo-deny, cargo-about, cargo-generate-rpm, cargo-deb, cargo-zigbuild
       - name: Setup nightly toolchain and tools
