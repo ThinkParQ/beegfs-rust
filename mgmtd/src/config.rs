@@ -408,7 +408,7 @@ impl Config {
                 || l.inodes_emergency < self.cap_pool_meta_limits.inodes_emergency
             {
                 bail!(
-                    "At least one capacity pool dynamic meta limit is lower than the default limit"
+                    "At least one of the default or user configured limits in cap-pool-dynamic-meta-limits is lower than the cap-pool-meta-limits"
                 );
             }
         }
@@ -421,7 +421,7 @@ impl Config {
                 || l.space_emergency < self.cap_pool_storage_limits.space_emergency
                 || l.inodes_emergency < self.cap_pool_storage_limits.inodes_emergency
             {
-                bail!("At least one capacity pool dynamic storage limit is lower than the default limit");
+                bail!("At least one of the default or user configured limits in cap-pool-dynamic-storage-limits is lower than the cap-pool-storage-limits");
             }
         }
 

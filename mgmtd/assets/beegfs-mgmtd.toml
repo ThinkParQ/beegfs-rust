@@ -122,7 +122,7 @@
 ### Capacity pools ### 
 
 # Sets the limits / boundaries of the meta capacity pools. If changed, the whole block must
-# be uncommented and set.
+# be uncommented and set. These cannot be lower than the cap-pool-dynamic-meta-limits below.
 # [cap-pool-meta-limits]
 # inodes-low = "10M"
 # inodes-emergency = "1M"
@@ -142,7 +142,7 @@
 # space-emergency = "6GiB"
 
 # Sets the limits / boundaries of the storage capacity pools. If changed, the whole block must
-# be uncommented and set.
+# be uncommented and set. These cannot be lower than the cap-pool-dynamic-storage-limits below.
 # [cap-pool-storage-limits]
 # inodes-low = "10M"
 # inodes-emergency = "1M"
