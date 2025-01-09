@@ -3,7 +3,7 @@ use shared::bee_msg::node::RemoveNode;
 
 /// Delivers a list of nodes
 pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
-    let (mut nodes, nics, meta_root_node) = ctx
+    let (mut nodes, nics, meta_root_node, fs_uuid) = ctx
         .db
         .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
@@ -92,7 +92,10 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
                 None
             };
 
-            Ok((nodes, nics, meta_root_node))
+            let fs_uuid = db::config::get(tx, db::config::Config::FsUuid)
+                .context("Could not read file system UUID from database")?;
+
+            Ok((nodes, nics, meta_root_node, fs_uuid))
         })
         .await?;
 
@@ -109,10 +112,10 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
                 .collect();
         }
     }
-
     Ok(pm::GetNodesResponse {
         nodes,
         meta_root_node: meta_root_node.map(|e| e.into()),
+        fs_uuid,
     })
 }
 

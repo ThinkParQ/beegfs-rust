@@ -872,7 +872,7 @@ dependencies = [
 [[package]]
 name = "protobuf"
 version = "0.1.0"
-source = "git+https://github.com/thinkparq/protobuf?tag=v0.0.0-beta.3#2af0dd5059822d33146cefdcb0e8096a3c56e936"
+source = "git+https://github.com/thinkparq/protobuf?rev=1f7620cf967a53365bcdd69792cf223bddebcf2b#1f7620cf967a53365bcdd69792cf223bddebcf2b"
 dependencies = [
  "prost",
  "prost-types",

@@ -178,6 +178,9 @@ impl Msg for RegisterNode {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterNodeResp {
     pub node_num_id: NodeId,
+    pub grpc_port: Port,
+    #[bee_serde(as = CStr<0>)]
+    pub fs_uuid: Vec<u8>,
 }
 
 impl Msg for RegisterNodeResp {
