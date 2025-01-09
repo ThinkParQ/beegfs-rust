@@ -170,6 +170,12 @@ generate_structs! {
     #[arg(value_name = "PORT")]
     grpc_port: Port = 8010,
 
+    /// Optionally shift all listening ports by this number. [default: 0]
+    #[arg(long)]
+    #[arg(hide = true)]
+    #[arg(value_name = "SHIFT")]
+    port_shift: Port = 0,
+
     /// Disables TLS for gRPC communication.
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
@@ -472,6 +478,20 @@ pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
 
     config.update_from_optional(command_config);
     config.check_validity().context("Invalid config")?;
+
+    if config.port_shift != 0 {
+        // these additions are allowed to overflow, but we will let the user know
+        let mut oflow;
+        (config.beemsg_port, oflow) = config.beemsg_port.overflowing_add(config.port_shift);
+        if oflow {
+            info_log.push("Overflow while adding port shift to beemsg port. Resulting port might be unexpected.".to_string())
+        }
+        (config.grpc_port, oflow) = config.grpc_port.overflowing_add(config.port_shift);
+        if oflow {
+            info_log.push("Overflow while adding port shift to gRPC port. Resulting port might be unexpected.".to_string())
+        }
+    }
+
     Ok((config, info_log))
 }
 
