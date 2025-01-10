@@ -34,7 +34,7 @@ impl Msg for GetNodesResp {
 pub struct Node {
     #[bee_serde(as = CStr<0>)]
     pub alias: Vec<u8>,
-    #[bee_serde(as = Seq<false, _>)]
+    #[bee_serde(as = Seq<true, _>)]
     pub nic_list: Vec<Nic>,
     pub num_id: NodeId,
     pub port: Port,
@@ -62,39 +62,59 @@ impl Default for Nic {
 
 impl Serializable for Nic {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        // TODO Ipv6: Change according to the new protocol (https://github.com/ThinkParQ/beegfs-rs/issues/145)
-        if let IpAddr::V4(addr) = self.addr {
-            ser.u32(u32::from_le_bytes(addr.octets()))?;
-        } else {
-            bail!("Ipv6 addresses are not yet allowed");
+        match self.addr {
+            IpAddr::V4(addr) => {
+                // protocol: IPv4
+                ser.u8(4)?;
+                // address
+                ser.u32(u32::from_le_bytes(addr.octets()))?;
+            }
+            IpAddr::V6(addr) => {
+                // protocol: IPv6
+                ser.u8(6)?;
+                // address
+                ser.u128(u128::from_le_bytes(addr.octets()))?;
+            }
         }
 
-        if self.name.len() > 16 {
-            bail!("Nic alias can not be longer than 16 bytes");
-        }
-        ser.bytes(self.name.as_ref())?;
-        ser.zeroes(16 - self.name.len())?;
+        // Cut off nic name after 15 bytes
+        let name = self.name.chunks(15).next().unwrap_or_default();
+        ser.bytes(name)?;
+        // Fill the rest with zeroes
+        ser.zeroes(16 - name.len())?;
 
         ser.u8(self.nic_type.into_bee_serde())?;
-        ser.zeroes(3)?;
+        ser.zeroes(2)?;
         Ok(())
     }
 }
 
 impl Deserializable for Nic {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        let mut s = Self {
-            addr: des.u32()?.to_le_bytes().into(),
-            name: des.bytes(16)?,
-            nic_type: NicType::try_from_bee_serde(des.u8()?)?,
+        let protocol = des.u8()?;
+        let addr: IpAddr = match protocol {
+            4 => des.u32()?.to_le_bytes().into(),
+            6 => des.u128()?.to_le_bytes().into(),
+            n => bail!("Nic protocol field must be 4 or 6, is {n}"),
         };
 
-        des.skip(3)?;
+        let mut name = des.bytes(15)?;
+        // Ignore the 16th name byte to avoid different names than in C/C++ where this is always set
+        // to 0 on deserialization
+        des.u8()?;
 
-        // This is filled up with null bytes, which we don't want to deal with - we remove them
-        s.name.retain(|b| b != &0);
+        let nic_type = NicType::try_from_bee_serde(des.u8()?)?;
+        des.skip(2)?;
 
-        Ok(s)
+        // The name might be filled with null bytes, which we don't want to deal with - we remove
+        // them
+        name.retain(|b| b != &0);
+
+        Ok(Self {
+            addr,
+            name,
+            nic_type,
+        })
     }
 }
 
@@ -133,7 +153,7 @@ pub struct Heartbeat {
     /// This is transmitted from other nodes but we decided to just use one port for TCP and UDP in
     /// the future
     pub port_tcp_unused: Port,
-    #[bee_serde(as = Seq<false, _>)]
+    #[bee_serde(as = Seq<true, _>)]
     pub nic_list: Vec<Nic>,
     #[bee_serde(as = CStr<0>)]
     pub machine_uuid: Vec<u8>,
@@ -156,7 +176,7 @@ pub struct RegisterNode {
     pub nic_list_version: u64,
     #[bee_serde(as = CStr<0>)]
     pub node_alias: Vec<u8>,
-    #[bee_serde(as = Seq<false, _>)]
+    #[bee_serde(as = Seq<true, _>)]
     pub nics: Vec<Nic>,
     #[bee_serde(as = Int<i32>)]
     pub node_type: NodeType,

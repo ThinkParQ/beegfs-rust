@@ -93,6 +93,8 @@ impl<'a> Serializer<'a> {
     fn_serialize_primitive!(i32, put_i32_le);
     fn_serialize_primitive!(u64, put_u64_le);
     fn_serialize_primitive!(i64, put_i64_le);
+    fn_serialize_primitive!(u128, put_u128_le);
+    fn_serialize_primitive!(i128, put_i128_le);
 
     /// Serialize the given slice as bytes as expected by BeeGFS
     pub fn bytes(&mut self, v: &[u8]) -> Result<()> {
@@ -271,6 +273,8 @@ impl<'a> Deserializer<'a> {
     fn_deserialize_primitive!(i32, get_i32_le);
     fn_deserialize_primitive!(u64, get_u64_le);
     fn_deserialize_primitive!(i64, get_i64_le);
+    fn_deserialize_primitive!(u128, get_u128_le);
+    fn_deserialize_primitive!(i128, get_i128_le);
 
     /// Deserialize a block of bytes as expected by BeeGFS
     pub fn bytes(&mut self, len: usize) -> Result<Vec<u8>> {

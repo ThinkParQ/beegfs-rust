@@ -61,14 +61,14 @@ impl MsgBuf {
             // Serialize body
             let mut ser_body = Serializer::new(&mut body);
             msg.serialize(&mut ser_body)
-                .context("BeeMsg header serialization failed")?;
+                .context("BeeMsg body serialization failed")?;
 
             // Create and serialize header
             let header = Header::new(ser_body.bytes_written(), M::ID, ser_body.msg_feature_flags);
             let mut ser_header = Serializer::new(&mut self.buf);
             header
                 .serialize(&mut ser_header)
-                .context("BeeMsg body serialization failed")?;
+                .context("BeeMsg header serialization failed")?;
 
             *self.header = header;
 
