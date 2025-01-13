@@ -1,4 +1,5 @@
 use super::*;
+use itertools::Itertools;
 use std::cmp::Ordering;
 use std::fmt::Write;
 
@@ -185,6 +186,13 @@ pub(crate) async fn get_quota_limits(
     if let Some(id) = req.quota_id_max {
         write!(r#where, "AND l.quota_id <= {id} ")?;
     }
+    if !req.quota_id_list.is_empty() {
+        write!(
+            r#where,
+            "AND l.quota_id IN ({})",
+            req.quota_id_list.iter().join(",")
+        )?;
+    }
     if req.id_type() != pb::QuotaIdType::Unspecified {
         let t: QuotaIdType = req.id_type().try_into()?;
         write!(r#where, "AND l.id_type = {} ", t.sql_variant())?;
@@ -284,6 +292,13 @@ pub(crate) async fn get_quota_usage(
     }
     if let Some(id) = req.quota_id_max {
         write!(r#where, "AND u.quota_id <= {id} ")?;
+    }
+    if !req.quota_id_list.is_empty() {
+        write!(
+            r#where,
+            "AND u.quota_id IN ({})",
+            req.quota_id_list.iter().join(",")
+        )?;
     }
     if req.id_type() != pb::QuotaIdType::Unspecified {
         let t: QuotaIdType = req.id_type().try_into()?;
