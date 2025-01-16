@@ -360,26 +360,22 @@ pub(crate) async fn get_quota_usage(
         write!(having, "AND sp.pool_uid = {pool_uid} ")?;
     }
     if let Some(exceeded) = req.exceeded {
+        let base = "(space_used > space_limit AND space_limit > -1
+                OR inode_used > inode_limit AND inode_limit > -1)";
         if exceeded {
-            write!(
-                having,
-                "AND (space_used > space_limit OR inode_used > inode_limit) "
-            )?;
+            write!(having, "AND {base} ")?;
         } else {
-            write!(
-                having,
-                "AND (space_used <= space_limit AND inode_used <= inode_limit) "
-            )?;
+            write!(having, "AND NOT {base} ")?;
         }
     }
 
     let sql = format!(
         "SELECT u.quota_id, u.id_type, sp.pool_id, sp.alias, sp.pool_uid,
             MAX(CASE WHEN u.quota_type = {space} THEN
-                COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
+                COALESCE(l.value, d.value, -1)
             END) AS space_limit,
             MAX(CASE WHEN u.quota_type = {inode} THEN
-                COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
+                COALESCE(l.value, d.value, -1)
             END) AS inode_limit,
             SUM(CASE WHEN u.quota_type = {space} THEN u.value END) AS space_used,
             SUM(CASE WHEN u.quota_type = {inode} THEN u.value END) AS inode_used
