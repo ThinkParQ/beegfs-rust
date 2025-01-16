@@ -178,35 +178,59 @@ pub(crate) async fn get_quota_limits(
         bail!(QUOTA_NOT_ENABLED);
     }
 
-    let mut r#where = "TRUE ".to_string();
-
-    if let Some(id) = req.quota_id_min {
-        write!(r#where, "AND l.quota_id >= {id} ")?;
-    }
-    if let Some(id) = req.quota_id_max {
-        write!(r#where, "AND l.quota_id <= {id} ")?;
-    }
-    if !req.quota_id_list.is_empty() {
-        write!(
-            r#where,
-            "AND l.quota_id IN ({})",
-            req.quota_id_list.iter().join(",")
-        )?;
-    }
-    if req.id_type() != pb::QuotaIdType::Unspecified {
-        let t: QuotaIdType = req.id_type().try_into()?;
-        write!(r#where, "AND l.id_type = {} ", t.sql_variant())?;
-    }
-    if let Some(pool) = req.pool {
+    let pool_id = if let Some(pool) = req.pool {
         let pool: EntityId = pool.try_into()?;
         let pool_id = ctx
             .db
             .read_tx(move |tx| pool.resolve(tx, EntityType::Pool))
             .await?
             .num_id();
+        Some(pool_id)
+    } else {
+        None
+    };
 
-        write!(r#where, "AND l.pool_id = {pool_id} ")?;
-    }
+    let mut r#where = "FALSE ".to_string();
+
+    let mut filter =
+        |min: Option<u32>, max: Option<u32>, list: &[u32], typ: QuotaIdType| -> Result<()> {
+            if min.is_some() || max.is_some() || !list.is_empty() {
+                write!(r#where, "OR (l.id_type = {} ", typ.sql_variant())?;
+
+                if min.is_some() || max.is_some() {
+                    write!(
+                        r#where,
+                        "AND l.quota_id BETWEEN {} AND {} ",
+                        min.unwrap_or(0),
+                        max.unwrap_or(u32::MAX)
+                    )?;
+                }
+                if !list.is_empty() {
+                    write!(r#where, "AND l.quota_id IN ({}) ", list.iter().join(","))?;
+                }
+                if let Some(pool_id) = pool_id {
+                    write!(r#where, "AND l.pool_id = {pool_id} ")?;
+                }
+
+                write!(r#where, ") ")?;
+            }
+
+            Ok(())
+        };
+
+    filter(
+        req.user_id_min,
+        req.user_id_max,
+        &req.user_id_list,
+        QuotaIdType::User,
+    )?;
+
+    filter(
+        req.group_id_min,
+        req.group_id_max,
+        &req.group_id_list,
+        QuotaIdType::Group,
+    )?;
 
     let sql = format!(
         "SELECT l.quota_id, l.id_type, l.pool_id, sp.alias, sp.pool_uid,
@@ -284,26 +308,47 @@ pub(crate) async fn get_quota_usage(
         bail!(QUOTA_NOT_ENABLED);
     }
 
-    let mut r#where = "TRUE ".to_string();
+    let mut r#where = "FALSE ".to_string();
+
+    let mut filter =
+        |min: Option<u32>, max: Option<u32>, list: &[u32], typ: QuotaIdType| -> Result<()> {
+            if min.is_some() || max.is_some() || !list.is_empty() {
+                write!(r#where, "OR (u.id_type = {} ", typ.sql_variant())?;
+
+                if min.is_some() || max.is_some() {
+                    write!(
+                        r#where,
+                        "AND u.quota_id BETWEEN {} AND {} ",
+                        min.unwrap_or(0),
+                        max.unwrap_or(u32::MAX)
+                    )?;
+                }
+                if !list.is_empty() {
+                    write!(r#where, "AND u.quota_id IN ({}) ", list.iter().join(","))?;
+                }
+
+                write!(r#where, ") ")?;
+            }
+
+            Ok(())
+        };
+
+    filter(
+        req.user_id_min,
+        req.user_id_max,
+        &req.user_id_list,
+        QuotaIdType::User,
+    )?;
+
+    filter(
+        req.group_id_min,
+        req.group_id_max,
+        &req.group_id_list,
+        QuotaIdType::Group,
+    )?;
+
     let mut having = "TRUE ".to_string();
 
-    if let Some(id) = req.quota_id_min {
-        write!(r#where, "AND u.quota_id >= {id} ")?;
-    }
-    if let Some(id) = req.quota_id_max {
-        write!(r#where, "AND u.quota_id <= {id} ")?;
-    }
-    if !req.quota_id_list.is_empty() {
-        write!(
-            r#where,
-            "AND u.quota_id IN ({})",
-            req.quota_id_list.iter().join(",")
-        )?;
-    }
-    if req.id_type() != pb::QuotaIdType::Unspecified {
-        let t: QuotaIdType = req.id_type().try_into()?;
-        write!(r#where, "AND u.id_type = {} ", t.sql_variant())?;
-    }
     if let Some(pool) = req.pool {
         let pool: EntityId = pool.try_into()?;
         let pool_uid = ctx
@@ -315,26 +360,22 @@ pub(crate) async fn get_quota_usage(
         write!(having, "AND sp.pool_uid = {pool_uid} ")?;
     }
     if let Some(exceeded) = req.exceeded {
+        let base = "(space_used > space_limit AND space_limit > -1
+                OR inode_used > inode_limit AND inode_limit > -1)";
         if exceeded {
-            write!(
-                having,
-                "AND (space_used > space_limit OR inode_used > inode_limit) "
-            )?;
+            write!(having, "AND {base} ")?;
         } else {
-            write!(
-                having,
-                "AND (space_used <= space_limit AND inode_used <= inode_limit) "
-            )?;
+            write!(having, "AND NOT {base} ")?;
         }
     }
 
     let sql = format!(
         "SELECT u.quota_id, u.id_type, sp.pool_id, sp.alias, sp.pool_uid,
             MAX(CASE WHEN u.quota_type = {space} THEN
-                COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
+                COALESCE(l.value, d.value, -1)
             END) AS space_limit,
             MAX(CASE WHEN u.quota_type = {inode} THEN
-                COALESCE(l.value, d.value, CASE WHEN u.value IS NOT NULL THEN -1 END)
+                COALESCE(l.value, d.value, -1)
             END) AS inode_limit,
             SUM(CASE WHEN u.quota_type = {space} THEN u.value END) AS space_used,
             SUM(CASE WHEN u.quota_type = {inode} THEN u.value END) AS inode_used
