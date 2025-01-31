@@ -64,14 +64,11 @@ impl NodeNic {
 pub(crate) fn map_bee_msg_nics(
     nics: impl IntoIterator<Item = NodeNic>,
 ) -> impl Iterator<Item = shared::bee_msg::node::Nic> {
-    nics.into_iter()
-        // TODO Ipv6: Remove the Ipv4 filter when protocol changes (https://github.com/ThinkParQ/beegfs-rs/issues/145)
-        .filter(|e| e.addr.is_ipv4())
-        .map(|e| shared::bee_msg::node::Nic {
-            addr: e.addr,
-            name: e.name.into_bytes(),
-            nic_type: e.nic_type,
-        })
+    nics.into_iter().map(|e| shared::bee_msg::node::Nic {
+        addr: e.addr,
+        name: e.name.into_bytes(),
+        nic_type: e.nic_type,
+    })
 }
 
 /// Retrieves all node nics for a specific node
