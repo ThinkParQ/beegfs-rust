@@ -79,19 +79,33 @@ pub(crate) fn get_targets_with_states(
     let targets = tx.query_map_collect(
         sql!(
             "SELECT t.target_id, t.consistency,
-                (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact)), s_target_id
+                (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact)), gp.p_target_id, gs.s_target_id
             FROM targets AS t
             INNER JOIN nodes AS n USING(node_type, node_id)
-            LEFT JOIN buddy_groups AS g ON g.s_target_id = t.target_id AND g.node_type = t.node_type
+            LEFT JOIN buddy_groups AS gp ON gp.p_target_id = t.target_id AND gp.node_type = t.node_type
+            LEFT JOIN buddy_groups AS gs ON gs.s_target_id = t.target_id AND gs.node_type = t.node_type
             WHERE t.node_type = ?1"
         ),
         [node_type.sql_variant()],
         |row| {
+            let is_primary = row.get::<_, Option<TargetId>>(3)?.is_some();
+            let is_secondary = row.get::<_, Option<TargetId>>(4)?.is_some();
+
             Ok((
                 row.get(0)?,
                 TargetConsistencyState::from_row(row, 1)?,
-                if !pre_shutdown || row.get::<_, Option<TargetId>>(3)?.is_some() {
-                    calc_reachability_state(Duration::from_secs(row.get(2)?), node_offline_timeout)
+                if !pre_shutdown || is_secondary {
+                    let age = Duration::from_secs(row.get(2)?);
+
+                    // We never want to report a primary node of a buddy group as offline since this
+                    // is considered invalid. Instead we just report ProbablyOffline and wait for the switchover.
+                    if !is_primary && age > node_offline_timeout {
+                        TargetReachabilityState::Offline
+                    } else if age > node_offline_timeout / 2 {
+                        TargetReachabilityState::ProbablyOffline
+                    } else {
+                        TargetReachabilityState::Online
+                    }
                 } else {
                     TargetReachabilityState::ProbablyOffline
                 },
@@ -369,51 +383,5 @@ impl HandleWithResponse for SetTargetConsistencyStates {
         Ok(SetTargetConsistencyStatesResp {
             result: OpsErr::SUCCESS,
         })
-    }
-}
-
-/// Calculate reachability state as requested by old BeeGFS code.
-pub(crate) fn calc_reachability_state(
-    contact_age: Duration,
-    timeout: Duration,
-) -> TargetReachabilityState {
-    if contact_age > timeout {
-        TargetReachabilityState::Offline
-    } else if contact_age > timeout / 2 {
-        TargetReachabilityState::ProbablyOffline
-    } else {
-        TargetReachabilityState::Online
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test_calc_reachability_state() {
-        assert_eq!(
-            TargetReachabilityState::Online,
-            calc_reachability_state(Duration::from_secs(5), Duration::from_secs(60))
-        );
-
-        assert_eq!(
-            TargetReachabilityState::Online,
-            calc_reachability_state(Duration::from_secs(30), Duration::from_secs(60))
-        );
-
-        assert_eq!(
-            TargetReachabilityState::ProbablyOffline,
-            calc_reachability_state(Duration::from_secs(31), Duration::from_secs(60))
-        );
-
-        assert_eq!(
-            TargetReachabilityState::ProbablyOffline,
-            calc_reachability_state(Duration::from_secs(60), Duration::from_secs(60))
-        );
-
-        assert_eq!(
-            TargetReachabilityState::Offline,
-            calc_reachability_state(Duration::from_secs(61), Duration::from_secs(60))
-        );
     }
 }

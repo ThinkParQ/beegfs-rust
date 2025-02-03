@@ -31,15 +31,19 @@ pub(crate) async fn get(
             p.pool_uid, p.alias, p.pool_id,
             t.consistency, (UNIXEPOCH('now') - UNIXEPOCH(last_contact)),
             t.free_space, t.free_inodes, t.total_space, t.total_inodes,
-            g.s_target_id
+            gp.p_target_id, gs.s_target_id
         FROM targets_ext AS t
         INNER JOIN nodes_ext AS n USING(node_uid)
         LEFT JOIN pools_ext AS p USING(node_type, pool_id)
-        LEFT JOIN buddy_groups AS g ON g.s_target_id = t.target_id AND g.node_type = t.node_type"
+        LEFT JOIN buddy_groups AS gp ON gp.p_target_id = t.target_id AND gp.node_type = t.node_type
+        LEFT JOIN buddy_groups AS gs ON gs.s_target_id = t.target_id AND gs.node_type = t.node_type"
     );
 
     let targets_f = move |row: &rusqlite::Row| {
         let node_type = NodeType::from_row(row, 3)?.into_proto_i32();
+        let age = Duration::from_secs(row.get(11)?);
+        let is_primary = row.get::<_, Option<TargetId>>(16)?.is_some();
+        let is_secondary = row.get::<_, Option<TargetId>>(17)?.is_some();
 
         Ok(pm::get_targets_response::Target {
             id: Some(pb::EntityIdSet {
@@ -72,14 +76,20 @@ pub(crate) async fn get(
                 None
             },
 
-            reachability_state: if !pre_shutdown || row.get::<_, Option<TargetId>>(16)?.is_some() {
-                calc_reachability_state(Duration::from_secs(row.get(11)?), node_offline_timeout)
-                    .into()
+            reachability_state: if !pre_shutdown || is_secondary {
+                if !is_primary && age > node_offline_timeout {
+                    pb::ReachabilityState::Offline
+                } else if age > node_offline_timeout / 2 {
+                    pb::ReachabilityState::Poffline
+                } else {
+                    pb::ReachabilityState::Online
+                }
+                .into()
             } else {
                 pb::ReachabilityState::Poffline.into()
             },
             consistency_state: TargetConsistencyState::from_row(row, 10)?.into_proto_i32(),
-            last_contact_s: row.get(11)?,
+            last_contact_s: age.as_secs().into(),
             free_space_bytes: row.get(12)?,
             free_inodes: row.get(13)?,
             cap_pool: pb::CapacityPool::Unspecified.into(),
@@ -212,20 +222,6 @@ pub(crate) async fn delete(
     log::warn!("{target:?}");
 
     Ok(pm::DeleteTargetResponse { target })
-}
-
-/// Calculate reachability state
-pub(crate) fn calc_reachability_state(
-    contact_age: Duration,
-    timeout: Duration,
-) -> pb::ReachabilityState {
-    if contact_age > timeout {
-        pb::ReachabilityState::Offline
-    } else if contact_age > timeout / 2 {
-        pb::ReachabilityState::Poffline
-    } else {
-        pb::ReachabilityState::Online
-    }
 }
 
 /// Set consistency state for a target
