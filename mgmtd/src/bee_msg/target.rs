@@ -79,7 +79,7 @@ pub(crate) fn get_targets_with_states(
     let targets = tx.query_map_collect(
         sql!(
             "SELECT t.target_id, t.consistency,
-                (UNIXEPOCH('now') - UNIXEPOCH(n.last_contact)), gp.p_target_id, gs.s_target_id
+                (UNIXEPOCH('now') - UNIXEPOCH(t.last_update)), gp.p_target_id, gs.s_target_id
             FROM targets AS t
             INNER JOIN nodes AS n USING(node_type, node_id)
             LEFT JOIN buddy_groups AS gp ON gp.p_target_id = t.target_id AND gp.node_type = t.node_type
@@ -300,7 +300,7 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
 
                 // Old management updates contact time while handling this message (comes usually in
                 // every 30 seconds), so we do it as well
-                db::node::update_last_contact_for_targets(tx, &self.target_ids, node_type)?;
+                update_times(tx, &self.target_ids, node_type)?;
 
                 let affected = db::target::update_consistency_states(
                     tx,
@@ -358,7 +358,7 @@ impl HandleWithResponse for SetTargetConsistencyStates {
                 db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
                 if msg.set_online > 0 {
-                    db::node::update_last_contact_for_targets(tx, &msg.target_ids, node_type)?;
+                    update_times(tx, &msg.target_ids, node_type)?;
                 }
 
                 db::target::update_consistency_states(
@@ -384,4 +384,34 @@ impl HandleWithResponse for SetTargetConsistencyStates {
             result: OpsErr::SUCCESS,
         })
     }
+}
+
+/// Updates the `last_contact` time for all the nodes belonging to the passed targets and the
+/// targets `last_update` times themselves.
+fn update_times(
+    tx: &Transaction,
+    target_ids: &[TargetId],
+    node_type: NodeTypeServer,
+) -> Result<()> {
+    let target_ids_param = sqlite::rarray_param(target_ids.iter().copied());
+
+    tx.execute_cached(
+        sql!(
+            "UPDATE nodes AS n SET last_contact = DATETIME('now')
+            WHERE n.node_uid IN (
+            SELECT DISTINCT node_uid FROM targets_ext
+            WHERE target_id IN rarray(?1) AND node_type = ?2)"
+        ),
+        rusqlite::params![&target_ids_param, node_type.sql_variant()],
+    )?;
+
+    tx.execute_cached(
+        sql!(
+            "UPDATE targets SET last_update = DATETIME('now')
+            WHERE target_id IN rarray(?1) AND node_type = ?2"
+        ),
+        rusqlite::params![&target_ids_param, node_type.sql_variant()],
+    )?;
+
+    Ok(())
 }

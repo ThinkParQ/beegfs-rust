@@ -29,7 +29,7 @@ pub(crate) async fn get(
         "SELECT t.target_uid, t.alias, t.target_id, t.node_type,
             n.node_uid, n.alias, n.node_id,
             p.pool_uid, p.alias, p.pool_id,
-            t.consistency, (UNIXEPOCH('now') - UNIXEPOCH(last_contact)),
+            t.consistency, (UNIXEPOCH('now') - UNIXEPOCH(t.last_update)),
             t.free_space, t.free_inodes, t.total_space, t.total_inodes,
             gp.p_target_id, gs.s_target_id
         FROM targets_ext AS t
