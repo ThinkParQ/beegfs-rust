@@ -194,31 +194,6 @@ pub(crate) fn count_machines(
     .map_err(|e| anyhow!(e))
 }
 
-/// Updates the `last_contact` time for all the nodes belonging to the passed targets.
-///
-/// BeeGFS considers contact times belonging to targets and only provides target ids in the messages
-/// that are used to update these. This doesn't make sense (a node is the entity that can be
-/// unreachable, not a target), but since there is currently no way to know from which node these
-/// messages come, the nodes to update are determined using target IDs.
-pub(crate) fn update_last_contact_for_targets(
-    tx: &Transaction,
-    target_ids: &[TargetId],
-    node_type: NodeTypeServer,
-) -> Result<usize> {
-    Ok(tx.execute_cached(
-        sql!(
-            "UPDATE nodes AS n SET last_contact = DATETIME('now')
-            WHERE n.node_uid IN (
-            SELECT DISTINCT node_uid FROM targets_ext
-            WHERE target_id IN rarray(?1) AND node_type = ?2)"
-        ),
-        params![
-            &rarray_param(target_ids.iter().copied()),
-            node_type.sql_variant()
-        ],
-    )?)
-}
-
 /// Delete a node from the database.
 pub(crate) fn delete(tx: &Transaction, node_uid: Uid) -> Result<()> {
     let affected = tx.execute_cached(sql!("DELETE FROM nodes WHERE node_uid = ?1"), [node_uid])?;
@@ -310,13 +285,6 @@ mod test {
 
             let clients = node::get_with_type(tx, NodeType::Client).unwrap();
             assert_eq!(2, clients.len());
-        })
-    }
-
-    #[test]
-    fn update_last_contact_for_targets() {
-        with_test_data(|tx| {
-            super::update_last_contact_for_targets(tx, &[1, 2], NodeTypeServer::Meta).unwrap();
         })
     }
 }

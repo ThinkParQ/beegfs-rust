@@ -201,12 +201,10 @@ pub(crate) fn check_and_swap_buddies(
         sql!(
             "SELECT g.group_id, g.node_type FROM buddy_groups_ext AS g
             INNER JOIN targets_ext AS p_t ON p_t.target_uid = p_target_uid
-            INNER JOIN nodes AS p_n ON p_n.node_uid = p_t.node_uid
             INNER JOIN targets_ext AS s_t ON s_t.target_uid = s_target_uid
-            INNER JOIN nodes AS s_n ON s_n.node_uid = s_t.node_uid
-            WHERE (UNIXEPOCH('now') - UNIXEPOCH(p_n.last_contact)) >= ?1
+            WHERE (UNIXEPOCH('now') - UNIXEPOCH(p_t.last_update)) >= ?1
                 AND s_t.consistency == 1
-                AND (UNIXEPOCH('now') - UNIXEPOCH(s_n.last_contact)) < (?1 / 2)"
+                AND (UNIXEPOCH('now') - UNIXEPOCH(s_t.last_update)) < (?1 / 2)"
         ),
         [timeout.as_secs()],
         |row| Ok((row.get(0)?, NodeTypeServer::from_row(row, 1)?)),
@@ -361,9 +359,9 @@ mod test {
     fn swap_buddies_on_timeout() {
         with_test_data(|tx| {
             tx.execute(
-                "UPDATE nodes
-                SET last_contact = DATETIME('now', '-1 hour')
-                WHERE node_uid IN (101001, 102001)",
+                "UPDATE targets
+                SET last_update = DATETIME('now', '-1 hour')
+                WHERE target_uid IN (201001, 202001)",
                 [],
             )
             .unwrap();
@@ -389,9 +387,9 @@ mod test {
             // Trigger timeout for all buddy nodes (including secondaries). This should not cause a
             // switchover
             tx.execute(
-                "UPDATE nodes
-                SET last_contact = DATETIME('now', '-1 hour')
-                WHERE node_uid IN (101001, 101002, 102001, 102002)",
+                "UPDATE targets
+                SET last_update = DATETIME('now', '-1 hour')
+                WHERE target_uid IN (201001, 201002, 202001, 202005)",
                 [],
             )
             .unwrap();
