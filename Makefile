@@ -124,6 +124,10 @@ package:
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
 		--set-metadata='license="BeeGFS EULA"'
+	
+	# Replace tilde in package filename with hypens.
+	# Github release action and api substitutes tilde (~) with dot (.) in file names when uploaded to Github packages. 
+	find $(PACKAGE_DIR)/ -type f \( -name "*~*.deb" -o -name "*~*.rpm" \) -exec bash -c 'mv "$$1" "$${1//\~/-}"' _ {} \;
 
 .PHONY: clean-package
 clean-package:
