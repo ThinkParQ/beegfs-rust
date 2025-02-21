@@ -304,12 +304,9 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
 
                 let affected = db::target::update_consistency_states(
                     tx,
-                    self.target_ids.into_iter().zip(
-                        self.new_states
-                            .iter()
-                            .copied()
-                            .map(TargetConsistencyState::from),
-                    ),
+                    self.target_ids
+                        .into_iter()
+                        .zip(self.new_states.iter().copied()),
                     node_type,
                 )?;
 
@@ -363,9 +360,7 @@ impl HandleWithResponse for SetTargetConsistencyStates {
 
                 db::target::update_consistency_states(
                     tx,
-                    msg.target_ids
-                        .into_iter()
-                        .zip(msg.states.iter().copied().map(TargetConsistencyState::from)),
+                    msg.target_ids.into_iter().zip(msg.states.iter().copied()),
                     node_type,
                 )
             })

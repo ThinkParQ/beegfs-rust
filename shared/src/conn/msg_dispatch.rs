@@ -37,7 +37,7 @@ pub struct StreamRequest<'a> {
     pub(super) buf: &'a mut MsgBuf,
 }
 
-impl<'a> Request for StreamRequest<'a> {
+impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         self.buf.serialize_msg(msg)?;
         self.buf.write_to_stream(self.stream).await
@@ -74,7 +74,7 @@ pub struct SocketRequest<'a> {
     pub(crate) msg_buf: &'a mut MsgBuf,
 }
 
-impl<'a> Request for SocketRequest<'a> {
+impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         self.msg_buf.serialize_msg(msg)?;
 

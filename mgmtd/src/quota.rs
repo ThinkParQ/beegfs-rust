@@ -84,12 +84,12 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 
     // If configured, add range based user IDs
     if let Some(range) = &ctx.info.user_config.quota_user_ids_range {
-        user_ids.extend(range.clone().map(QuotaId::from));
+        user_ids.extend(range.clone());
     }
 
     // If configured, add range based group IDs
     if let Some(range) = &ctx.info.user_config.quota_group_ids_range {
-        group_ids.extend(range.clone().map(QuotaId::from));
+        group_ids.extend(range.clone());
     }
 
     let mut tasks = vec![];
