@@ -1,4 +1,11 @@
 SHELL = /bin/bash
+# Reuse the same shell for all commands in all recipes
+.ONESHELL:
+# Always error out early on any non zero result and echo all commands
+.SHELLFLAGS = -cex
+# Do not echo recipes
+.SILENT:
+
 
 # By default, we don't set a target and use the current default toolchain.
 ifneq ($(CARGO_TARGET),)
@@ -8,7 +15,7 @@ endif
 
 # Defines VERSION from the git history. Used by the binaries to build their own version string.
 # To satisfy semver we fall back to `0.0.0` if there is no matching tag
-VERSION := $(shell git describe --tags --match "v*.*.*" | sed 's/\-/~/g' 2>/dev/null || echo "v0.0.0")
+VERSION := $(shell (git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0.0.0") | sed 's/\-/~/g')
 # Strip the first character, which is usually "v" to allow usage in semver contexts
 VERSION_TRIMMED := $(shell V="$(VERSION)" && echo $${V:1})
 
@@ -43,9 +50,7 @@ test:
 
 # Build the normal dev/debug profile
 .PHONY: build
-.ONESHELL: build
 build:
-	@set -xe
 	VERSION="$(VERSION)" cargo build $(LOCKED_FLAG)
 
 .PHONY: clean
@@ -85,10 +90,7 @@ RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
 # * GLIBC_VERSION: The glibc version to link against when applicable. This requires `cargo-zigbuild`
 #   and the zig compiler to be installed and available.
 .PHONY: package
-.ONESHELL: package
 package:
-	@set -xe
-
 	# Build thirdparty license summary
 	mkdir -p $(TARGET_DIR)
 	cargo about generate about.hbs --all-features -o $(TARGET_DIR)/thirdparty-licenses.html
