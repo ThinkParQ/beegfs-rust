@@ -53,7 +53,7 @@ pub fn derive_bee_serialize(input: proc_macro::TokenStream) -> proc_macro::Token
 /// Takes a struct body and forwards named or unnamed fields to [`iterate_fields()`]
 fn process_data(data: &Data) -> (TokenStream, TokenStream) {
     match data {
-        Data::Struct(ref data) => match data.fields {
+        Data::Struct(data) => match data.fields {
             syn::Fields::Named(ref fields) => {
                 let (ser, des) = iterate_fields(fields.named.iter());
 

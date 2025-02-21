@@ -22,11 +22,7 @@ impl<T> AsyncQueue<T> {
 
     /// Push an item to the queue
     pub fn push(&self, item: T) {
-        {
-            let mut store = self.queue.lock().unwrap();
-            store.push_back(item);
-        }
-
+        self.queue.lock().unwrap().push_back(item);
         self.notification.notify_one();
     }
 

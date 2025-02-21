@@ -131,8 +131,8 @@ pub enum EntityId {
 impl Display for EntityId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EntityId::Alias(ref alias) => Display::fmt(alias, f),
-            EntityId::LegacyID(ref legacy_id) => Display::fmt(legacy_id, f),
+            EntityId::Alias(alias) => Display::fmt(alias, f),
+            EntityId::LegacyID(legacy_id) => Display::fmt(legacy_id, f),
             EntityId::Uid(uid) => write!(f, "uid:{uid}"),
         }
     }

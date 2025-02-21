@@ -82,7 +82,7 @@ impl Stream {
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
         match timeout(TIMEOUT, async {
             match &mut self.stream {
-                InnerStream::Tcp(ref mut s) => {
+                InnerStream::Tcp(s) => {
                     s.read_exact(buf).await?;
                     Ok(()) as Result<_>
                 }
@@ -104,7 +104,7 @@ impl Stream {
     pub async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
         match timeout(TIMEOUT, async {
             match &mut self.stream {
-                InnerStream::Tcp(ref mut s) => {
+                InnerStream::Tcp(s) => {
                     s.write_all(buf).await?;
                     Ok(()) as Result<_>
                 }

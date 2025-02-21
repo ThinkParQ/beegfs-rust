@@ -142,10 +142,7 @@ impl Connections {
         let this = self.clone();
         tokio::task::spawn_blocking(move || {
             // Pop a connection from the stack
-            let conn = {
-                let mut conns = this.conns.lock().unwrap();
-                conns.pop()
-            };
+            let conn = this.conns.lock().unwrap().pop();
 
             // If there wasn't one left, open a new one.
             // There is currently no explicit limit set to the number of parallel opens.
@@ -165,10 +162,7 @@ impl Connections {
             // drop them. There might be severe cases where connections don't work anymore (e.g.
             // one removing or corrupting the database file, the file system breaks, ...), but these
             // are unrecoverable anyway and new connections won't fix anything there.
-            {
-                let mut conns = this.conns.lock().unwrap();
-                conns.push(conn);
-            }
+            this.conns.lock().unwrap().push(conn);
 
             res
         })
