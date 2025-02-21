@@ -1,5 +1,5 @@
 use super::*;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use core::hash::Hash;
 #[cfg(feature = "grpc")]
 use protobuf::beegfs as pb;
@@ -48,7 +48,9 @@ impl TryFrom<String> for Alias {
         }
 
         if !REGEX.is_match(&value) {
-            bail!("invalid alias '{value}': must start with a letter and may only contain letters, digits, '-', '_' and '.'");
+            bail!(
+                "invalid alias '{value}': must start with a letter and may only contain letters, digits, '-', '_' and '.'"
+            );
         }
 
         Ok(Self(value))

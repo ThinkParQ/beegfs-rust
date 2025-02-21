@@ -1,13 +1,13 @@
 //! Outgoing communication functionality
 use super::msg_buf::MsgBuf;
 use super::store::Store;
-use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::Msg;
+use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::types::{AuthSecret, Uid};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::sync::Arc;

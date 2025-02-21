@@ -2,7 +2,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Field, Index, Type};
+use syn::{Data, DeriveInput, Field, Index, Type, parse_macro_input};
 
 /// Auto implement BeeGFS msg serialization and deserialization for a struct.
 ///

@@ -7,7 +7,7 @@ use crate::context::Context;
 use crate::db;
 use crate::error::TypedError;
 use crate::types::*;
-use anyhow::{anyhow, bail, Context as AContext, Result};
+use anyhow::{Context as AContext, Result, anyhow, bail};
 use shared::bee_msg::misc::{GenericResponse, TRY_AGAIN};
 use shared::bee_msg::{Msg, OpsErr};
 use shared::bee_serde::{Deserializable, Serializable};

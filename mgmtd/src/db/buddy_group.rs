@@ -369,12 +369,16 @@ mod test {
             let swaps = super::check_and_swap_buddies(tx, Duration::from_secs(100)).unwrap();
 
             assert_eq!(2, swaps.len());
-            assert!(swaps
-                .iter()
-                .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Meta));
-            assert!(swaps
-                .iter()
-                .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Storage));
+            assert!(
+                swaps
+                    .iter()
+                    .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Meta)
+            );
+            assert!(
+                swaps
+                    .iter()
+                    .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Storage)
+            );
 
             ensure_swapped_buddies(tx);
         })

@@ -17,7 +17,7 @@ pub mod parser;
 pub mod run_state;
 pub mod types;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::net::IpAddr;
 
 #[derive(Debug, Clone)]

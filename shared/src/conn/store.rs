@@ -4,10 +4,10 @@
 //! Also provides a permit system to limit outgoing connections to a defined maximum.
 
 use super::async_queue::AsyncQueue;
-use crate::conn::stream::Stream;
 use crate::conn::MsgBuf;
+use crate::conn::stream::Stream;
 use crate::types::Uid;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::net::SocketAddr;

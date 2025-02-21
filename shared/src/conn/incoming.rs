@@ -3,10 +3,10 @@
 use super::msg_buf::MsgBuf;
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
-use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::Msg;
+use crate::bee_msg::misc::AuthenticateChannel;
 use crate::run_state::RunStateHandle;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;

@@ -1,13 +1,13 @@
 use super::SqliteEnumExt;
-use anyhow::{bail, Result};
-use rusqlite::{params, OptionalExtension, Params, Transaction};
+use anyhow::{Result, bail};
+use rusqlite::{OptionalExtension, Params, Transaction, params};
 use shared::types::*;
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 
 pub(crate) trait ResolveEntityId: std::fmt::Display {
     fn try_resolve(&self, tx: &Transaction, entity_type: EntityType)
-        -> Result<Option<EntityIdSet>>;
+    -> Result<Option<EntityIdSet>>;
 
     fn resolve(&self, tx: &Transaction, entity_type: EntityType) -> Result<EntityIdSet> {
         let res = self.try_resolve(tx, entity_type)?;

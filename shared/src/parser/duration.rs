@@ -2,18 +2,17 @@
 //!
 //! Meant for command line argument and config file parsing.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use regex::Regex;
-use serde::de::{Unexpected, Visitor as VisitorT};
 use serde::Deserializer;
+use serde::de::{Unexpected, Visitor as VisitorT};
 use std::sync::LazyLock;
 use std::time::Duration;
 
 static REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\d+) *(([num]?s|[mhd])?)$").expect("Regex must be valid"));
 
-const EXPECT_STR: &str =
-    "a positive integer representing a time span in seconds or a string containing a \
+const EXPECT_STR: &str = "a positive integer representing a time span in seconds or a string containing a \
      positive integer n with appended time unit in the form \"<n>[[n|u|m]s|m|h|d]\"";
 
 /// Parses a time string in the form `<int>[ns|us|ms|s|m|h|d]` into a [Duration]

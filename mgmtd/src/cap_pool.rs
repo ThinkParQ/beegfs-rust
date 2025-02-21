@@ -2,7 +2,7 @@
 //!
 //! Pools are calculated based on the behavior in old management.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use shared::parser::integer_unit;
 use shared::types::CapacityPool;

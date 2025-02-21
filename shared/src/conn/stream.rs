@@ -1,6 +1,6 @@
 //! Stream communication functionality
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use std::fmt::Debug;
 use std::io;
 use std::net::SocketAddr;

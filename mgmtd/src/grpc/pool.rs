@@ -1,5 +1,5 @@
 use super::*;
-use rusqlite::{named_params, Row};
+use rusqlite::{Row, named_params};
 use shared::bee_msg::storage_pool::RefreshStoragePools;
 
 /// Delivers the list of pools

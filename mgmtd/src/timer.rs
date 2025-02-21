@@ -7,7 +7,7 @@ use crate::quota::update_and_distribute;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::run_state::RunStateHandle;
 use shared::types::NodeType;
-use tokio::time::{sleep, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, sleep};
 
 /// Starts the timed tasks.
 pub(crate) fn start_tasks(ctx: Context, run_state: RunStateHandle) {
@@ -19,7 +19,9 @@ pub(crate) fn start_tasks(ctx: Context, run_state: RunStateHandle) {
 
     if ctx.info.user_config.quota_enable {
         if let Err(err) = ctx.license.verify_feature(LicensedFeature::Quota) {
-            log::error!("Quota is enabled in the config, but the feature could not be verified. Continuing without quota support: {err}");
+            log::error!(
+                "Quota is enabled in the config, but the feature could not be verified. Continuing without quota support: {err}"
+            );
         } else {
             tokio::spawn(update_quota(ctx, run_state));
         }

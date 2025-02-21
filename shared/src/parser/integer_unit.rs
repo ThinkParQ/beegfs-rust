@@ -2,18 +2,17 @@
 //!
 //! Meant for command line argument and config file parsing.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use regex::Regex;
-use serde::de::{Unexpected, Visitor as VisitorT};
 use serde::Deserializer;
+use serde::de::{Unexpected, Visitor as VisitorT};
 use std::sync::LazyLock;
 
 static REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(\d+) *([kMGTPE]?i?)[[:alpha:]]*$").expect("Regex must be valid")
 });
 
-const EXPECT_STR: &str =
-    "a positive integer representing the base value or a string containing a positive \
+const EXPECT_STR: &str = "a positive integer representing the base value or a string containing a positive \
      integer n with appended arbitrary unit with optional SI prefix in the form \
      \"<integer>[k|M|G|T|P|E][i][unit]\"";
 

@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
-use syn::{parse_macro_input, LitStr};
+use syn::{LitStr, parse_macro_input};
 
 /// The global connection handle
 static DB_CONN: OnceLock<Arc<Mutex<rusqlite::Connection>>> = OnceLock::new();

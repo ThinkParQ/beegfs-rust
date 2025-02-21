@@ -1,14 +1,14 @@
 use super::*;
 use db::misc::MetaRoot;
 use protobuf::{beegfs as pb, management as pm};
+use shared::bee_msg::OpsErr;
 use shared::bee_msg::buddy_group::{
     BuddyResyncJobState, GetMetaResyncStats, GetMetaResyncStatsResp, GetStorageResyncStats,
     GetStorageResyncStatsResp, RemoveBuddyGroup, RemoveBuddyGroupResp, SetLastBuddyCommOverride,
     SetMetadataMirroring, SetMetadataMirroringResp, SetMirrorBuddyGroup,
 };
 use shared::bee_msg::target::{RefreshTargetStates, SetTargetConsistencyStatesResp};
-use shared::bee_msg::OpsErr;
-use tokio::time::{sleep, Duration, Instant};
+use tokio::time::{Duration, Instant, sleep};
 
 /// Delivers the list of buddy groups
 pub(crate) async fn get(

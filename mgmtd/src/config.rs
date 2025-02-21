@@ -1,7 +1,7 @@
 //! Program wide config definition and tools for reading and parsing
 
 use crate::cap_pool::{CapPoolDynamicLimits, CapPoolLimits};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::{Deserialize, Deserializer};
@@ -427,7 +427,9 @@ impl Config {
                 || l.space_emergency < self.cap_pool_storage_limits.space_emergency
                 || l.inodes_emergency < self.cap_pool_storage_limits.inodes_emergency
             {
-                bail!("At least one of the default or user configured limits in cap-pool-dynamic-storage-limits is lower than the cap-pool-storage-limits");
+                bail!(
+                    "At least one of the default or user configured limits in cap-pool-dynamic-storage-limits is lower than the cap-pool-storage-limits"
+                );
             }
         }
 

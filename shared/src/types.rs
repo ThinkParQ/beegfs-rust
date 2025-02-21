@@ -1,7 +1,7 @@
 //! Various BeeGFS type definitions, mainly for use by BeeMsg.
 
 use crate::bee_serde::*;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;
 use core::hash::Hash;
 #[cfg(feature = "grpc")]
