@@ -1,10 +1,10 @@
 use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
+use shared::bee_msg::OpsErr;
 use shared::bee_msg::misc::RefreshCapacityPools;
 use shared::bee_msg::target::{
     RefreshTargetStates, SetTargetConsistencyStates, SetTargetConsistencyStatesResp,
 };
-use shared::bee_msg::OpsErr;
 use std::time::Duration;
 
 impl CapacityInfo for &pm::get_targets_response::Target {
@@ -269,7 +269,10 @@ pub(crate) async fn set_state(
         )
         .await?;
     if resp.result != OpsErr::SUCCESS {
-        bail!("Management successfully set the target state, but the target {target} failed to process it: {:?}", resp.result);
+        bail!(
+            "Management successfully set the target state, but the target {target} failed to process it: {:?}",
+            resp.result
+        );
     }
 
     notify_nodes(

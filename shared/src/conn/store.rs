@@ -4,10 +4,10 @@
 //! Also provides a permit system to limit outgoing connections to a defined maximum.
 
 use super::async_queue::AsyncQueue;
-use crate::conn::stream::Stream;
 use crate::conn::MsgBuf;
+use crate::conn::stream::Stream;
 use crate::types::Uid;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -113,21 +113,17 @@ impl Store {
 
     /// Pop a message buffer from the store
     pub fn pop_buf(&self) -> Option<MsgBuf> {
-        let mut bufs = self.bufs.lock().unwrap();
-
-        bufs.pop_front()
+        self.bufs.lock().unwrap().pop_front()
     }
 
     /// Push back a message buffer to the store
     pub fn push_buf(&self, buf: MsgBuf) {
-        let mut bufs = self.bufs.lock().unwrap();
-        bufs.push_back(buf);
+        self.bufs.lock().unwrap().push_back(buf);
     }
 
     /// Get a list of known addresses for the given node UID
     pub fn get_node_addrs(&self, node_uid: Uid) -> Option<Arc<[SocketAddr]>> {
-        let addrs = self.addrs.read().unwrap();
-        addrs.get(&node_uid).cloned()
+        self.addrs.read().unwrap().get(&node_uid).cloned()
     }
 
     /// Replace **all** addresses for the given node UID

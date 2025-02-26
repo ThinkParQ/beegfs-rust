@@ -1,6 +1,6 @@
 //! BeeGFS compatible network message (de-)serialization
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use bytes::{Buf, BufMut, BytesMut};
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -451,10 +451,10 @@ impl<const INCLUDE_SIZE: bool, T: Serializable + Deserializable> BeeSerdeHelper<
 pub struct Map<const INCLUDE_SIZE: bool, K, V>(PhantomData<(K, V)>);
 
 impl<
-        const INCLUDE_SIZE: bool,
-        K: Serializable + Deserializable + Eq + Hash,
-        V: Serializable + Deserializable,
-    > BeeSerdeHelper<HashMap<K, V>> for Map<INCLUDE_SIZE, K, V>
+    const INCLUDE_SIZE: bool,
+    K: Serializable + Deserializable + Eq + Hash,
+    V: Serializable + Deserializable,
+> BeeSerdeHelper<HashMap<K, V>> for Map<INCLUDE_SIZE, K, V>
 {
     fn serialize_as(data: &HashMap<K, V>, ser: &mut Serializer<'_>) -> Result<()> {
         ser.map(

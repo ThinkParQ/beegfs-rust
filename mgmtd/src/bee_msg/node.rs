@@ -4,7 +4,7 @@ use db::misc::MetaRoot;
 use db::node_nic::map_bee_msg_nics;
 use shared::bee_msg::misc::Ack;
 use shared::bee_msg::node::*;
-use shared::types::{NodeId, TargetId, MGMTD_ID, MGMTD_UID};
+use shared::types::{MGMTD_ID, MGMTD_UID, NodeId, TargetId};
 use std::net::SocketAddr;
 use std::sync::Arc;
 

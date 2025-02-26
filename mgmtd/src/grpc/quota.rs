@@ -245,7 +245,7 @@ pub(crate) async fn get_quota_limits(
         inode = QuotaType::Inode.sql_variant()
     );
 
-    let stream = resp_stream(BUF_SIZE, move |stream| async move {
+    let stream = resp_stream(BUF_SIZE, async move |stream| {
         let mut offset = 0;
 
         loop {
@@ -392,7 +392,7 @@ pub(crate) async fn get_quota_usage(
         inode = QuotaType::Inode.sql_variant()
     );
 
-    let stream = resp_stream(BUF_SIZE, move |stream| async move {
+    let stream = resp_stream(BUF_SIZE, async move |stream| {
         let mut offset = 0;
 
         loop {

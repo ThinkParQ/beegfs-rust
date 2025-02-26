@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use core::ffi::{c_char, c_uchar, c_uint};
 use prost::Message;
 use protobuf::license::*;

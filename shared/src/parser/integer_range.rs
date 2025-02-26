@@ -2,10 +2,10 @@
 //!
 //! Meant for command line argument and config file parsing.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use regex::Regex;
-use serde::de::{Unexpected, Visitor as VisitorT};
 use serde::Deserializer;
+use serde::de::{Unexpected, Visitor as VisitorT};
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
 use std::str::FromStr;

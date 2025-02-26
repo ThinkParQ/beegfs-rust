@@ -1,5 +1,5 @@
 use crate::db::*;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use rusqlite::Transaction;
 use shared::bee_msg::buddy_group::CombinedTargetState;
 use shared::bee_msg::quota::QuotaEntry;

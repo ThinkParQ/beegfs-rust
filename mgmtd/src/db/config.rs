@@ -1,6 +1,6 @@
-use anyhow::{bail, Result};
-use rusqlite::{params, Transaction};
-use sqlite::{check_affected_rows, TransactionExt};
+use anyhow::{Result, bail};
+use rusqlite::{Transaction, params};
+use sqlite::{TransactionExt, check_affected_rows};
 use sqlite_check::sql;
 use std::str::FromStr;
 

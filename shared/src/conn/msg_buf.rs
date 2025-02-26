@@ -21,7 +21,7 @@ use super::stream::Stream;
 use crate::bee_msg::header::Header;
 use crate::bee_msg::{Msg, MsgId};
 use crate::bee_serde::{Deserializable, Deserializer, Serializable, Serializer};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use bytes::BytesMut;
 use std::net::SocketAddr;
 use std::sync::Arc;

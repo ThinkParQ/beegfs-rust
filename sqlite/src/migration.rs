@@ -1,5 +1,5 @@
 use crate::Connections;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 

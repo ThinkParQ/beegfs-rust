@@ -1,5 +1,5 @@
 use super::*;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use core::hash::Hash;
 #[cfg(feature = "grpc")]
 use protobuf::beegfs as pb;
@@ -48,7 +48,9 @@ impl TryFrom<String> for Alias {
         }
 
         if !REGEX.is_match(&value) {
-            bail!("invalid alias '{value}': must start with a letter and may only contain letters, digits, '-', '_' and '.'");
+            bail!(
+                "invalid alias '{value}': must start with a letter and may only contain letters, digits, '-', '_' and '.'"
+            );
         }
 
         Ok(Self(value))
@@ -131,8 +133,8 @@ pub enum EntityId {
 impl Display for EntityId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EntityId::Alias(ref alias) => Display::fmt(alias, f),
-            EntityId::LegacyID(ref legacy_id) => Display::fmt(legacy_id, f),
+            EntityId::Alias(alias) => Display::fmt(alias, f),
+            EntityId::LegacyID(legacy_id) => Display::fmt(legacy_id, f),
             EntityId::Uid(uid) => write!(f, "uid:{uid}"),
         }
     }

@@ -5,10 +5,10 @@ use crate::db;
 use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
 use anyhow::{Context as AnyhowContext, Result};
+use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
 };
-use shared::bee_msg::OpsErr;
 use shared::types::{NodeType, PoolId, QuotaId, TargetId, Uid};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
@@ -84,12 +84,12 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 
     // If configured, add range based user IDs
     if let Some(range) = &ctx.info.user_config.quota_user_ids_range {
-        user_ids.extend(range.clone().map(QuotaId::from));
+        user_ids.extend(range.clone());
     }
 
     // If configured, add range based group IDs
     if let Some(range) = &ctx.info.user_config.quota_group_ids_range {
-        group_ids.extend(range.clone().map(QuotaId::from));
+        group_ids.extend(range.clone());
     }
 
     let mut tasks = vec![];

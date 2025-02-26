@@ -1,9 +1,9 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use log::LevelFilter;
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
-use mgmtd::{start, StaticInfo};
+use mgmtd::{StaticInfo, start};
 use shared::journald_logger;
 use shared::types::AuthSecret;
 use std::backtrace::{Backtrace, BacktraceStatus};
