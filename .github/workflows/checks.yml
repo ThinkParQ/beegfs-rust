@@ -16,6 +16,7 @@ jobs:
         uses: moonrepo/setup-rust@v1
         with:
           components: clippy
+          bins: cargo-deny
       - name: Setup nightly toolchain and tools
         run: |
           rustup toolchain install nightly
@@ -27,3 +28,5 @@ jobs:
         run: make check
       - name: Run tests
         run: make test
+      - name: License and compliance
+        run: make deny
