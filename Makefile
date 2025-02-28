@@ -9,8 +9,10 @@ SHELL = /bin/bash
 
 # By default, we don't set a target and use the current default toolchain.
 ifneq ($(CARGO_TARGET),)
-	export CARGO_BUILD_TARGET := $(CARGO_TARGET)
-	TARGET_FLAG := --target=$(CARGO_TARGET)
+    export CARGO_BUILD_TARGET := $(CARGO_TARGET)
+    # CAUTION: Do not use tabs to indent here, because it changes the scoping to the local recipe
+    # and doesn't make the variable globally available
+    TARGET_FLAG := --target=$(CARGO_TARGET)
 endif
 
 # Defines VERSION from the git history. Used by the binaries to build their own version string.
@@ -20,7 +22,9 @@ VERSION := $(shell (git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0
 VERSION_TRIMMED := $(shell V="$(VERSION)" && echo $${V:1})
 
 ifneq ($(CARGO_LOCKED),)
-	LOCKED_FLAG := --locked
+    # CAUTION: Do not use tabs to indent here, because it changes the scoping to the local recipe
+    # and doesn't make the variable globally available
+    LOCKED_FLAG := --locked
 endif
 
 
