@@ -33,10 +33,8 @@ jobs:
           sudo apt install --yes /tmp/dpkg-sig_0.13.1+nmu4_all.deb rpm gnupg2
           rustup toolchain install nightly
           rustup component add --toolchain nightly rustfmt
-          # Install latest zig release, needed for cargo-zigbuild
-          curl -s https://api.github.com/repos/ziglang/zig/releases/latest \
-            | grep -w "name" | grep -Eo -m1 "[0-9]+\.[0-9]+\.[0-9]+" \
-            | xargs -I {} wget https://ziglang.org/download/{}/zig-linux-x86_64-{}.tar.xz -qO zig.tar.xz
+          # Install zig 0.13 release, needed for cargo-zigbuild (latest release doesn't work right now)
+          wget https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -qO zig.tar.xz
           mkdir -p ${HOME}/zig
           tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
           echo ${HOME}/zig >> ${GITHUB_PATH}
@@ -59,19 +57,33 @@ jobs:
           BIN_UTIL_PREFIX: aarch64-linux-gnu-
           GLIBC_VERSION: 2.27
         run: make package
-      - name: Signing packages
+      - name: Generate checksums for all files
         run: |
-          set +x
+          cd target/package
+          rm -rf checksums.txt
+          for file in *.rpm *.deb; do
+            # Skip if it's a directory
+            if [ -f "$file" ]; then
+                sha256sum "$file" >> checksums.txt
+            fi
+          done
+      - name: show checksums
+        run: cat target/package/checksums.txt
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.PUBLICREPO_GPGPACKAGEKEY }}
+          passphrase: ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}
+      - name: Sign checksums file
+        run: |
+          cd target/package
           export GPG_TTY=$(tty)
-          echo "${{ secrets.PUBLICREPO_GPGPACKAGEKEY }}" | gpg --import --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}
-          set -x
-          gpg --list-secret-keys
-          rpm --addsign -D "_gpg_name ${{ vars.GPGKEYNAME }}" --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}" target/package/*.rpm
-          dpkg-sig -v --sign builder --gpg-options "--pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}" target/package/*.deb
+          gpg --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }} --trust-model always --detach-sign -o checksums.txt.sig -r packages@beegfs.com checksums.txt 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "target/package/*.deb,target/package/*.rpm"
+          artifacts: "target/package/*.deb,target/package/*.rpm,target/package/checksums*"
           allowUpdates: true
           updateOnlyUnreleased: true
           removeArtifacts: true
