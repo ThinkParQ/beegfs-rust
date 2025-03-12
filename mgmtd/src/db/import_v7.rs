@@ -115,16 +115,19 @@ fn check_target_states(f: &Path) -> Result<()> {
 /// Imports meta nodes / targets. Intentionally ignores nics as they are refreshed on first contact
 /// anyway.
 fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
-    let (root_id, root_mirrored, nodes) = read_nodes(f)?;
+    let ReadNodesResult {
+        root_id,
+        root_mirrored,
+        nodes,
+    } = read_nodes(f)?;
 
-    for n in nodes {
-        node::insert(tx, n.num_id, None, NodeType::Meta, n.port)?;
+    for (num_id, port) in nodes {
+        node::insert(tx, num_id, None, NodeType::Meta, port)?;
 
         // A meta target has to be explicitly created with the same ID as the node.
-        let Ok(target_id) = TargetId::try_from(n.num_id) else {
+        let Ok(target_id) = TargetId::try_from(num_id) else {
             bail!(
-                "{} is not a valid numeric meta node/target id (must be between 1 and 65535)",
-                n.num_id
+                "{num_id} is not a valid numeric meta node/target id (must be between 1 and 65535)",
             );
         };
         target::insert_meta(tx, target_id, None)?;
@@ -140,31 +143,55 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
 
 // Imports storage nodes
 fn storage_nodes(tx: &Transaction, f: &Path) -> Result<()> {
-    let (_, _, nodes) = read_nodes(f)?;
+    let ReadNodesResult { nodes, .. } = read_nodes(f)?;
 
-    for n in nodes {
-        node::insert(tx, n.num_id, None, NodeType::Storage, n.port)?;
+    for (num_id, port) in nodes {
+        node::insert(tx, num_id, None, NodeType::Storage, port)?;
     }
 
     Ok(())
 }
 
+struct ReadNodesResult {
+    root_id: NodeId,
+    root_mirrored: bool,
+    nodes: Vec<(NodeId, Port)>,
+}
+
 // Deserialize nodes from file
-fn read_nodes(f: &Path) -> Result<(NodeId, bool, Vec<shared::bee_msg::node::Node>)> {
+fn read_nodes(f: &Path) -> Result<ReadNodesResult> {
     let s = std::fs::read(f)?;
 
     let mut des = Deserializer::new(&s, 0);
     let version = des.u32()?;
     let root_id = des.u32()?;
     let root_mirrored = des.u8()?;
-    let nodes = des.seq(false, |des| shared::bee_msg::node::Node::deserialize(des))?;
+
+    // Define the node data deserialization manually because the `Nic` type used by `Node` had
+    // changes for v8 (the ipv6 changes). The v7 on-disk-data is of course still in the old format.
+    // We only need the num id and the port, everything else is ignored.
+    let nodes = des.seq(false, |des| {
+        des.cstr(0)?;
+        // The v7 on-disk-data does NOT contain the total size field, so putting `false` here is
+        // correct. It only got introduced with the ipv6 changes.
+        des.seq(false, |des| des.skip(24))?;
+        let num_id = NodeId::deserialize(des)?;
+        let port = Port::deserialize(des)?;
+        Port::deserialize(des)?;
+        des.u8()?;
+        Ok((num_id, port))
+    })?;
     des.finish()?;
 
     if version != 0 {
         bail!("invalid version {version}");
     }
 
-    Ok((root_id, root_mirrored > 0, nodes))
+    Ok(ReadNodesResult {
+        root_id,
+        root_mirrored: root_mirrored > 0,
+        nodes,
+    })
 }
 
 // Imports buddy groups
