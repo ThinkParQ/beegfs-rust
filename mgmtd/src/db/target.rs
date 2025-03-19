@@ -95,7 +95,7 @@ pub(crate) fn insert_storage(
     Ok(target_id)
 }
 
-fn insert(
+pub(crate) fn insert(
     tx: &Transaction,
     target_id: TargetId,
     alias: Option<Alias>,
@@ -103,6 +103,8 @@ fn insert(
     // This is optional because storage targets come "unmapped"
     node_id: Option<NodeId>,
 ) -> Result<()> {
+    anyhow::ensure!(target_id > 0, "A target id must be > 0");
+
     let alias = if let Some(alias) = alias {
         alias
     } else {

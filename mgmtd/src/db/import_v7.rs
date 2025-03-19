@@ -130,7 +130,13 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
                 "{num_id} is not a valid numeric meta node/target id (must be between 1 and 65535)",
             );
         };
-        target::insert_meta(tx, target_id, None)?;
+        target::insert(
+            tx,
+            target_id,
+            None,
+            NodeTypeServer::Meta,
+            Some(target_id.into()),
+        )?;
     }
 
     if root_id == 0 {
