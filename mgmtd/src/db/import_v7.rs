@@ -404,34 +404,54 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
         VALUES (?1, ?2, ?3, ?4)"
     ))?;
 
-    let affected = stmt.execute(params![
-        QuotaIdType::User.sql_variant(),
-        QuotaType::Space.sql_variant(),
-        pool_id,
-        user_space_limit
-    ])?;
-    check_affected_rows(affected, [1])?;
-    let affected = stmt.execute(params![
-        QuotaIdType::User.sql_variant(),
-        QuotaType::Inode.sql_variant(),
-        pool_id,
-        user_inode_limit
-    ])?;
-    check_affected_rows(affected, [1])?;
-    let affected = stmt.execute(params![
-        QuotaIdType::Group.sql_variant(),
-        QuotaType::Space.sql_variant(),
-        pool_id,
-        group_space_limit
-    ])?;
-    check_affected_rows(affected, [1])?;
-    let affected = stmt.execute(params![
-        QuotaIdType::Group.sql_variant(),
-        QuotaType::Inode.sql_variant(),
-        pool_id,
-        group_inode_limit
-    ])?;
-    check_affected_rows(affected, [1])?;
+    if user_space_limit <= (i64::MAX as u64) {
+        let affected = stmt.execute(params![
+            QuotaIdType::User.sql_variant(),
+            QuotaType::Space.sql_variant(),
+            pool_id,
+            user_space_limit
+        ])?;
+        check_affected_rows(affected, [1])?;
+        println!(
+            "NOTE: Treating very large (> 2^63 bytes) default user space limit on pool {pool_id} as unlimited"
+        );
+    }
+    if user_inode_limit <= (i64::MAX as u64) {
+        let affected = stmt.execute(params![
+            QuotaIdType::User.sql_variant(),
+            QuotaType::Inode.sql_variant(),
+            pool_id,
+            user_inode_limit
+        ])?;
+        check_affected_rows(affected, [1])?;
+        println!(
+            "NOTE: Treating very large (> 2^63 inodes) default user inode limit on pool {pool_id} as unlimited"
+        );
+    }
+    if group_space_limit <= (i64::MAX as u64) {
+        let affected = stmt.execute(params![
+            QuotaIdType::Group.sql_variant(),
+            QuotaType::Space.sql_variant(),
+            pool_id,
+            group_space_limit
+        ])?;
+        check_affected_rows(affected, [1])?;
+        println!(
+            "NOTE: Treating very large (> 2^63 bytes) default group space limit on pool {pool_id} as unlimited"
+        );
+    }
+    if group_inode_limit <= (i64::MAX as u64) {
+        let affected = stmt.execute(params![
+            QuotaIdType::Group.sql_variant(),
+            QuotaType::Inode.sql_variant(),
+            pool_id,
+            group_inode_limit
+        ])?;
+        check_affected_rows(affected, [1])?;
+        println!(
+            "NOTE: Treating very large (> 2^63 inodes) default group inode limit on pool {pool_id} as unlimited"
+        );
+    }
 
     Ok(())
 }
@@ -466,7 +486,7 @@ fn quota_limits(
     ))?;
 
     for l in limits.iter().filter(|e| e.id_type == quota_id_type) {
-        if l.space > 0 {
+        if l.space > 0 && l.space <= (i64::MAX as u64) {
             insert_stmt.execute(params![
                 l.id,
                 l.id_type.sql_variant(),
@@ -474,9 +494,13 @@ fn quota_limits(
                 pool_id,
                 l.space
             ])?;
+        } else {
+            println!(
+                "NOTE: Treating very large (> 2^63 bytes) {quota_id_type} space limit on pool {pool_id} as unlimited"
+            );
         }
 
-        if l.inodes > 0 {
+        if l.inodes > 0 && l.inodes <= (i64::MAX as u64) {
             insert_stmt.execute(params![
                 l.id,
                 l.id_type.sql_variant(),
@@ -484,6 +508,10 @@ fn quota_limits(
                 pool_id,
                 l.inodes
             ])?;
+        } else {
+            println!(
+                "NOTE: Treating very large (> 2^63 bytes) {quota_id_type} inode limit on pool {pool_id} as unlimited"
+            );
         }
     }
 
