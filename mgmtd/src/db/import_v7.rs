@@ -381,7 +381,15 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
 
 /// Imports the default quota limits
 fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<()> {
-    let s = std::fs::read(f)?;
+    // If the file is missing, skip it
+    let s = match std::fs::read(f) {
+        Ok(s) => s,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            println!("WARNING: Ignoring missing quota limits file {f:?} for pool {pool_id}");
+            return Ok(());
+        }
+        Err(err) => return Err(err.into()),
+    };
 
     let mut des = Deserializer::new(&s, 0);
     let user_inode_limit = des.u64()?;
@@ -435,7 +443,15 @@ fn quota_limits(
     pool_id: PoolId,
     quota_id_type: QuotaIdType,
 ) -> Result<()> {
-    let s = std::fs::read(f)?;
+    // If the file is missing, skip it
+    let s = match std::fs::read(f) {
+        Ok(s) => s,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            println!("WARNING: Ignoring missing quota limits file {f:?} for pool {pool_id}");
+            return Ok(());
+        }
+        Err(err) => return Err(err.into()),
+    };
 
     let mut des = Deserializer::new(&s, 0);
     let limits = des.seq(false, |des| QuotaEntry::deserialize(des))?;
