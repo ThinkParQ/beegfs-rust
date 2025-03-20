@@ -2,14 +2,14 @@
 
 use crate::context::Context;
 use crate::db;
-use crate::db::node::Node;
 use crate::db::quota_usage::QuotaData;
+use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
 };
-use shared::types::{NodeType, PoolId, QuotaId, TargetId, Uid};
+use shared::types::{NodeType, PoolId, QuotaId, QuotaIdType, QuotaType, TargetId, Uid};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
@@ -177,41 +177,55 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
 async fn exceeded_quota(ctx: &Context) -> Result<()> {
     log::info!("Calculating and pushing exceeded quota");
 
-    let mut msges: Vec<SetExceededQuota> = vec![];
-    for e in ctx
+    let (msges, nodes) = ctx
         .db
-        .read_tx(db::quota_usage::all_exceeded_quota_ids)
-        .await?
-    {
-        if let Some(last) = msges.last_mut() {
-            if e.pool_id == last.pool_id
-                && e.id_type == last.id_type
-                && e.quota_type == last.quota_type
-            {
-                last.exceeded_quota_ids.push(e.quota_id);
-                continue;
+        .read_tx(|tx| {
+            let pools: Vec<_> =
+                tx.query_map_collect(sql!("SELECT pool_id FROM pools"), [], |row| row.get(0))?;
+
+            // Prepare empty messages. It is important to always send a message for each (PoolId,
+            // QuotaIdType, QuotaType) to each node, even if there are no exceeded ids, to remove
+            // previously existing exceeded ids on the servers.
+            let mut msges: Vec<SetExceededQuota> = vec![];
+            for pool_id in pools {
+                for id_type in [QuotaIdType::User, QuotaIdType::Group] {
+                    for quota_type in [QuotaType::Space, QuotaType::Inode] {
+                        msges.push(SetExceededQuota {
+                            pool_id,
+                            id_type,
+                            quota_type,
+                            exceeded_quota_ids: vec![],
+                        });
+                    }
+                }
             }
-        }
 
-        msges.push(SetExceededQuota {
-            pool_id: e.pool_id,
-            id_type: e.id_type,
-            quota_type: e.quota_type,
-            exceeded_quota_ids: vec![e.quota_id],
-        });
-    }
+            // Fill the prepared messages with matching exceeded quota ids
+            for e in db::quota_usage::all_exceeded_quota_ids(tx)? {
+                for m in &mut msges {
+                    if e.pool_id == m.pool_id
+                        && e.id_type == m.id_type
+                        && e.quota_type == m.quota_type
+                    {
+                        m.exceeded_quota_ids.push(e.quota_id);
+                        break;
+                    }
+                }
+            }
 
-    // Get all meta and storage nodes
-    let (meta_nodes, storage_nodes) = ctx
-        .db
-        .read_tx(move |tx| {
-            Ok((
-                db::node::get_with_type(tx, NodeType::Meta)?,
-                db::node::get_with_type(tx, NodeType::Storage)?,
-            ))
+            // Get all node uids to send the messages to
+            let nodes: Vec<Uid> = tx.query_map_collect(
+                sql!("SELECT node_uid FROM nodes WHERE node_type IN (?1,?2)"),
+                [
+                    NodeType::Meta.sql_variant(),
+                    NodeType::Storage.sql_variant(),
+                ],
+                |row| row.get(0),
+            )?;
+
+            Ok((msges, nodes))
         })
         .await?;
-    let nodes: Vec<Node> = meta_nodes.into_iter().chain(storage_nodes).collect();
 
     // Send all messages with exceeded quota information to all meta and storage nodes
     // Since there is one message for each combination of (pool x (user, group) x (space, inode)),
@@ -221,10 +235,10 @@ async fn exceeded_quota(ctx: &Context) -> Result<()> {
     for msg in msges {
         let mut request_fails = 0;
         let mut non_success_count = 0;
-        for node in &nodes {
+        for node_uid in &nodes {
             match ctx
                 .conn
-                .request::<_, SetExceededQuotaResp>(node.uid, &msg)
+                .request::<_, SetExceededQuotaResp>(*node_uid, &msg)
                 .await
             {
                 Ok(resp) => {
