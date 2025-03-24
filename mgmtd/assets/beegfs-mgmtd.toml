@@ -11,7 +11,9 @@
 # Managements database file location.
 # db-file = "/var/lib/beegfs/mgmtd.sqlite"
 
-# The log target to use (valid are "journald", "std").
+# The log target to use. Valid options are:
+#   "journald": Log to the systemd journal
+#   "stderr": Log to the standard error output
 # log-target = "journald"
 
 # The log level to use (valid are "error", "warn", "info", "debug", "trace").

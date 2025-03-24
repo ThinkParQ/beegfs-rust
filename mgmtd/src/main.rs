@@ -46,7 +46,7 @@ fn inner_main() -> Result<()> {
 
     // Initialize logging
     match user_config.log_target {
-        LogTarget::Std => Ok(env_logger::Builder::from_env(
+        LogTarget::Stderr => Ok(env_logger::Builder::from_env(
             env_logger::Env::default()
                 .default_filter_or(LevelFilter::from(user_config.log_level.clone()).as_str()),
         )

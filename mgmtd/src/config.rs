@@ -511,8 +511,10 @@ const fn version_str() -> &'static str {
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum LogTarget {
-    Std,
     Journald,
+    #[value(alias("std"))]
+    #[serde(alias = "std")]
+    Stderr,
 }
 
 /// Defines the log level
