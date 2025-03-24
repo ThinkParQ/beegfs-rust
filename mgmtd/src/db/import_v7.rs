@@ -313,17 +313,17 @@ fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Sets the root inode info according to the given info
+/// Sets the root inode info according to the given info. Should only be used against a new empty
+/// root_inode table with no rows as part of the import process.
 fn set_meta_root(tx: &Transaction, root_id: NodeId, root_mirrored: bool) -> Result<()> {
-    // overwrite root inode with the correct setting
     if root_mirrored {
         tx.execute(
-            sql!("UPDATE root_inode SET target_id = NULL, group_id = ?1"),
+            sql!("INSERT INTO root_inode (target_id, group_id) VALUES (NULL, ?1)"),
             [root_id],
         )?;
     } else {
         tx.execute(
-            sql!("UPDATE root_inode SET group_id = NULL, target_id = ?1"),
+            sql!("INSERT INTO root_inode (target_id, group_id) VALUES (?1, NULL)"),
             [root_id],
         )?;
     }
