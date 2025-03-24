@@ -2,9 +2,10 @@ use crate::db::*;
 use anyhow::{Context, Result, anyhow, bail};
 use rusqlite::Transaction;
 use shared::bee_msg::buddy_group::CombinedTargetState;
+use shared::bee_msg::node::Nic;
 use shared::bee_msg::quota::QuotaEntry;
 use shared::bee_msg::storage_pool::StoragePool;
-use shared::bee_serde::{Deserializable, Deserializer};
+use shared::bee_serde::{BeeSerdeConversion, Deserializable, Deserializer};
 use shared::types::*;
 use sqlite_check::sql;
 use std::io::Write;
@@ -112,6 +113,23 @@ fn check_target_states(f: &Path) -> Result<()> {
     Ok(())
 }
 
+fn node_nics(tx: &Transaction, node_uid: Uid, nics: Vec<Nic>) -> Result<()> {
+    let mut stmt = tx.prepare_cached(sql!(
+        "INSERT INTO node_nics (node_uid, nic_type, addr, name) VALUES (?1, ?2, ?3, ?4)"
+    ))?;
+
+    for nic in nics {
+        stmt.execute(params![
+            node_uid,
+            nic.nic_type.sql_variant(),
+            nic.addr.to_string(),
+            String::from_utf8_lossy(&nic.name)
+        ])?;
+    }
+
+    Ok(())
+}
+
 /// Imports meta nodes / targets. Intentionally ignores nics as they are refreshed on first contact
 /// anyway.
 fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
@@ -121,8 +139,9 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
         nodes,
     } = read_nodes(f)?;
 
-    for (num_id, port) in nodes {
-        node::insert(tx, num_id, None, NodeType::Meta, port)?;
+    for (num_id, port, nics) in nodes {
+        let node = node::insert(tx, num_id, None, NodeType::Meta, port)?;
+        node_nics(tx, node.uid, nics)?;
 
         // A meta target has to be explicitly created with the same ID as the node.
         let Ok(target_id) = TargetId::try_from(num_id) else {
@@ -151,8 +170,9 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
 fn storage_nodes(tx: &Transaction, f: &Path) -> Result<()> {
     let ReadNodesResult { nodes, .. } = read_nodes(f)?;
 
-    for (num_id, port) in nodes {
-        node::insert(tx, num_id, None, NodeType::Storage, port)?;
+    for (num_id, port, nics) in nodes {
+        let node = node::insert(tx, num_id, None, NodeType::Storage, port)?;
+        node_nics(tx, node.uid, nics)?;
     }
 
     Ok(())
@@ -161,7 +181,7 @@ fn storage_nodes(tx: &Transaction, f: &Path) -> Result<()> {
 struct ReadNodesResult {
     root_id: NodeId,
     root_mirrored: bool,
-    nodes: Vec<(NodeId, Port)>,
+    nodes: Vec<(NodeId, Port, Vec<Nic>)>,
 }
 
 // Deserialize nodes from file
@@ -175,17 +195,34 @@ fn read_nodes(f: &Path) -> Result<ReadNodesResult> {
 
     // Define the node data deserialization manually because the `Nic` type used by `Node` had
     // changes for v8 (the ipv6 changes). The v7 on-disk-data is of course still in the old format.
-    // We only need the num id and the port, everything else is ignored.
     let nodes = des.seq(false, |des| {
         des.cstr(0)?;
         // The v7 on-disk-data does NOT contain the total size field, so putting `false` here is
         // correct. It only got introduced with the ipv6 changes.
-        des.seq(false, |des| des.skip(24))?;
+        let nics = des.seq(false, |des| {
+            // The v7 on-disk-data uses the old format without a protocol field, thus we deserialize
+            // it manually here.
+            let addr = des.u32()?.to_le_bytes().into();
+            let mut name = des.bytes(15)?;
+            des.u8()?;
+            let nic_type = NicType::try_from_bee_serde(des.u8()?)?;
+            des.skip(3)?;
+
+            // Remove null bytes from name
+            name.retain(|b| b != &0);
+
+            Ok(Nic {
+                addr,
+                name,
+                nic_type,
+            })
+        })?;
+
         let num_id = NodeId::deserialize(des)?;
         let port = Port::deserialize(des)?;
         Port::deserialize(des)?;
         des.u8()?;
-        Ok((num_id, port))
+        Ok((num_id, port, nics))
     })?;
     des.finish()?;
 

@@ -195,7 +195,7 @@ impl Pool {
 
         for node_uid in peers {
             let Some(addrs) = self.store.get_node_addrs(node_uid) else {
-                bail!("No known addresses of {node_uid:?}");
+                bail!("No network address found for node with uid {node_uid:?}");
             };
 
             for addr in addrs.iter() {

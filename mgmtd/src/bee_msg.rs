@@ -212,6 +212,6 @@ pub async fn notify_nodes<M: Msg + Serializable>(
     }
     .await
     {
-        log::error!("Notification could not be send to all nodes: {err:#}");
+        log::error!("Notification could not be sent to all nodes: {err:#}");
     }
 }
