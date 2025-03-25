@@ -338,7 +338,9 @@ impl<'a> Deserializer<'a> {
 
         let len = self.u32()? as usize;
 
-        let mut v = Vec::with_capacity(len);
+        let mut v = Vec::new();
+        v.try_reserve_exact(len)?;
+
         for _ in 0..len {
             v.push(f(self)?);
         }
@@ -371,7 +373,9 @@ impl<'a> Deserializer<'a> {
 
         let len = self.u32()? as usize;
 
-        let mut v = HashMap::with_capacity(len);
+        let mut v = HashMap::new();
+        v.try_reserve(len)?;
+
         for _ in 0..len {
             v.insert(f_key(self)?, f_value(self)?);
         }
