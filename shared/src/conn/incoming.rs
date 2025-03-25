@@ -118,7 +118,10 @@ async fn stream_loop(
                 }
             }
 
-            log::error!("Closed stream from {:?}: {err:#}", stream.addr());
+            log::error!(
+                "Error while handling stream from {:?}: {err:#}",
+                stream.addr()
+            );
             return;
         }
     }
@@ -143,8 +146,8 @@ async fn read_stream(
         && buf.msg_id() != AuthenticateChannel::ID
     {
         bail!(
-            "Received message on unauthenticated stream from {:?}",
-            stream.addr()
+            "Stream is not authenticated and received message with id {}",
+            buf.msg_id()
         );
     }
 
@@ -220,7 +223,9 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
         };
 
         // Forward to the dispatcher
-        let _ = msg_handler.dispatch_request(req).await;
+        if let Err(err) = msg_handler.dispatch_request(req).await {
+            log::error!("Error while handling datagram from {peer_addr:?}: {err:#}");
+        }
     });
 
     Ok(())
