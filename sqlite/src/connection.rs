@@ -26,7 +26,11 @@ pub fn setup_connection(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     // Note that the WAL is merged into the main db file automatically by SQLite after it has
     // reached a certain size and on the last connection being closed. This could be configured or
     // even disabled so we can run it manually.
-    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "journal_mode", "wal")?;
+    // Default to fsync after each transaction. If this is changed, make sure to update the
+    // transaction methods below to match the change, especially in run_op() where a temporary
+    // change happens.
+    conn.pragma_update(None, "synchronous", "full")?;
 
     Ok(())
 }
@@ -63,6 +67,12 @@ impl Deref for Connections {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SyncMode {
+    Full,
+    Normal,
+}
+
 #[derive(Debug)]
 pub struct InnerConnections {
     conns: Mutex<Vec<Connection>>,
@@ -89,7 +99,27 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(|conn| {
+        self.run_op(SyncMode::Full, move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let res = op(&tx)?;
+            tx.commit()?;
+
+            Ok(res)
+        })
+        .await
+    }
+
+    /// Same as `write_tx()`, but changes sqlite sync mode temporarily from `full` to `normal` to
+    /// avoid syncing the transaction to disk immediately. Meant for transactions that can cause
+    /// heavy load on bigger systems and are not that critical if they get lost.
+    pub async fn write_tx_no_sync<
+        T: Send + 'static + FnOnce(&Transaction) -> Result<R>,
+        R: Send + 'static,
+    >(
+        &self,
+        op: T,
+    ) -> Result<R> {
+        self.run_op(SyncMode::Normal, move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let res = op(&tx)?;
             tx.commit()?;
@@ -111,7 +141,7 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(|conn| {
+        self.run_op(SyncMode::Full, move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
             let res = op(&tx)?;
             tx.commit()?;
@@ -132,11 +162,12 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(op).await
+        self.run_op(SyncMode::Full, op).await
     }
 
     async fn run_op<T: Send + 'static + FnOnce(&mut Connection) -> Result<R>, R: Send + 'static>(
         &self,
+        sync_mode: SyncMode,
         op: T,
     ) -> Result<R> {
         let this = self.clone();
@@ -155,16 +186,34 @@ impl Connections {
                 open(this.db_file.as_path())?
             };
 
-            let res = op(&mut conn);
+            match sync_mode {
+                SyncMode::Full => {
+                    let res = op(&mut conn);
+                    // Push the connection to the stack
+                    // We assume that sqlite connections never invalidate on errors, so there is no
+                    // need to drop them. There might be severe cases where
+                    // connections don't work anymore (e.g. one removing or
+                    // corrupting the database file, the file system breaks, ...), but these
+                    // are unrecoverable anyway and new connections won't fix anything there.
+                    this.conns.lock().unwrap().push(conn);
 
-            // Push the connection to the stack
-            // We assume that sqlite connections never invalidate on errors, so there is no need to
-            // drop them. There might be severe cases where connections don't work anymore (e.g.
-            // one removing or corrupting the database file, the file system breaks, ...), but these
-            // are unrecoverable anyway and new connections won't fix anything there.
-            this.conns.lock().unwrap().push(conn);
+                    res
+                }
+                SyncMode::Normal => {
+                    conn.pragma_update(None, "synchronous", "normal")?;
+                    let res = op(&mut conn);
+                    // If the sync mode could not be reset (should most likely never happen), we
+                    // don't error out as the transaction already completed.
+                    // Instead we just dorop it to prevent future usage with FULL mode.
+                    if conn.pragma_update(None, "synchronous", "full").is_ok() {
+                        this.conns.lock().unwrap().push(conn);
+                    } else {
+                        log::error!("Failed to change db connection sync mode back to full");
+                    }
 
-            res
+                    res
+                }
+            }
         })
         .await?
     }

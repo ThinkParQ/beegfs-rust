@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+log.workspace = true
 rusqlite = { workspace = true, features = ["backup"] }
-tokio = { workspace = true }
+tokio.workspace = true
 
