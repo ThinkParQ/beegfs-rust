@@ -170,7 +170,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
 
     let (node, meta_root, is_new) = ctx
         .db
-        .write_tx(move |tx| {
+        .write_tx_no_sync(move |tx| {
             let node = if msg.node_id == 0 {
                 // No node ID given => new node
                 None
