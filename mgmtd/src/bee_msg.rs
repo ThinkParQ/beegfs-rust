@@ -18,12 +18,33 @@ use sqlite_check::sql;
 use std::collections::HashMap;
 use std::fmt::Display;
 
-mod buddy_group;
-mod misc;
-mod node;
-mod quota;
-mod storage_pool;
-mod target;
+mod common;
+
+mod ack;
+mod authenticate_channel;
+mod change_target_consistency_states;
+mod get_mirror_buddy_groups;
+mod get_node_capacity_pools;
+mod get_nodes;
+mod get_states_and_buddy_groups;
+mod get_storage_pools;
+mod get_target_mappings;
+mod get_target_states;
+mod heartbeat;
+mod heartbeat_request;
+mod map_targets;
+mod map_targets_resp;
+mod peer_info;
+mod refresh_capacity_pools;
+mod register_node;
+mod register_target;
+mod remove_node;
+mod remove_node_resp;
+mod request_exceeded_quota;
+mod set_channel_direct;
+mod set_mirror_buddy_groups_resp;
+mod set_storage_target_info;
+mod set_target_consistency_states;
 
 /// Msg request handler for requests where no response is expected.
 /// To handle a message, implement this and add it to the dispatch list with `=> _`.
