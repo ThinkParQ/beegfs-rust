@@ -94,3 +94,50 @@ pub(crate) async fn delete_node(
         node: Some(node.into()),
     })
 }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+
+    #[tokio::test]
+    async fn delete_node() {
+        let h = TestApp::new().await;
+        let mut req = pm::DeleteNodeRequest {
+            node: Some(pb::EntityIdSet {
+                uid: None,
+                alias: None,
+                legacy_id: Some(pb::LegacyId {
+                    num_id: 1,
+                    node_type: pb::NodeType::Management.into(),
+                }),
+            }),
+            execute: Some(true),
+        };
+
+        // Can't delete management node
+        super::delete_node(&h, req.clone()).await.unwrap_err();
+
+        // Can't delete meta buddy group member target (which is on the node)
+        req.node.as_mut().unwrap().uid = None;
+        req.node.as_mut().unwrap().legacy_id = Some(pb::LegacyId {
+            num_id: 1,
+            node_type: pb::NodeType::Meta.into(),
+        });
+        super::delete_node(&h, req.clone()).await.unwrap_err();
+
+        // Delete empty node
+        req.node.as_mut().unwrap().legacy_id = Some(pb::LegacyId {
+            num_id: 99,
+            node_type: pb::NodeType::Meta.into(),
+        });
+        let resp = super::delete_node(&h, req.clone()).await.unwrap();
+
+        assert_eq!(resp.node.unwrap().legacy_id.unwrap().num_id, 99);
+        assert_eq_db!(
+            h,
+            "SELECT COUNT(*) FROM nodes WHERE node_id = ?1 AND node_type = ?2",
+            [99, NodeType::Meta.sql_variant()],
+            0
+        );
+    }
+}
