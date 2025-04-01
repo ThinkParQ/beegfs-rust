@@ -2,68 +2,6 @@ use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
-use shared::types::PoolId;
-use sqlite::TransactionExt;
-use sqlite_check::sql;
-
-impl HandleNoResponse for Ack {
-    async fn handle(self, _ctx: &Context, req: &mut impl Request) -> Result<()> {
-        log::debug!("Ignoring Ack from {:?}: Id: {:?}", req.addr(), self.ack_id);
-        Ok(())
-    }
-}
-
-impl HandleNoResponse for AuthenticateChannel {
-    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Result<()> {
-        if let Some(ref secret) = ctx.info.auth_secret {
-            if secret == &self.auth_secret {
-                req.authenticate_connection();
-            } else {
-                log::error!(
-                    "Peer {:?} tried to authenticate stream with wrong secret",
-                    req.addr()
-                );
-            }
-        } else {
-            log::debug!(
-                "Peer {:?} tried to authenticate stream, but authentication is not required",
-                req.addr()
-            );
-        }
-
-        Ok(())
-    }
-}
-
-impl HandleNoResponse for PeerInfo {
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
-        // This is supposed to give some information about a connection, but it looks
-        // like this isnt used at all
-        Ok(())
-    }
-}
-
-impl HandleNoResponse for SetChannelDirect {
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-}
-
-impl HandleWithResponse for RefreshCapacityPools {
-    type Response = Ack;
-
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        // This message is superfluous and therefore ignored. It is meant to tell the
-        // mgmtd to trigger a capacity pool pull immediately after a node starts.
-        // meta and storage send a SetTargetInfo before this msg though,
-        // so we handle triggering pulls there.
-
-        Ok(Ack {
-            ack_id: self.ack_id,
-        })
-    }
-}
 
 #[derive(Debug)]
 struct TargetOrBuddyGroup {
