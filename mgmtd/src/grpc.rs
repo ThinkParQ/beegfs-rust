@@ -7,7 +7,7 @@ use crate::license::LicensedFeature;
 use crate::types::{ResolveEntityId, SqliteEnumExt};
 use anyhow::{Context as AContext, Result, anyhow, bail};
 use protobuf::{beegfs as pb, management as pm};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, named_params, params};
 use shared::grpc::*;
 use shared::impl_grpc_handler;
 use shared::run_state::RunStateHandle;
@@ -21,13 +21,28 @@ use std::pin::Pin;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 
-mod buddy_group;
-mod license;
-mod misc;
-mod node;
-mod pool;
-mod quota;
-mod target;
+mod common;
+
+mod assign_pool;
+mod create_buddy_group;
+mod create_pool;
+mod delete_buddy_group;
+mod delete_node;
+mod delete_pool;
+mod delete_target;
+mod get_buddy_groups;
+mod get_license;
+mod get_nodes;
+mod get_pools;
+mod get_quota_limits;
+mod get_quota_usage;
+mod get_targets;
+mod mirror_root_inode;
+mod set_alias;
+mod set_default_quota_limits;
+mod set_quota_limits;
+mod set_target_state;
+mod start_resync;
 
 /// Management gRPC service implementation struct
 #[derive(Debug)]
@@ -44,8 +59,9 @@ impl pm::management_server::Management for ManagementService {
     // Example: Implement pm::management_server::Management::set_alias using the impl_grpc_handler
     // macro
     impl_grpc_handler! {
-        // <the function to implement (as defined by the trait)> => <the actual, custom handler function to call>,
-        set_alias => misc::set_alias,
+        // the function to implement (as defined by the trait) as well as the handler to call (must
+        // be named the same and in a submodule named the same),
+        set_alias,
         // <request message passed to the fn impl (as defined by the trait)> => <response message,
         // returned by the fn impl (as defined by the trait)>,
         pm::SetAliasRequest => pm::SetAliasResponse,
@@ -54,102 +70,102 @@ impl pm::management_server::Management for ManagementService {
     }
 
     impl_grpc_handler! {
-        get_nodes => node::get,
+        get_nodes,
         pm::GetNodesRequest => pm::GetNodesResponse,
         "Get nodes"
     }
     impl_grpc_handler! {
-        delete_node => node::delete,
+        delete_node,
         pm::DeleteNodeRequest => pm::DeleteNodeResponse,
         "Delete node"
     }
 
     impl_grpc_handler! {
-        get_targets => target::get,
+        get_targets,
         pm::GetTargetsRequest => pm::GetTargetsResponse,
         "Get targets"
     }
     impl_grpc_handler! {
-        delete_target => target::delete,
+        delete_target,
         pm::DeleteTargetRequest => pm::DeleteTargetResponse,
         "Delete target"
     }
     impl_grpc_handler! {
-        set_target_state => target::set_state,
+        set_target_state,
         pm::SetTargetStateRequest => pm::SetTargetStateResponse,
         "Set target state"
     }
 
     impl_grpc_handler! {
-        get_pools => pool::get,
+        get_pools,
         pm::GetPoolsRequest => pm::GetPoolsResponse,
         "Get pools"
     }
     impl_grpc_handler! {
-        create_pool => pool::create,
+        create_pool,
         pm::CreatePoolRequest => pm::CreatePoolResponse,
         "Create pool"
     }
     impl_grpc_handler! {
-        assign_pool => pool::assign,
+        assign_pool,
         pm::AssignPoolRequest => pm::AssignPoolResponse,
         "Assign pool"
     }
     impl_grpc_handler! {
-        delete_pool => pool::delete,
+        delete_pool,
         pm::DeletePoolRequest => pm::DeletePoolResponse,
         "Delete pool"
     }
 
     impl_grpc_handler! {
-        get_buddy_groups => buddy_group::get,
+        get_buddy_groups,
         pm::GetBuddyGroupsRequest => pm::GetBuddyGroupsResponse,
         "Get buddy groups"
     }
     impl_grpc_handler! {
-        create_buddy_group => buddy_group::create,
+        create_buddy_group,
         pm::CreateBuddyGroupRequest => pm::CreateBuddyGroupResponse,
         "Create buddy group"
     }
     impl_grpc_handler! {
-        delete_buddy_group => buddy_group::delete,
+        delete_buddy_group,
         pm::DeleteBuddyGroupRequest => pm::DeleteBuddyGroupResponse,
         "Delete buddy group"
     }
     impl_grpc_handler! {
-        mirror_root_inode => buddy_group::mirror_root_inode,
+        mirror_root_inode,
         pm::MirrorRootInodeRequest => pm::MirrorRootInodeResponse,
         "Mirror root inode"
     }
     impl_grpc_handler! {
-        start_resync => buddy_group::start_resync,
+        start_resync,
         pm::StartResyncRequest => pm::StartResyncResponse,
         "Start resync"
     }
 
     impl_grpc_handler! {
-        set_default_quota_limits => quota::set_default_quota_limits,
+        set_default_quota_limits,
         pm::SetDefaultQuotaLimitsRequest => pm::SetDefaultQuotaLimitsResponse,
         "Set default quota limits"
     }
     impl_grpc_handler! {
-        set_quota_limits => quota::set_quota_limits,
+        set_quota_limits,
         pm::SetQuotaLimitsRequest => pm::SetQuotaLimitsResponse,
         "Set quota limits"
     }
     impl_grpc_handler! {
-        get_quota_limits => quota::get_quota_limits,
+        get_quota_limits,
         pm::GetQuotaLimitsRequest => STREAM(GetQuotaLimitsStream, pm::GetQuotaLimitsResponse),
         "Get quota limits"
     }
     impl_grpc_handler! {
-        get_quota_usage => quota::get_quota_usage,
+        get_quota_usage,
         pm::GetQuotaUsageRequest => STREAM(GetQuotaUsageStream, pm::GetQuotaUsageResponse),
         "Get quota usage"
     }
 
     impl_grpc_handler! {
-        get_license => license::get,
+        get_license,
         pm::GetLicenseRequest => pm::GetLicenseResponse,
         "Get license"
     }
