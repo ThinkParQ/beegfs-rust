@@ -1,6 +1,6 @@
 use super::*;
 use db::node_nic::map_bee_msg_nics;
-use shared::bee_msg::node::*;
+use shared::bee_msg::node::Heartbeat;
 
 /// Sets the entity alias for any entity
 pub(crate) async fn set_alias(

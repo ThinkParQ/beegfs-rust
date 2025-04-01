@@ -20,23 +20,23 @@ use tonic::{Code, Status};
 #[macro_export]
 macro_rules! impl_grpc_handler {
     // Implements the function for a response stream RPC.
-    ($impl_fn:ident => $handle_fn:path, $req_msg:path => STREAM($resp_stream:ident, $resp_msg:path), $ctx_str:literal) => {
+    ($impl_fn:ident, $req_msg:path => STREAM($resp_stream:ident, $resp_msg:path), $ctx_str:literal) => {
         // A response stream RPC requires to define a `<MsgName>Stream` associated type and use this
         // as the response for the handler.
         type $resp_stream = RespStream<$resp_msg>;
 
-        impl_grpc_handler!(@INNER $impl_fn => $handle_fn, $req_msg => Self::$resp_stream, $ctx_str);
+        impl_grpc_handler!(@INNER $impl_fn, $req_msg => Self::$resp_stream, $ctx_str);
     };
 
     // Implements the function for a unary RPC.
-    ($impl_fn:ident => $handle_fn:path, $req_msg:path => $resp_msg:path, $ctx_str:literal) => {
-        impl_grpc_handler!(@INNER $impl_fn => $handle_fn, $req_msg => $resp_msg, $ctx_str);
+    ($impl_fn:ident, $req_msg:path => $resp_msg:path, $ctx_str:literal) => {
+        impl_grpc_handler!(@INNER $impl_fn, $req_msg => $resp_msg, $ctx_str);
     };
 
     // Generates the actual function. Note that we implement the `async fn` manually to avoid having
     // to use `#[tonic::async_trait]`. This is exactly how that macro does it in the background, but
     // we can't rely on that here within this macro as attribute macros are evaluated first.
-    (@INNER $impl_fn:ident => $handle_fn:path, $req_msg:path => $resp_msg:path, $ctx_str:literal) => {
+    (@INNER $impl_fn:ident, $req_msg:path => $resp_msg:path, $ctx_str:literal) => {
         fn $impl_fn<'a, 'async_trait>(
             &'a self,
             req: Request<$req_msg>,
@@ -46,7 +46,11 @@ macro_rules! impl_grpc_handler {
             Self: 'async_trait,
         {
             Box::pin(async move {
-                let res = $handle_fn(self.ctx.clone(), req.into_inner()).await;
+                // The self.app is misplaced here as this is supposed to be a reusable macro.
+                // It assumes what is passed to the handler function and that might be different
+                // for different users of this.
+                // I don't have a quick idea how to fix this in an elegant way, so we keep it for.
+                let res = $impl_fn::$impl_fn(self.ctx.clone(), req.into_inner()).await;
 
                 match res {
                     Ok(res) => Ok(Response::new(res)),
