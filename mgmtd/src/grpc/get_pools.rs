@@ -131,3 +131,51 @@ pub(crate) async fn get_pools(
 
     Ok(pm::GetPoolsResponse { pools })
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+
+    #[tokio::test]
+    async fn get_pools() {
+        let app = TestApp::new().await;
+
+        let resp = super::get_pools(
+            &app,
+            pm::GetPoolsRequest {
+                with_quota_limits: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resp.pools.len(), 4);
+
+        let default_pool = resp
+            .pools
+            .iter()
+            .find(|e| e.id.as_ref().unwrap().legacy_id.as_ref().unwrap().num_id == 1)
+            .unwrap();
+
+        assert_eq!(default_pool.targets.len(), 5);
+        assert_eq!(default_pool.buddy_groups.len(), 2);
+        assert_eq!(default_pool.user_space_limit.unwrap(), 1000);
+        assert_eq!(default_pool.user_inode_limit.unwrap(), 1000);
+        assert_eq!(default_pool.group_space_limit.unwrap(), 1000);
+        assert_eq!(default_pool.group_inode_limit.unwrap(), 1000);
+
+        let other_pool = resp
+            .pools
+            .iter()
+            .find(|e| e.id.as_ref().unwrap().legacy_id.as_ref().unwrap().num_id == 2)
+            .unwrap();
+
+        assert_eq!(other_pool.targets.len(), 4);
+        assert_eq!(other_pool.buddy_groups.len(), 0);
+        assert_eq!(other_pool.user_space_limit.unwrap(), -1);
+        assert_eq!(other_pool.user_inode_limit.unwrap(), -1);
+        assert_eq!(other_pool.group_space_limit.unwrap(), -1);
+        assert_eq!(other_pool.group_inode_limit.unwrap(), -1);
+    }
+}
