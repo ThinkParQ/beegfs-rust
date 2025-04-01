@@ -86,3 +86,93 @@ pub(crate) async fn set_alias(
 
     Ok(pm::SetAliasResponse {})
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+
+    #[tokio::test]
+    async fn set_alias() {
+        let app = TestApp::new().await;
+
+        // Nonexisting entity
+        super::set_alias(
+            &app,
+            pm::SetAliasRequest {
+                entity_id: Some(EntityId::Uid(99999999).into()),
+                entity_type: pb::EntityType::Node.into(),
+                new_alias: "new_alias".to_string(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        // Invalid entity_type / entity_id combination
+        super::set_alias(
+            &app,
+            pm::SetAliasRequest {
+                entity_id: Some(EntityId::Uid(101001).into()),
+                entity_type: pb::EntityType::Target.into(),
+                new_alias: "new_alias".to_string(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        // Alias already in use
+        super::set_alias(
+            &app,
+            pm::SetAliasRequest {
+                entity_id: Some(EntityId::Alias("meta_node_1".try_into().unwrap()).into()),
+                entity_type: pb::EntityType::Node.into(),
+                new_alias: "meta_node_2".to_string(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        // Deny setting client aliases
+        super::set_alias(
+            &app,
+            pm::SetAliasRequest {
+                entity_id: Some(
+                    EntityId::LegacyID(LegacyId {
+                        node_type: NodeType::Client,
+                        num_id: 1,
+                    })
+                    .into(),
+                ),
+                entity_type: pb::EntityType::Node.into(),
+                new_alias: "new_alias".to_string(),
+            },
+        )
+        .await
+        .unwrap_err();
+
+        // Success
+        super::set_alias(
+            &app,
+            pm::SetAliasRequest {
+                entity_id: Some(EntityId::Uid(101001).into()),
+                entity_type: pb::EntityType::Node.into(),
+                new_alias: "new_alias".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(app.has_sent_notification::<Heartbeat>(&[
+            NodeType::Meta,
+            NodeType::Storage,
+            NodeType::Client,
+        ]));
+
+        assert_eq_db!(
+            app,
+            "SELECT alias FROM entities WHERE uid = ?1",
+            [101001],
+            "new_alias"
+        );
+    }
+}

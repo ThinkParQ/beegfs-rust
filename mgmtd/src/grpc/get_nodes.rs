@@ -159,3 +159,50 @@ pub(crate) async fn get_nodes(
         fs_uuid,
     })
 }
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+
+    #[tokio::test]
+    async fn get_nodes() {
+        let app = TestApp::new().await;
+
+        let res = super::get_nodes(
+            &app,
+            pm::GetNodesRequest {
+                include_nics: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(res.nodes.len(), 14);
+        assert!(res.nodes.iter().all(|e| e.nics.is_empty()));
+
+        let res = super::get_nodes(&app, pm::GetNodesRequest { include_nics: true })
+            .await
+            .unwrap();
+
+        assert_eq!(res.nodes.len(), 14);
+        assert_eq!(
+            res.nodes
+                .iter()
+                .find(|e| e.id.as_ref().unwrap().uid() == 101001)
+                .unwrap()
+                .nics
+                .len(),
+            4
+        );
+        assert_eq!(
+            res.nodes
+                .iter()
+                .find(|e| e.id.as_ref().unwrap().uid() == 103004)
+                .unwrap()
+                .nics
+                .len(),
+            2
+        );
+        assert_eq!(res.meta_root_node.unwrap().uid.unwrap(), 101001);
+    }
+}

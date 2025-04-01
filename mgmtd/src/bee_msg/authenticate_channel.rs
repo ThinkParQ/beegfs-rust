@@ -22,3 +22,24 @@ impl HandleNoResponse for AuthenticateChannel {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+
+    #[tokio::test]
+    async fn authenticate_channel() {
+        let app = TestApp::new().await;
+        let mut req = TestRequest::new(AuthenticateChannel::ID);
+
+        AuthenticateChannel {
+            auth_secret: AuthSecret::hash_from_bytes("secret"),
+        }
+        .handle(&app, &mut req)
+        .await
+        .unwrap();
+
+        assert!(req.authenticate_connection);
+    }
+}

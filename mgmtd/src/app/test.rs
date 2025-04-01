@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::Config;
 use shared::bee_msg::MsgId;
+pub use shared::conn::msg_dispatch::test::TestRequest;
 use shared::nic::{NicFilter, query_nics};
 use shared::types::AuthSecret;
 use sqlite::Connections;
