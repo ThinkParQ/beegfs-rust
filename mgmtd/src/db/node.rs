@@ -38,19 +38,6 @@ pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Vec
     )?)
 }
 
-/// Retrieve a node by its alias.
-pub(crate) fn get_by_alias(tx: &Transaction, alias: &str) -> Result<Node> {
-    Ok(tx.query_row(
-        sql!(
-            "SELECT node_uid, node_id, node_type, alias, port
-            FROM nodes_ext
-            WHERE alias = ?1"
-        ),
-        [alias],
-        Node::from_row,
-    )?)
-}
-
 /// Delete client nodes with a last contact time bigger than `timeout`.
 ///
 /// # Return value
@@ -239,29 +226,6 @@ mod test {
             delete(tx, node.uid).unwrap_err();
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
         });
-    }
-
-    #[test]
-    fn query_by_alias() {
-        with_test_data(|tx| {
-            insert(
-                tx,
-                11,
-                Some("node_1".try_into().unwrap()),
-                NodeType::Meta,
-                10000,
-            )
-            .unwrap();
-            insert(
-                tx,
-                12,
-                Some("node_2".try_into().unwrap()),
-                NodeType::Storage,
-                10000,
-            )
-            .unwrap();
-            assert_eq!(11, get_by_alias(tx, "node_1").unwrap().id);
-        })
     }
 
     #[test]

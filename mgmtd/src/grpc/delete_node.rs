@@ -63,7 +63,7 @@ pub(crate) async fn delete_node(
                 }
             }
 
-            db::node::delete(&tx, node.uid)?;
+            tx.execute(sql!("DELETE FROM nodes WHERE node_uid = ?1"), [node.uid])?;
 
             if execute {
                 tx.commit()?;

@@ -1,6 +1,6 @@
 use super::*;
-use db::node_nic::map_bee_msg_nics;
-use shared::bee_msg::node::Heartbeat;
+use shared::bee_msg::node::{Heartbeat, Nic};
+use std::net::IpAddr;
 
 /// Sets the entity alias for any entity
 pub(crate) async fn set_alias(
@@ -48,14 +48,30 @@ pub(crate) async fn set_alias(
 
     // If the entity is a node, notify all nodes about the changed alias
     if entity_type == EntityType::Node {
-        let (entity, node, nic_list) = app
+        let (entity, new_alias, port, nic_list) = app
             .write_tx(move |tx| {
                 let entity = update_alias_fn(tx, &new_alias)?;
 
-                let node = db::node::get_by_alias(tx, new_alias.as_ref())?;
-                let nic_list = db::node_nic::get_with_node(tx, entity.uid)?;
+                let port: Port = tx.query_row(
+                    sql!("SELECT port FROM nodes_ext WHERE alias = ?1"),
+                    [new_alias.as_ref()],
+                    |row| row.get(0),
+                )?;
 
-                Ok((entity, node, nic_list))
+                let nic_list = tx
+                    .prepare(sql!(
+                        "SELECT addr, nic_type, name FROM node_nics WHERE node_uid = ?1"
+                    ))?
+                    .query_and_then([entity.uid], |row| {
+                        Ok(Nic {
+                            addr: row.get_ref(0)?.as_str()?.parse::<IpAddr>()?,
+                            nic_type: NicType::from_row(row, 1)?,
+                            name: row.get::<_, String>(2)?.into_bytes(),
+                        })
+                    })?
+                    .collect::<Result<Vec<_>>>()?;
+
+                Ok((entity, new_alias, port, nic_list))
             })
             .await?;
 
@@ -65,14 +81,14 @@ pub(crate) async fn set_alias(
                 instance_version: 0,
                 nic_list_version: 0,
                 node_type: entity.node_type(),
-                node_alias: node.alias.into_bytes(),
+                node_alias: new_alias.as_ref().as_bytes().to_owned(),
                 ack_id: "".into(),
                 node_num_id: entity.num_id(),
                 root_num_id: 0,
                 is_root_mirrored: 0,
-                port: node.port,
-                port_tcp_unused: node.port,
-                nic_list: map_bee_msg_nics(nic_list).collect(),
+                port,
+                port_tcp_unused: port,
+                nic_list,
                 machine_uuid: vec![],
             },
         )
