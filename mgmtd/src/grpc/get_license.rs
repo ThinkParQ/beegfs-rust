@@ -1,7 +1,7 @@
 use super::*;
 use protobuf::management::{self as pm, GetLicenseResponse};
 
-pub(crate) async fn get(
+pub(crate) async fn get_license(
     ctx: Context,
     req: pm::GetLicenseRequest,
 ) -> Result<pm::GetLicenseResponse> {
