@@ -218,7 +218,8 @@ impl AppExt for App {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::app::test::TestApp;
+    pub(super) use crate::app::test::*;
+    use shared::conn::msg_dispatch::test::TestRequest;
 
     impl AppExt for TestApp {
         fn fail_on_pre_shutdown(&self) -> Result<()> {
@@ -228,5 +229,21 @@ mod test {
                 Ok(())
             }
         }
+    }
+
+    pub(super) async fn test_handler_resp<M: Msg + HandleWithResponse>(
+        msg: M,
+        app: &impl AppExt,
+    ) -> Result<M::Response> {
+        let mut req = TestRequest::new(M::ID);
+        msg.handle(app, &mut req).await
+    }
+
+    pub(super) async fn test_handler_no_resp<M: Msg + HandleNoResponse>(
+        msg: M,
+        app: &impl AppExt,
+    ) -> Result<()> {
+        let mut req = TestRequest::new(M::ID);
+        msg.handle(app, &mut req).await
     }
 }
