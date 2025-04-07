@@ -56,3 +56,27 @@ impl HandleWithResponse for GetNodes {
         Ok(resp)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bee_msg::test::*;
+
+    #[tokio::test]
+    async fn get_nodes() {
+        let app = TestApp::new().await;
+
+        let resp = test_handler_resp(
+            GetNodes {
+                node_type: NodeType::Meta,
+            },
+            &app,
+        )
+        .await
+        .unwrap();
+
+        assert_eq_db!(app, "SELECT COUNT(*) FROM meta_nodes", [], resp.nodes.len());
+        assert_eq!(resp.root_num_id, 1);
+        assert_eq!(resp.is_root_mirrored, 0);
+    }
+}
