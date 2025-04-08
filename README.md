@@ -1,6 +1,6 @@
 # Build the management
 
-1. Read through [Getting started with Rust]( https://github.com/ThinkParQ/developer-handbook/tree/main/getting_started/rust) and setup your environment as described.
+1. Read through [Getting started with Rust](https://github.com/ThinkParQ/beegfs-rs/wiki/Getting-Started-with-Rust) and setup your environment as described.
 
 2. Clone the management repository:
 
