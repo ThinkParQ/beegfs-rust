@@ -1,5 +1,5 @@
 Format: http://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Source: https://github.com/ThinkParQ/beegfs
+Source: https://github.com/ThinkParQ/beegfs-rs
 Files: *
 Copyright: ThinkParQ GmbH
 License:BeeGFS EULA
