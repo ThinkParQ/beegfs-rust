@@ -1,0 +1,64 @@
+name: "Build packages"
+description: "Build RPM and DEB packages for multiple architectures"
+
+inputs:
+  CI_PROTOBUF_ACCESS_TOKEN:
+    description: "Access token for protobuf repo"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Rust Environment
+      uses: moonrepo/setup-rust@v1
+      with:
+        components: clippy
+        targets: aarch64-unknown-linux-gnu
+        bins: cargo-deny, cargo-about, cargo-generate-rpm, cargo-deb, cargo-zigbuild
+    - name: Setup nightly toolchain and tools
+      shell: bash
+      run: |
+        sudo apt-get update -qq && sudo apt-get install -y gcc-aarch64-linux-gnu
+        wget -q -P /tmp http://deb.debian.org/debian/pool/main/d/dpkg-sig/dpkg-sig_0.13.1+nmu4_all.deb
+        sudo apt install --yes /tmp/dpkg-sig_0.13.1+nmu4_all.deb rpm gnupg2
+        rustup toolchain install nightly
+        rustup component add --toolchain nightly rustfmt
+        # Install zig 0.13 release, needed for cargo-zigbuild (latest release doesn't work right now)
+        wget https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -qO zig.tar.xz
+        mkdir -p ${HOME}/zig
+        tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
+        echo ${HOME}/zig >> ${GITHUB_PATH}
+    - name: Configure foreign git repos
+      # Make sure the runner has access to the protobuf repo using an access token
+      shell: bash
+      run: git config --global url."https://${{ inputs.CI_PROTOBUF_ACCESS_TOKEN }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
+    - name: Run checks and tests
+      shell: bash
+      run: |
+        make check
+        make deny
+        make test
+    - name: Build x86_64 packages
+      env:
+        CARGO_TARGET: x86_64-unknown-linux-gnu
+        GLIBC_VERSION: 2.27
+      shell: bash
+      run: make package
+    - name: Build aarch64 packages
+      env:
+        CARGO_TARGET: aarch64-unknown-linux-gnu
+        BIN_UTIL_PREFIX: aarch64-linux-gnu-
+        GLIBC_VERSION: 2.27
+      shell: bash
+      run: make package
+    - name: Generate checksums for all files
+      shell: bash
+      run: |
+        cd target/package
+        rm -rf checksums.txt
+        for file in *.rpm *.deb; do
+          # Skip if it's a directory
+          if [ -f "$file" ]; then
+              sha256sum "$file" >> checksums.txt
+          fi
+        done
