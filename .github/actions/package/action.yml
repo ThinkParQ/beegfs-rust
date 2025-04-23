@@ -5,7 +5,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup Rust Environment
-      uses: moonrepo/setup-rust@v1
+      uses: moonrepo/setup-rust@ede6de059f8046a5e236c94046823e2af11ca670 # v1
       with:
         components: clippy
         targets: aarch64-unknown-linux-gnu
