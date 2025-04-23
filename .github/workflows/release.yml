@@ -22,8 +22,6 @@ jobs:
           fetch-depth: 0
       - name: Build Packages
         uses: ./.github/actions/package
-        with:
-          CI_PROTOBUF_ACCESS_TOKEN: ${{ secrets.CI_PROTOBUF_ACCESS }}
       - name: Import GPG key
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v6
@@ -34,7 +32,7 @@ jobs:
         run: |
           cd target/package
           export GPG_TTY=$(tty)
-          gpg --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }} --trust-model always --detach-sign -o checksums.txt.sig -r packages@beegfs.com checksums.txt 
+          gpg --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }} --trust-model always --detach-sign -o checksums.txt.sig -r packages@beegfs.com checksums.txt
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
