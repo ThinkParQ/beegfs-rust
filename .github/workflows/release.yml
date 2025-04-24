@@ -9,6 +9,9 @@ on:
 env:
   # Cargo must use git cli for checkouts instead of builtin functionality to respect the repla
   CARGO_NET_GIT_FETCH_WITH_CLI: true
+permissions:
+  # Required to publish releases.
+  contents: write
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -22,11 +25,9 @@ jobs:
           fetch-depth: 0
       - name: Build Packages
         uses: ./.github/actions/package
-        with:
-          CI_PROTOBUF_ACCESS_TOKEN: ${{ secrets.CI_PROTOBUF_ACCESS }}
       - name: Import GPG key
         id: import_gpg
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@82a020f1f7f605c65dd2449b392a52c3fcfef7ef # v6
         with:
           gpg_private_key: ${{ secrets.PUBLICREPO_GPGPACKAGEKEY }}
           passphrase: ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }}
@@ -34,9 +35,9 @@ jobs:
         run: |
           cd target/package
           export GPG_TTY=$(tty)
-          gpg --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }} --trust-model always --detach-sign -o checksums.txt.sig -r packages@beegfs.com checksums.txt 
+          gpg --pinentry-mode loopback --passphrase ${{ secrets.PUBLICREPO_GPGPACKAGEPASSPHRASE }} --trust-model always --detach-sign -o checksums.txt.sig -r packages@beegfs.com checksums.txt
       - name: Create Release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@440c8c1cb0ed28b9f43e4d1d670870f059653174 # v1
         with:
           artifacts: "target/package/*.deb,target/package/*.rpm,target/package/checksums*"
           allowUpdates: true

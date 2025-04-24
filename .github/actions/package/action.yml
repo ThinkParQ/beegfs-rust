@@ -1,16 +1,11 @@
 name: "Build packages"
 description: "Build RPM and DEB packages for multiple architectures"
 
-inputs:
-  CI_PROTOBUF_ACCESS_TOKEN:
-    description: "Access token for protobuf repo"
-    required: true
-
 runs:
   using: "composite"
   steps:
     - name: Setup Rust Environment
-      uses: moonrepo/setup-rust@v1
+      uses: moonrepo/setup-rust@ede6de059f8046a5e236c94046823e2af11ca670 # v1
       with:
         components: clippy
         targets: aarch64-unknown-linux-gnu
@@ -28,10 +23,6 @@ runs:
         mkdir -p ${HOME}/zig
         tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
         echo ${HOME}/zig >> ${GITHUB_PATH}
-    - name: Configure foreign git repos
-      # Make sure the runner has access to the protobuf repo using an access token
-      shell: bash
-      run: git config --global url."https://${{ inputs.CI_PROTOBUF_ACCESS_TOKEN }}@github.com/thinkparq/protobuf".insteadOf https://github.com/thinkparq/protobuf
     - name: Run checks and tests
       shell: bash
       run: |
