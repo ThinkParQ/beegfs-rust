@@ -1,5 +1,7 @@
 use super::*;
 use shared::bee_msg::node::RemoveNode;
+use std::net::{IpAddr, Ipv6Addr};
+use std::str::FromStr;
 
 /// Delivers a list of nodes
 pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::GetNodesResponse> {
@@ -139,7 +141,11 @@ pub(crate) async fn get(ctx: Context, req: pm::GetNodesRequest) -> Result<pm::Ge
                 .filter(|(uid, _)| node.id.as_ref().is_some_and(|e| e.uid == Some(*uid)))
                 .cloned()
                 .map(|(_, mut nic)| {
-                    nic.addr = format!("{}:{}", nic.addr, node.port);
+                    nic.addr = SocketAddr::new(
+                        IpAddr::from_str(&nic.addr).unwrap_or(Ipv6Addr::UNSPECIFIED.into()),
+                        node.port as u16,
+                    )
+                    .to_string();
                     nic
                 })
                 .collect();

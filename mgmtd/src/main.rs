@@ -97,7 +97,7 @@ doc.beegfs.io.",
         None
     };
 
-    let network_addrs = shared::ethernet_interfaces(&user_config.interfaces)?;
+    let network_addrs = shared::nic::query_nics(&user_config.interfaces)?;
 
     // Configure the tokio runtime
     let rt = tokio::runtime::Builder::new_multi_thread()

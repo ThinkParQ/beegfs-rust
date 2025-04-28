@@ -37,9 +37,35 @@
 # The private key file belonging to the above certificate.
 # tls-key-file = "/etc/beegfs/key.pem"
 
-# Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
-# The interfaces are reported in the given order. If not given, all suitable interfaces can be used.
-# interfaces = ["eth0", "eth1"]
+# Restricts and prioritizes network interfaces reported to other nodes for incoming BeeMsg
+# communication.
+#
+# Accepts a list of interface/nic filters. Interfaces can be filtered by name, address and protocol
+# (ipv4 or ipv6). Each filter entry has the form `[!] [<name>|*] [<addr>|*] [<protocol>|*]`, where
+# protocol can be "4" or "6". Each field can be set to "*" to match any value. Stars on the right
+# can be omitted. The order of the filter entries determines the priority of the interfaces as they
+# should be used by other nodes for BeeMsg communication. The first entry an interface matches is
+# that interfaces priority - the earlier the match, the higher the priority. Any interface that
+# doesn't match any entry is not reported and will thus not be contacted by other nodes. A single
+# `!` before the entry blacklists the matching interfaces - it is not reported even if a later entry
+# does match it.
+#
+# If not given, all suitable interfaces can be used and are reported in default order.
+#
+# EXAMPLES:
+#
+# * Prefer IPv6: ["* * 6", "* * 4"]
+# * IPv6 only: ["* * 6"]
+# * Only the eth0 interface using IPv6: ["eth0 * 6"]
+# * Prefer one IPv6 address, allow only IPv4 otherwise: ["* fd00::1", "* * 4"]
+# * Deny eth0 interface, allow everything else: ["! eth0", "*"]
+#
+# interfaces = ["*"]
+
+# Prefers an interfaces ipv6 addresses over ipv4.
+# By default, ipv4 addresses are preferred. If the interface filter is given, the interface
+# order has higher priority than the address family, which is sorted per interface.
+# interfaces_prefer_ipv6 = false
 
 # Maximum number of outgoing connections per node.
 # connection-limit = 12

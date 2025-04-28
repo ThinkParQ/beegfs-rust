@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::{Deserialize, Deserializer};
+use shared::nic::{self, NicFilter};
 use shared::parser::{duration, integer_range};
 use shared::types::{Port, QuotaId};
 use std::fmt::Debug;
@@ -203,14 +204,33 @@ generate_structs! {
     #[arg(value_name = "PATH")]
     tls_key_file: PathBuf = "/etc/beegfs/key.pem".into(),
 
-    /// Restricts network interfaces reported to other nodes for incoming BeeMsg communication.
+    /// Restricts and prioritizes network interfaces reported to other nodes for incoming BeeMsg
+    /// communication.
     ///
-    /// Accepts a comma separated list of interface names. They are reported in the given order. If
-    /// not given, all suitable interfaces can be used.
+    /// Accepts a comma separated list of interface/nic filters. Interfaces can be filtered by
+    /// name, address and protocol (ipv4 or ipv6). Each filter entry has the form `[!] [<name>|*]
+    /// [<addr>|*] [<protocol>|*]`, where protocol can be "4" or "6". Each field can be set to
+    /// "*" to match any value. Stars on the right can be omitted. The order of the filter entries
+    /// determines the priority of the interfaces as they should be used by other nodes for BeeMsg
+    /// communication. The first entry an interface matches is that interfaces priority - the
+    /// earlier the match, the higher the priority. Any interface that doesn't match any entry is
+    /// not reported and will thus not be contacted by other nodes. A single `!` before the entry
+    /// blacklists the matching interfaces - it is not reported even if a later entry does match it.
+    ///
+    /// If not given, all suitable interfaces can be used and are reported in default order.
+    ///
+    /// EXAMPLES:
+    ///
+    /// * Prefer IPv6: `* * 6,* * 4`
+    /// * IPv6 only: `* * 6`
+    /// * Only the eth0 interface using IPv6: `eth0 * 6`
+    /// * Prefer one IPv6 address, allow only IPv4 otherwise: `* fd00::1,* * 4`
+    /// * Deny eth0 interface, allow everything else: `! eth0,*`
     #[arg(long)]
-    #[arg(value_name = "NAMES")]
+    #[arg(value_name = "FILTERS")]
     #[arg(value_delimiter = ',')]
-    interfaces: Vec<String> = vec![],
+    #[arg(value_parser = nic::NicFilter::parse)]
+    interfaces: Vec<NicFilter> = vec![],
 
     /// Maximum number of outgoing BeeMsg connections per node. [default: 12]
     #[arg(long)]

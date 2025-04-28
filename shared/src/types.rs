@@ -124,11 +124,23 @@ impl From<NodeTypeServer> for pb::NodeType {
 }
 
 /// The network interface type as used by BeeMsg
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NicType {
+    Rdma,
     #[default]
     Ethernet,
-    Rdma,
+}
+
+impl FromStr for NicType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "tcp" => Ok(Self::Ethernet),
+            "rdma" => Ok(Self::Rdma),
+            s => Err(anyhow!("{s} is not a valid nic type")),
+        }
+    }
 }
 
 impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 2);

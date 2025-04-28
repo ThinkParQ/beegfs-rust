@@ -18,9 +18,9 @@ use anyhow::Result;
 use bee_msg::notify_nodes;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
-use shared::NetworkAddr;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::conn::{Pool, incoming};
+use shared::nic::Nic;
 use shared::run_state::{self, RunStateControl};
 use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType};
 use sqlite::TransactionExt;
@@ -39,7 +39,7 @@ use types::SqliteEnumExt;
 pub struct StaticInfo {
     pub user_config: Config,
     pub auth_secret: Option<AuthSecret>,
-    pub network_addrs: Vec<NetworkAddr>,
+    pub network_addrs: Vec<Nic>,
 }
 
 /// Starts the management service.
@@ -63,7 +63,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(
         UdpSocket::bind(SocketAddr::new(
-            "0.0.0.0".parse()?,
+            "::0".parse()?,
             info.user_config.beemsg_port,
         ))
         .await?,
@@ -94,7 +94,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
             MGMTD_UID,
             info.network_addrs.iter().map(|e| ReplaceNic {
                 nic_type: NicType::Ethernet,
-                addr: &e.addr,
+                addr: &e.address,
                 name: e.name.as_str().into(),
             }),
         )
@@ -122,7 +122,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
 
     // Listen for incoming TCP connections
     incoming::listen_tcp(
-        SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.beemsg_port),
+        SocketAddr::new("::0".parse()?, ctx.info.user_config.beemsg_port),
         ctx.clone(),
         info.auth_secret.is_some(),
         run_state.clone(),
