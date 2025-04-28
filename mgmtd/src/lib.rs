@@ -63,7 +63,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(
         UdpSocket::bind(SocketAddr::new(
-            "0.0.0.0".parse()?,
+            "::0".parse()?,
             info.user_config.beemsg_port,
         ))
         .await?,
@@ -122,7 +122,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
 
     // Listen for incoming TCP connections
     incoming::listen_tcp(
-        SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.beemsg_port),
+        SocketAddr::new("::0".parse()?, ctx.info.user_config.beemsg_port),
         ctx.clone(),
         info.auth_secret.is_some(),
         run_state.clone(),

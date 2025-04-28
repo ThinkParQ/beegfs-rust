@@ -30,7 +30,10 @@ pub struct NetworkAddr {
 ///
 /// Only interfaces matching one of the given names in `filter` will be returned, unless the list
 /// is empty.
-pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr>> {
+pub fn ethernet_interfaces(
+    filter: &[impl AsRef<str>],
+    prefer_ipv6: bool,
+) -> Result<Vec<NetworkAddr>> {
     let mut filtered_nics = vec![];
     for interface in pnet_datalink::interfaces() {
         if !filter.is_empty() && !filter.iter().any(|e| interface.name == e.as_ref()) {
@@ -38,11 +41,6 @@ pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr
         }
 
         for ip in interface.ips {
-            // TODO Ipv6: Remove the Ipv4 filter when protocol changes (https://github.com/ThinkParQ/beegfs-rs/issues/145)
-            if !ip.is_ipv4() {
-                continue;
-            }
-
             filtered_nics.push(NetworkAddr {
                 addr: ip.ip(),
                 name: interface.name.clone(),
@@ -58,8 +56,11 @@ pub fn ethernet_interfaces(filter: &[impl AsRef<str>]) -> Result<Vec<NetworkAddr
         bail!("At least one network interface doesn't exist");
     }
 
+    // Sort by address family
+    filtered_nics.sort_unstable_by_key(|k| (prefer_ipv6 ^ k.addr.is_ipv6()) as usize);
+
     // Sort
-    filtered_nics.sort_unstable_by_key(|k| {
+    filtered_nics.sort_by_key(|k| {
         if filter.is_empty() {
             // Move loopbacks to the back
             k.addr.is_loopback() as usize

@@ -212,6 +212,14 @@ generate_structs! {
     #[arg(value_delimiter = ',')]
     interfaces: Vec<String> = vec![],
 
+    /// Prefers an interfaces ipv6 addresses over ipv4.
+    ///
+    /// By default, ipv4 addresses are preferred. If the interface filter is given, the interface
+    /// order has higher priority than the address family, which is sorted per interface.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    interfaces_prefer_ipv6: bool = false,
+
     /// Maximum number of outgoing BeeMsg connections per node. [default: 12]
     #[arg(long)]
     #[arg(value_name = "LIMIT")]
