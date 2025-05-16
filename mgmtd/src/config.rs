@@ -107,6 +107,15 @@ generate_structs! {
     #[serde(skip)]
     init: bool = false,
 
+    /// Optionally specifies the FsUuid when initializing the database.
+    ///
+    /// If not provided, a new FsUuid will be generated.
+    #[arg(long)]
+    #[arg(hide = true)]
+    #[arg(value_name = "UUID")]
+    #[serde(skip)]
+    fs_uuid: Option<String> = None,
+
     /// Upgrades an outdated management database to the current version, then exits.
     ///
     /// Automatically creates a backup of the existing database file in the same directory.

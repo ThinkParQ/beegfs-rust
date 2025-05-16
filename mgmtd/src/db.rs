@@ -37,8 +37,21 @@ pub const MIGRATIONS: &[sqlite::Migration] = include!(concat!(env!("OUT_DIR"), "
 
 /// Inserts initial entries into a new database. Remember to commit the transaction after calling
 /// this function.
-pub fn initial_entries(tx: &Transaction) -> Result<()> {
-    config::set(tx, Config::FsUuid, Uuid::new_v4().to_string())?;
+///
+/// If `fs_uuid` is provided, it will be used. Otherwise, a new FsUUID will be generated.
+pub fn initial_entries(tx: &Transaction, fs_uuid: Option<String>) -> Result<()> {
+    let uuid = match fs_uuid {
+        Some(ref s) => {
+            let parsed =
+                Uuid::parse_str(s).map_err(|_| anyhow!("Provided fs_uuid is not a valid UUID"))?;
+            if parsed.get_version_num() != 4 {
+                bail!("Provided fs_uuid is not a valid v4 UUID");
+            }
+            s.clone()
+        }
+        None => Uuid::new_v4().to_string(),
+    };
+    config::set(tx, Config::FsUuid, uuid)?;
     config::set(
         tx,
         Config::FsInitDateSecs,
