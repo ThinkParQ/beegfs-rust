@@ -11,6 +11,7 @@ use std::fmt::Debug;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::time::Duration;
+use uuid::Uuid;
 
 /// Generates `Config` to be filled by the functions below and exported to be used by the program.
 ///
@@ -111,10 +112,11 @@ generate_structs! {
     ///
     /// If not provided, a new FsUuid will be generated.
     #[arg(long)]
+    #[arg(num_args = 1)]
     #[arg(hide = true)]
     #[arg(value_name = "UUID")]
     #[serde(skip)]
-    fs_uuid: Option<String> = None,
+    fs_uuid: Option<Uuid> = None,
 
     /// Upgrades an outdated management database to the current version, then exits.
     ///
@@ -402,6 +404,12 @@ generate_structs! {
 
 impl Config {
     pub fn check_validity(&self) -> Result<()> {
+        if let Some(ref uuid) = self.fs_uuid {
+            if uuid.get_version_num() != 4 {
+                bail!("Provided file system UUID is not a valid v4 UUID");
+            }
+        }
+
         if self.quota_enforce && !self.quota_enable {
             bail!("Quota enforcement requires quota being enabled");
         }
