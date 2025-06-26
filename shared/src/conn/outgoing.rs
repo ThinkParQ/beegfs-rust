@@ -51,8 +51,10 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        serialize(msg, &mut buf)?;
-        let resp_header = self.comm_stream(node_uid, &mut buf, true).await?;
+        let msg_len = serialize(msg, &mut buf)?;
+        let resp_header = self
+            .comm_stream(node_uid, &mut buf[0..msg_len], true)
+            .await?;
         let resp_msg = deserialize_body(&resp_header, &buf[Header::LEN..])?;
 
         self.store.push_buf(buf);
@@ -68,8 +70,9 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        serialize(msg, &mut buf)?;
-        self.comm_stream(node_uid, &mut buf, false).await?;
+        let msg_len = serialize(msg, &mut buf)?;
+        self.comm_stream(node_uid, &mut buf[0..msg_len], false)
+            .await?;
 
         self.store.push_buf(buf);
 
