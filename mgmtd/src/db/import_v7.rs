@@ -36,12 +36,8 @@ pub fn import_v7(tx: &rusqlite::Transaction, base_path: &Path) -> Result<()> {
 
     // Storage
     storage_nodes(tx, &base_path.join("storage.nodes")).context("storage.nodes")?;
-    storage_targets(
-        tx,
-        &base_path.join("targets"),
-        &base_path.join("targetNumIDs"),
-    )
-    .context("storage targets (target + targetNumIDs)")?;
+    storage_targets(tx, &base_path.join("targets"))
+        .context("storage targets (target + targetNumIDs)")?;
     buddy_groups(
         tx,
         &base_path.join("storagebuddygroups"),
@@ -267,23 +263,14 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
 }
 
 /// Imports storage targets
-fn storage_targets(
-    tx: &Transaction,
-    targets_path: &Path,
-    target_num_ids_path: &Path,
-) -> Result<()> {
+fn storage_targets(tx: &Transaction, targets_path: &Path) -> Result<()> {
     let targets = std::fs::read_to_string(targets_path)?;
-    let target_num_ids = std::fs::read_to_string(target_num_ids_path)?;
 
-    if targets.lines().count() != target_num_ids.lines().count() {
-        bail!("line count mismatch between {targets_path:?} and {target_num_ids_path:?}");
-    }
-
-    for l in targets.lines().zip(target_num_ids.lines()) {
-        let (target, node) =
-            l.0.trim()
-                .split_once('=')
-                .ok_or_else(|| anyhow!("invalid line '{}'", l.0))?;
+    for l in targets.lines() {
+        let (target, node) = l
+            .trim()
+            .split_once('=')
+            .ok_or_else(|| anyhow!("invalid line '{}'", l))?;
 
         let node_id = NodeId::from_str_radix(node.trim(), 16)?;
         let target_id = TargetId::from_str_radix(target.trim(), 16)?;
