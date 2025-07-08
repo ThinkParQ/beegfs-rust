@@ -3,3 +3,4 @@
 pub mod duration;
 pub mod integer_range;
 pub mod integer_unit;
+pub mod nic_filter;

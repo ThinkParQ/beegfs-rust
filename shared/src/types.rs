@@ -131,6 +131,18 @@ pub enum NicType {
     Rdma,
 }
 
+impl FromStr for NicType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "tcp" => Ok(Self::Ethernet),
+            "rdma" => Ok(Self::Rdma),
+            s => Err(anyhow!("{s} is not a valid nic type")),
+        }
+    }
+}
+
 impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 2);
 
 impl_enum_user_str! {NicType,
