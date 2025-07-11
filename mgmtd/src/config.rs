@@ -482,13 +482,13 @@ pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
             let file_config: OptionalConfig =
                 toml::from_str(toml_config).with_context(|| "Could not parse config file")?;
 
-            info_log.push(format!("Loaded config file from {:?}", config_file));
+            info_log.push(format!("Loaded config file from {config_file:?}"));
             config.update_from_optional(file_config);
         }
         Err(err) => {
             if config_file != &config.config_file {
                 return Err(err)
-                    .with_context(|| format!("Could not open config file at {:?}", config_file));
+                    .with_context(|| format!("Could not open config file at {config_file:?}"));
             }
 
             info_log.push("No config file found at default location, ignoring".to_string());

@@ -194,7 +194,7 @@ pub async fn notify_nodes<M: Msg + Serializable>(
     node_types: &'static [NodeType],
     msg: &M,
 ) {
-    log::trace!("NOTIFICATION to {:?}: {:?}", node_types, msg);
+    log::trace!("NOTIFICATION to {node_types:?}: {msg:?}");
 
     if let Err(err) = async {
         for t in node_types {
