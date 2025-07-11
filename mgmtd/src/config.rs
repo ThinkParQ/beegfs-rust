@@ -212,6 +212,14 @@ generate_structs! {
     #[arg(value_delimiter = ',')]
     interfaces: Vec<String> = vec![],
 
+    /// Prefers an interfaces ipv6 addresses over ipv4.
+    ///
+    /// By default, ipv4 addresses are preferred. If the interface filter is given, the interface
+    /// order has higher priority than the address family, which is sorted per interface.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    interfaces_prefer_ipv6: bool = false,
+
     /// Maximum number of outgoing BeeMsg connections per node. [default: 12]
     #[arg(long)]
     #[arg(value_name = "LIMIT")]
@@ -482,13 +490,13 @@ pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
             let file_config: OptionalConfig =
                 toml::from_str(toml_config).with_context(|| "Could not parse config file")?;
 
-            info_log.push(format!("Loaded config file from {:?}", config_file));
+            info_log.push(format!("Loaded config file from {config_file:?}"));
             config.update_from_optional(file_config);
         }
         Err(err) => {
             if config_file != &config.config_file {
                 return Err(err)
-                    .with_context(|| format!("Could not open config file at {:?}", config_file));
+                    .with_context(|| format!("Could not open config file at {config_file:?}"));
             }
 
             info_log.push("No config file found at default location, ignoring".to_string());
