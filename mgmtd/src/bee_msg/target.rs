@@ -262,7 +262,7 @@ impl HandleWithResponse for SetStorageTargetInfo {
             })
             .await?;
 
-        log::debug!("Updated {:?} target info", node_type,);
+        log::debug!("Updated {node_type:?} target info");
 
         // in the old mgmtd, a notice to refresh cap pools is sent out here if a cap pool
         // changed I consider this being to expensive to check here and just don't

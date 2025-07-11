@@ -219,7 +219,7 @@ Primary result: {:?}, Secondary result: {:?}",
         .await?;
 
     if execute {
-        log::info!("Buddy group deleted: {}", group);
+        log::info!("Buddy group deleted: {group}");
     }
 
     Ok(pm::DeleteBuddyGroupResponse {
