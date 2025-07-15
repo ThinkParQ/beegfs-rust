@@ -68,7 +68,7 @@ impl_enum_sqlite! {NodeTypeServer,
 }
 
 impl_enum_sqlite! {NicType,
-    NicType::Ethernet => 1,
+    NicType::Tcp => 1,
     NicType::Rdma => 2,
 }
 

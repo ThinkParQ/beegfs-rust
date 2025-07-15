@@ -47,7 +47,7 @@ async fn delete_stale_clients(ctx: Context, mut run_state: RunStateHandle) {
         {
             Ok(affected) => {
                 if affected > 0 {
-                    log::info!("Deleted {} stale clients", affected);
+                    log::info!("Deleted {affected} stale clients");
                 }
             }
             Err(err) => log::error!("Deleting stale clients failed: {err:#}"),

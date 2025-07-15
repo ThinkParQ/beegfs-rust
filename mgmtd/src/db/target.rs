@@ -331,8 +331,8 @@ mod test {
 
             assert_eq!(19, targets.len());
 
-            assert!(targets.iter().any(|e| *e == new_target_id));
-            assert!(targets.iter().any(|e| *e == 1000));
+            assert!(targets.contains(&new_target_id));
+            assert!(targets.contains(&1000));
         })
     }
 }
