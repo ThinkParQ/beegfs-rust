@@ -136,7 +136,7 @@ fn nic_priority(filter: &[NicFilter], name: &str, ip: &IpAddr) -> Option<usize> 
         }
         // We don't detect rdma interfaces yet
         if fil.nic_type.as_ref().is_some_and(|e| match e {
-            NicType::Ethernet => false,
+            NicType::Tcp => false,
             NicType::Rdma => true,
         }) {
             continue;
@@ -195,7 +195,7 @@ pub fn query_nics(filter: &[NicFilter]) -> Result<Vec<Nic>> {
                 filtered_nics.push(Nic {
                     name: interface.name.clone(),
                     address: ip.ip(),
-                    nic_type: NicType::Ethernet,
+                    nic_type: NicType::Tcp,
                     priority,
                 });
             }
@@ -254,7 +254,7 @@ mod test {
         assert_eq!(
             NicFilter::parse_optional("* * * tcp").unwrap(),
             NicFilter {
-                nic_type: Some(NicType::Ethernet),
+                nic_type: Some(NicType::Tcp),
                 ..Default::default()
             }
         );
@@ -384,19 +384,19 @@ mod test {
         let mut nics = [
             Nic {
                 address: IpAddr::from_str("127.0.0.1").unwrap(),
-                nic_type: NicType::Ethernet,
+                nic_type: NicType::Tcp,
                 name: "a".into(),
                 priority: 0,
             },
             Nic {
                 address: IpAddr::from_str("192.168.0.2").unwrap(),
-                nic_type: NicType::Ethernet,
+                nic_type: NicType::Tcp,
                 name: "b".into(),
                 priority: 1,
             },
             Nic {
                 address: IpAddr::from_str("192.168.0.1").unwrap(),
-                nic_type: NicType::Ethernet,
+                nic_type: NicType::Tcp,
                 name: "a".into(),
                 priority: 0,
             },
@@ -408,7 +408,7 @@ mod test {
             },
             Nic {
                 address: IpAddr::from_str("::1").unwrap(),
-                nic_type: NicType::Ethernet,
+                nic_type: NicType::Tcp,
                 name: "a".into(),
                 priority: 0,
             },

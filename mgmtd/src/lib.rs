@@ -93,7 +93,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
             tx,
             MGMTD_UID,
             info.network_addrs.iter().map(|e| ReplaceNic {
-                nic_type: NicType::Ethernet,
+                nic_type: NicType::Tcp,
                 addr: &e.address,
                 name: e.name.as_str().into(),
             }),
