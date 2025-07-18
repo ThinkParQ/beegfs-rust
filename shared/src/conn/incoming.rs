@@ -1,12 +1,12 @@
 //! Handle incoming TCP and UDP connections and BeeMsgs.
 
-use super::msg_buf::MsgBuf;
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
-use crate::bee_msg::Msg;
+use super::*;
 use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::{Header, Msg, deserialize_header};
 use crate::run_state::RunStateHandle;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -86,7 +86,7 @@ async fn stream_loop(
     log::debug!("Accepted incoming stream from {:?}", stream.addr());
 
     // Use one owned buffer for reading into and writing from.
-    let mut buf = MsgBuf::default();
+    let mut buf = vec![0; TCP_BUF_LEN];
 
     loop {
         // Wait for available data or shutdown signal
@@ -134,28 +134,41 @@ async fn stream_loop(
 /// handler and sending back a response using the [`StreamRequest`] handle.
 async fn read_stream(
     stream: &mut Stream,
-    buf: &mut MsgBuf,
+    buf: &mut [u8],
     dispatch: &impl DispatchRequest,
     stream_authentication_required: bool,
 ) -> Result<()> {
-    buf.read_from_stream(stream).await?;
+    // Read header
+    stream.read_exact(&mut buf[0..Header::LEN]).await?;
+
+    let header = deserialize_header(&buf[0..Header::LEN])?;
 
     // check authentication
     if stream_authentication_required
         && !stream.authenticated
-        && buf.msg_id() != AuthenticateChannel::ID
+        && header.msg_id() != AuthenticateChannel::ID
     {
         bail!(
             "Stream is not authenticated and received message with id {}",
-            buf.msg_id()
+            header.msg_id()
         );
     }
+
+    // Read body
+    stream
+        .read_exact(&mut buf[Header::LEN..header.msg_len()])
+        .await?;
 
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to
     // msg handlers and sending a response using the [`StreamRequest`] handle.
     dispatch
-        .dispatch_request(StreamRequest { stream, buf })
-        .await?;
+        .dispatch_request(StreamRequest {
+            stream,
+            buf,
+            header: &header,
+        })
+        .await
+        .context("Stream msg dispatch failed")?;
 
     Ok(())
 }
@@ -186,8 +199,7 @@ pub fn recv_udp(
                 // Do the actual work
                 res = recv_datagram(sock.clone(), dispatch.clone()) => {
                     if let Err(err) = res {
-                        log::error!("Error in UDP socket {sock:?}: {err:#}");
-                        break;
+                        log::error!("Error on receiving datagram using UDP socket {:?}: {err:#}", sock.local_addr());
                     }
                 }
 
@@ -210,20 +222,30 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // message spawns a new task (below) and we don't know how long the processing takes, we cannot
     // reuse Buffers like the TCP reader does.
     // A separate buffer pool could potentially be used to avoid allocating new buffers every time.
-    let mut buf = MsgBuf::default();
-    let peer_addr = buf.recv_from_socket(&sock).await?;
+    let mut buf = vec![0; UDP_BUF_LEN];
+
+    let (_, peer_addr) = sock.recv_from(&mut buf).await?;
 
     // Request shall be handled in a separate task, so the next datagram can be processed
     // immediately
     tokio::spawn(async move {
-        let req = SocketRequest {
-            sock,
-            peer_addr,
-            msg_buf: &mut buf,
-        };
+        if let Err(err) = async {
+            let header = deserialize_header(&buf[0..Header::LEN])?;
 
-        // Forward to the dispatcher
-        if let Err(err) = msg_handler.dispatch_request(req).await {
+            let req = SocketRequest {
+                sock,
+                peer_addr,
+                buf: &mut buf,
+                header: &header,
+            };
+
+            // Forward to the dispatcher
+            msg_handler.dispatch_request(req).await?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await
+        {
             log::error!("Error while handling datagram from {peer_addr:?}: {err:#}");
         }
     });
