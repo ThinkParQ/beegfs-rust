@@ -199,8 +199,7 @@ pub fn recv_udp(
                 // Do the actual work
                 res = recv_datagram(sock.clone(), dispatch.clone()) => {
                     if let Err(err) = res {
-                        log::error!("Error in UDP socket {sock:?}: {err:#}");
-                        break;
+                        log::error!("Error on receiving datagram using UDP socket {:?}: {err:#}", sock.local_addr());
                     }
                 }
 
@@ -227,20 +226,26 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
 
     let (_, peer_addr) = sock.recv_from(&mut buf).await?;
 
-    let header = deserialize_header(&buf[0..Header::LEN])?;
-
     // Request shall be handled in a separate task, so the next datagram can be processed
     // immediately
     tokio::spawn(async move {
-        let req = SocketRequest {
-            sock,
-            peer_addr,
-            buf: &mut buf,
-            header: &header,
-        };
+        if let Err(err) = async {
+            let header = deserialize_header(&buf[0..Header::LEN])?;
 
-        // Forward to the dispatcher
-        if let Err(err) = msg_handler.dispatch_request(req).await {
+            let req = SocketRequest {
+                sock,
+                peer_addr,
+                buf: &mut buf,
+                header: &header,
+            };
+
+            // Forward to the dispatcher
+            msg_handler.dispatch_request(req).await?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await
+        {
             log::error!("Error while handling datagram from {peer_addr:?}: {err:#}");
         }
     });
