@@ -1,15 +1,41 @@
-# Build the management
+beegfs-rust <!-- omit in toc -->
+===========
 
-1. Read through [Getting started with Rust](https://github.com/ThinkParQ/beegfs-rs/wiki/Getting-Started-with-Rust) and setup your environment as described.
+# Contents <!-- omit in toc -->
 
-2. Clone the management repository:
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Building (With or Without Packaging)](#building-with-or-without-packaging)
+  - [Setting the binaries version output](#setting-the-binaries-version-output)
+- [Run the management](#run-the-management)
+  - [Provide a config file](#provide-a-config-file)
+  - [Provide TLS certificates](#provide-tls-certificates)
+  - [Provide BeeMsg authentication file](#provide-beemsg-authentication-file)
+  - [Set up the database](#set-up-the-database)
+  - [Run the server](#run-the-server)
 
-   ```shell
-   git clone https://github.com/ThinkParQ/beegfs-rs
-   cd beegfs-rs
-   ```
+The purpose of this repository is twofold:
 
-3. The management can be built and run through cargo in one step:
+* Provide Rust packages for interacting with BeeGFS.
+* Provide BeeGFS-related software written in Rust, such as the BeeGFS management service.
+
+# Getting Started
+
+## Prerequisites
+
+* If you just want to build/run the project without OS packages download and install Rust from
+  [rustup](https://rustup.rs/).
+* If you want to build packages you also need to run `make install-tools`.
+  * Note this only installs the tooling needed for a local, native build and is insufficient for
+    cross-compilation.
+
+If you are interested in contributing to the project please refer to [Getting Started with Rust](https://github.com/ThinkParQ/beegfs-rust/wiki/Getting-Started-with-Rust) in the project wiki.
+
+## Building (With or Without Packaging)
+
+There are a few ways to build/run the BeeGFS management service:
+
+* The management can be built and run through cargo in one step:
 
    ```shell
    cargo run -p mgmtd -- --help
@@ -24,7 +50,11 @@
    ./target/debug/mgmtd --help
    ```
 
-   Both ways are valid - down below, the first variant is used as it is quicker.
+   Both ways are valid, in the below examples the first variant is used as it is quicker.
+
+* Build and install using OS packages: `make package`
+  * Packages will be created under `target/package/` that can be installed using `dpkg -i <package>`
+    or similar.
 
 ## Setting the binaries version output
 
