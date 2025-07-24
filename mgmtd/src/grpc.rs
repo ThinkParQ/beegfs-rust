@@ -181,7 +181,7 @@ pub(crate) fn serve(ctx: Context, mut shutdown: RunStateHandle) -> Result<()> {
         builder
     };
 
-    let serve_addr = SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.grpc_port);
+    let serve_addr = SocketAddr::new("::".parse()?, ctx.info.user_config.grpc_port);
 
     let service = pm::management_server::ManagementServer::with_interceptor(
         ManagementService { ctx: ctx.clone() },
