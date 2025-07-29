@@ -2,11 +2,17 @@
 
 mod async_queue;
 pub mod incoming;
-mod msg_buf;
 pub mod msg_dispatch;
-mod outgoing;
+pub mod outgoing;
 mod store;
 mod stream;
 
-pub use self::msg_buf::MsgBuf;
-pub use outgoing::*;
+/// Fixed length of the stream / TCP message buffers.
+/// Must match the `WORKER_BUF(IN|OUT)_SIZE` value in `Worker.h` in the C++
+/// codebase.
+const TCP_BUF_LEN: usize = 4 * 1024 * 1024;
+
+/// Fixed length of the datagram / UDP message buffers.
+/// Must match the `DGRAMMR_(RECV|SEND)BUF_SIZE` value in `DatagramListener.*` in the C/C++
+/// codebase. Must be smaller than TCP_BUF_LEN;
+const UDP_BUF_LEN: usize = 65536;
