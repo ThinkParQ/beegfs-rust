@@ -9,7 +9,7 @@ runs:
       with:
         components: clippy
         targets: aarch64-unknown-linux-gnu
-        bins: cargo-deny, cargo-about, cargo-generate-rpm, cargo-deb, cargo-zigbuild
+        bins: cargo-deny@0.18.3, cargo-about@0.7.1, cargo-generate-rpm@0.17.0, cargo-deb@3.3.0, cargo-zigbuild@0.20.1
     - name: Setup nightly toolchain and tools
       shell: bash
       run: |
