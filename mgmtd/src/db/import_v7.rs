@@ -374,10 +374,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
 
         quota_default_limits(tx, &e.path().join("quotaDefaultLimits.store"), pool_id)
             .with_context(|| {
-                format!(
-                    "quota default limits ({}/quotaDefaultLimits.store)",
-                    pool_id
-                )
+                format!("quota default limits ({pool_id}/quotaDefaultLimits.store)")
             })?;
 
         quota_limits(
@@ -386,7 +383,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
             pool_id,
             QuotaIdType::User,
         )
-        .with_context(|| format!("quota user limits ({}/quotaUserLimits.store)", pool_id))?;
+        .with_context(|| format!("quota user limits ({pool_id}/quotaUserLimits.store)"))?;
 
         quota_limits(
             tx,
@@ -394,7 +391,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
             pool_id,
             QuotaIdType::Group,
         )
-        .with_context(|| format!("quota group limits ({}/quotaGroupLimits.store)", pool_id))?;
+        .with_context(|| format!("quota group limits ({pool_id}/quotaGroupLimits.store)"))?;
 
         // We intentionally ignore the quota usage data - it is fetched and updated from the
         // nodes on a regular basis anyway.
