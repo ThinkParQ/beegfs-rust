@@ -194,12 +194,21 @@ impl Pool {
         buf.serialize_msg(msg)?;
 
         for node_uid in peers {
-            let Some(addrs) = self.store.get_node_addrs(node_uid) else {
-                bail!("No network address found for node with uid {node_uid:?}");
-            };
+            let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
 
+            let mut sent = false;
             for addr in addrs.iter() {
-                buf.send_to_socket(&self.udp_socket, addr).await?;
+                if let Err(err) = buf.send_to_socket(&self.udp_socket, addr).await {
+                    log::debug!("Sending datagram to {addr} failed: {err}");
+                    continue;
+                }
+                sent = true;
+            }
+
+            if !sent {
+                log::error!(
+                    "Failed to send datagram to node with uid {node_uid}: Sending failed for all known addresses"
+                );
             }
         }
 

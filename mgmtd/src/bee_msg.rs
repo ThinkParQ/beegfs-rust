@@ -196,8 +196,8 @@ pub async fn notify_nodes<M: Msg + Serializable>(
 ) {
     log::trace!("NOTIFICATION to {node_types:?}: {msg:?}");
 
-    if let Err(err) = async {
-        for t in node_types {
+    for t in node_types {
+        if let Err(err) = async {
             let nodes = ctx
                 .db
                 .read_tx(move |tx| db::node::get_with_type(tx, *t))
@@ -206,12 +206,12 @@ pub async fn notify_nodes<M: Msg + Serializable>(
             ctx.conn
                 .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)
                 .await?;
-        }
 
-        Ok(()) as Result<_>
-    }
-    .await
-    {
-        log::error!("Notification could not be sent to all nodes: {err:#}");
+            Ok(()) as Result<_>
+        }
+        .await
+        {
+            log::error!("Notification could not be sent to all {t} nodes: {err:#}");
+        }
     }
 }

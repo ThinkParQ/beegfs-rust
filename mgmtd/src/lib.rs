@@ -27,7 +27,7 @@ use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::future::Future;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
@@ -60,14 +60,22 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // Static configuration which doesn't change at runtime
     let info = Box::leak(Box::new(info));
 
+    let mut beemsg_serve_addr = SocketAddr::new("::".parse()?, info.user_config.beemsg_port);
+
+    // Test for IPv6 available, fall back to IPv4 sockets if not
+    match TcpListener::bind(beemsg_serve_addr) {
+        Ok(_) => {}
+        Err(err) if err.raw_os_error() == Some(libc::EAFNOSUPPORT) => {
+            log::debug!("BeeMsg: IPv6 not available, falling back to IPv4 sockets");
+            beemsg_serve_addr = SocketAddr::new("0.0.0.0".parse()?, info.user_config.beemsg_port);
+        }
+        Err(err) => {
+            anyhow::bail!(err);
+        }
+    }
+
     // UDP socket for in- and outgoing messages
-    let udp_socket = Arc::new(
-        UdpSocket::bind(SocketAddr::new(
-            "::0".parse()?,
-            info.user_config.beemsg_port,
-        ))
-        .await?,
-    );
+    let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);
 
     // Node address store and connection pool
     let conn_pool = Pool::new(
@@ -121,8 +129,9 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     );
 
     // Listen for incoming TCP connections
+    // Fall back to ipv4 socket if ipv6 is not available
     incoming::listen_tcp(
-        SocketAddr::new("::0".parse()?, ctx.info.user_config.beemsg_port),
+        beemsg_serve_addr,
         ctx.clone(),
         info.auth_secret.is_some(),
         run_state.clone(),
