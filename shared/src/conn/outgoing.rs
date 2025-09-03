@@ -185,6 +185,11 @@ impl Pool {
         Ok(())
     }
 
+    /// Broadcasts a BeeMsg datagram to all given nodes using all their known addresses
+    ///
+    /// Logs errors if sending failed completely for a node, only fails if serialization fails.
+    /// Remember that this is UDP and thus no errors only means that the sending was successful,
+    /// not that the messages reached their destinations.
     pub async fn broadcast_datagram<M: Msg + Serializable>(
         &self,
         peers: impl IntoIterator<Item = Uid>,
@@ -196,18 +201,26 @@ impl Pool {
         for node_uid in peers {
             let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
 
-            let mut sent = false;
-            for addr in addrs.iter() {
-                if let Err(err) = buf.send_to_socket(&self.udp_socket, addr).await {
-                    log::debug!("Sending datagram to {addr} failed: {err}");
-                    continue;
-                }
-                sent = true;
+            if addrs.is_empty() {
+                log::error!(
+                    "Failed to send datagram to node with uid {node_uid}: No known addresses"
+                );
+                continue;
             }
 
-            if !sent {
+            let mut errs = vec![];
+            for addr in addrs.iter() {
+                if let Err(err) = buf.send_to_socket(&self.udp_socket, addr).await {
+                    log::debug!(
+                        "Sending datagram to node with uid {node_uid} using {addr} failed: {err}"
+                    );
+                    errs.push((addr, err));
+                }
+            }
+
+            if errs.len() == addrs.len() {
                 log::error!(
-                    "Failed to send datagram to node with uid {node_uid}: Sending failed for all known addresses"
+                    "Failed to send datagram to node with uid {node_uid} on all known addresses: {errs:?}"
                 );
             }
         }
