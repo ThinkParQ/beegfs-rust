@@ -2,7 +2,8 @@ use crate::types::NicType;
 use anyhow::{Result, anyhow};
 use serde::Deserializer;
 use serde::de::{Unexpected, Visitor};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::str::FromStr;
 
 /// Network protocol
@@ -205,6 +206,68 @@ pub fn query_nics(filter: &[NicFilter]) -> Result<Vec<Nic>> {
     filtered_nics.sort();
 
     Ok(filtered_nics)
+}
+
+/// Selects address to bind to for listening: Checks if IPv6 sockets are available on this host
+/// according to our rules: IPv6 must be enabled during boot and at runtime, and IPv6 sockets must
+/// be dual stack. Then it returns `::` (IPv6), otherwise `0.0.0.0` (IPv4).
+pub fn select_bind_addr(port: u16) -> SocketAddr {
+    // SAFETY: Any data used in the libc calls is local only
+    unsafe {
+        // Check if IPv6 socket can be created
+        let sock = libc::socket(libc::AF_INET6, libc::SOCK_STREAM, 0);
+        if sock < 0 {
+            log::info!("IPv6 is unavailable on this host, falling back to IPv4 sockets");
+            return SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+        }
+        // Make sure the socket is closed on drop
+        let sock = OwnedFd::from_raw_fd(sock);
+
+        // Check if we can connect the socket to ipv6. We are not interested in an actual connection
+        // here but rather if it fails with EADDRNOTAVAIL, which indicates ipv6 is loaded in
+        // kernel but disabled at runtime
+        libc::fcntl(sock.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK);
+        let addr_in6 = libc::sockaddr_in6 {
+            sin6_family: libc::AF_INET6 as u16,
+            sin6_port: libc::htons(port),
+            sin6_flowinfo: 0,
+            sin6_addr: libc::in6_addr {
+                s6_addr: Ipv6Addr::LOCALHOST.octets(),
+            },
+            sin6_scope_id: 0,
+        };
+        let res = libc::connect(
+            sock.as_raw_fd(),
+            &addr_in6 as *const _ as *const _,
+            size_of::<libc::sockaddr_in6>() as u32,
+        );
+
+        if res < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EADDRNOTAVAIL) {
+            log::info!("IPv6 is disabled on this host, falling back to IPv4 sockets");
+            return SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+        }
+
+        // Check if dual stack sockets are enabled by querying the socket option
+        let mut ipv6_only: std::ffi::c_int = 0;
+        let mut ipv6_only_size = size_of::<std::ffi::c_int>();
+
+        let res = libc::getsockopt(
+            sock.as_raw_fd(),
+            libc::IPPROTO_IPV6,
+            libc::IPV6_V6ONLY,
+            &mut ipv6_only as *mut _ as *mut libc::c_void,
+            &mut ipv6_only_size as *mut _ as *mut libc::socklen_t,
+        );
+
+        if res < 0 || ipv6_only == 1 {
+            log::info!(
+                "IPv6 dual stack sockets are unavailable on this host, falling back to IPv4 sockets"
+            );
+            return SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+        }
+    }
+
+    SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port)
 }
 
 #[cfg(test)]
