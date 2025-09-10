@@ -29,7 +29,7 @@ pub(crate) async fn get_targets(
                 t.free_space, t.free_inodes, t.total_space, t.total_inodes,
                 gp.p_target_id, gs.s_target_id
             FROM targets_ext AS t
-            INNER JOIN nodes_ext AS n USING(node_uid)
+            LEFT JOIN nodes_ext AS n USING(node_uid)
             LEFT JOIN pools_ext AS p USING(node_type, pool_id)
             LEFT JOIN buddy_groups AS gp ON gp.p_target_id = t.target_id
                 AND gp.node_type = t.node_type
@@ -43,6 +43,19 @@ pub(crate) async fn get_targets(
             let is_primary = row.get::<_, Option<TargetId>>(16)?.is_some();
             let is_secondary = row.get::<_, Option<TargetId>>(17)?.is_some();
 
+            let node = if let Some(node_id) = row.get::<_, Option<NodeId>>(6)? {
+                Some(pb::EntityIdSet {
+                    uid: row.get(4)?,
+                    legacy_id: Some(pb::LegacyId {
+                        num_id: node_id,
+                        node_type,
+                    }),
+                    alias: row.get(5)?,
+                })
+            } else {
+                None
+            };
+
             Ok(pm::get_targets_response::Target {
                 id: Some(pb::EntityIdSet {
                     uid: row.get(0)?,
@@ -53,14 +66,7 @@ pub(crate) async fn get_targets(
                     alias: row.get(1)?,
                 }),
                 node_type,
-                node: Some(pb::EntityIdSet {
-                    uid: row.get(4)?,
-                    legacy_id: Some(pb::LegacyId {
-                        num_id: row.get(6)?,
-                        node_type,
-                    }),
-                    alias: row.get(5)?,
-                }),
+                node,
                 storage_pool: if let Some(uid) = row.get::<_, Option<Uid>>(7)? {
                     Some(pb::EntityIdSet {
                         uid: Some(uid),
