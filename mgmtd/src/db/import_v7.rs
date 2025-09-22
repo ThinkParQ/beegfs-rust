@@ -65,14 +65,12 @@ pub fn import_v7(tx: &rusqlite::Transaction, base_path: &Path) -> Result<()> {
 fn check_format_conf(f: &Path) -> Result<()> {
     let s = std::fs::read_to_string(f)?;
 
-    // No need for fancy parsing, we only allow upgrading from this exact file
-    if s != "# This file was auto-generated. Do not modify it!
-version=5
-nodeStates=1
-targetStates=1
-"
-    {
-        bail!("Unexpected format.conf:\n{s}");
+    if s.matches("version").count() != 1 {
+        bail!("Unexpected version in format.conf: version field ambiguous or not found");
+    }
+
+    if !s.contains("\nversion=5\n") {
+        bail!("Unexpected version in format.conf: Expected \"version=5\"");
     }
 
     Ok(())

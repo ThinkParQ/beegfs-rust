@@ -235,9 +235,10 @@ pub(crate) async fn mirror_root_inode(
     needs_license(&ctx, LicensedFeature::Mirroring)?;
     fail_on_pre_shutdown(&ctx)?;
 
+    let offline_timeout = ctx.info.user_config.node_offline_timeout.as_secs();
     let meta_root = ctx
         .db
-        .read_tx(|tx| {
+        .read_tx(move |tx| {
             let node_uid = match db::misc::get_meta_root(tx)? {
                 MetaRoot::Normal(_, node_uid) => node_uid,
                 MetaRoot::Mirrored(_) => bail!("Root inode is already mirrored"),
@@ -267,7 +268,33 @@ pub(crate) async fn mirror_root_inode(
             })?;
 
             if clients > 0 {
-                bail!("This operation requires that all clients are disconnected/unmounted, but still has {clients} clients mounted.");
+                bail!(
+                    "This operation requires that all clients are disconnected/unmounted. \
+{clients} clients are still mounted."
+                );
+            }
+
+            let mut server_stmt = tx.prepare(sql!(
+                "SELECT COUNT(*) FROM nodes
+                WHERE node_type = ?1 AND UNIXEPOCH('now') - UNIXEPOCH(last_contact) < ?2
+                AND node_uid != ?3"
+            ))?;
+
+            let metas = server_stmt.query_row(
+                params![NodeType::Meta.sql_variant(), offline_timeout, node_uid],
+                |row| row.get::<_, i64>(0),
+            )?;
+            let storages = server_stmt.query_row(
+                params![NodeType::Storage.sql_variant(), offline_timeout, node_uid],
+                |row| row.get::<_, i64>(0),
+            )?;
+
+            if metas > 0 || storages > 0 {
+                bail!(
+                    "This operation requires that all nodes except the root meta node are shut \
+down. {metas} meta nodes (excluding the root meta node) and {storages} storage nodes have \
+communicated during the last {offline_timeout}s."
+                );
             }
 
             Ok(node_uid)
