@@ -12,6 +12,7 @@ bee_serde_derive = { path = "../bee_serde_derive" }
 
 anyhow = { workspace = true }
 bytes = { workspace = true }
+libc = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "0"
 protobuf = { workspace = true, optional = true }

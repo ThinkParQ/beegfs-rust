@@ -27,7 +27,6 @@ use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::future::Future;
-use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
@@ -60,19 +59,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // Static configuration which doesn't change at runtime
     let info = Box::leak(Box::new(info));
 
-    let mut beemsg_serve_addr = SocketAddr::new("::".parse()?, info.user_config.beemsg_port);
-
-    // Test for IPv6 available, fall back to IPv4 sockets if not
-    match TcpListener::bind(beemsg_serve_addr) {
-        Ok(_) => {}
-        Err(err) if err.raw_os_error() == Some(libc::EAFNOSUPPORT) => {
-            log::debug!("BeeMsg: IPv6 not available, falling back to IPv4 sockets");
-            beemsg_serve_addr = SocketAddr::new("0.0.0.0".parse()?, info.user_config.beemsg_port);
-        }
-        Err(err) => {
-            anyhow::bail!(err);
-        }
-    }
+    let beemsg_serve_addr = shared::nic::select_bind_addr(info.user_config.beemsg_port);
 
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);

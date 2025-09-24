@@ -16,7 +16,7 @@ use sqlite::{TransactionExt, check_affected_rows};
 use sqlite_check::sql;
 use std::fmt::Debug;
 use std::future::Future;
-use std::net::{SocketAddr, TcpListener};
+use std::net::SocketAddr;
 use std::pin::Pin;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
@@ -210,19 +210,7 @@ pub(crate) fn serve(ctx: Context, mut shutdown: RunStateHandle) -> Result<()> {
         },
     );
 
-    let mut serve_addr = SocketAddr::new("::".parse()?, ctx.info.user_config.grpc_port);
-
-    // Test for IPv6 available, fall back to IPv4 sockets if not
-    match TcpListener::bind(serve_addr) {
-        Ok(_) => {}
-        Err(err) if err.raw_os_error() == Some(libc::EAFNOSUPPORT) => {
-            log::debug!("gRPC: IPv6 not available, falling back to IPv4 sockets");
-            serve_addr = SocketAddr::new("0.0.0.0".parse()?, ctx.info.user_config.grpc_port);
-        }
-        Err(err) => {
-            anyhow::bail!(err);
-        }
-    }
+    let serve_addr = shared::nic::select_bind_addr(ctx.info.user_config.grpc_port);
 
     log::info!("Serving gRPC requests on {serve_addr}");
 
