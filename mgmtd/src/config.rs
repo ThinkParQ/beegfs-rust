@@ -232,6 +232,11 @@ generate_structs! {
     #[arg(value_parser = nic::NicFilter::parse)]
     interfaces: Vec<NicFilter> = vec![],
 
+    /// Force disable IPv6.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    ipv6_disable: bool = false,
+
     /// Maximum number of outgoing BeeMsg connections per node. [default: 12]
     #[arg(long)]
     #[arg(value_name = "LIMIT")]
