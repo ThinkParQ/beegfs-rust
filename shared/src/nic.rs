@@ -2,7 +2,7 @@ use crate::types::NicType;
 use anyhow::{Result, anyhow};
 use serde::Deserializer;
 use serde::de::{Unexpected, Visitor};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::str::FromStr;
 
@@ -187,11 +187,15 @@ impl Ord for Nic {
 ///
 /// Only interfaces matching one of the given names in `filter` will be returned, unless the list
 /// is empty.
-pub fn query_nics(filter: &[NicFilter]) -> Result<Vec<Nic>> {
+pub fn query_nics(filter: &[NicFilter], use_ipv6: bool) -> Result<Vec<Nic>> {
     let mut filtered_nics = vec![];
 
     for interface in pnet_datalink::interfaces() {
         for ip in interface.ips {
+            if !use_ipv6 && ip.is_ipv6() {
+                continue;
+            }
+
             if let Some(priority) = nic_priority(filter, &interface.name, &ip.ip()) {
                 filtered_nics.push(Nic {
                     name: interface.name.clone(),
@@ -208,17 +212,22 @@ pub fn query_nics(filter: &[NicFilter]) -> Result<Vec<Nic>> {
     Ok(filtered_nics)
 }
 
-/// Selects address to bind to for listening: Checks if IPv6 sockets are available on this host
+/// Checks if IPv6 sockets are available on this host
 /// according to our rules: IPv6 must be enabled during boot and at runtime, and IPv6 sockets must
-/// be dual stack. Then it returns `::` (IPv6), otherwise `0.0.0.0` (IPv4).
-pub fn select_bind_addr(port: u16) -> SocketAddr {
+/// be dual stack.
+pub fn check_ipv6(port: u16, use_ipv6: bool) -> bool {
+    if !use_ipv6 {
+        log::info!("IPv6 is disabled by the configuration, falling back to IPv4 sockets");
+        return false;
+    }
+
     // SAFETY: Any data used in the libc calls is local only
     unsafe {
         // Check if IPv6 socket can be created
         let sock = libc::socket(libc::AF_INET6, libc::SOCK_STREAM, 0);
         if sock < 0 {
             log::info!("IPv6 is unavailable on this host, falling back to IPv4 sockets");
-            return SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+            return false;
         }
         // Make sure the socket is closed on drop
         let sock = OwnedFd::from_raw_fd(sock);
@@ -244,7 +253,7 @@ pub fn select_bind_addr(port: u16) -> SocketAddr {
 
         if res < 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::EADDRNOTAVAIL) {
             log::info!("IPv6 is disabled on this host, falling back to IPv4 sockets");
-            return SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+            return false;
         }
 
         // Check if dual stack sockets are enabled by querying the socket option
@@ -263,11 +272,11 @@ pub fn select_bind_addr(port: u16) -> SocketAddr {
             log::info!(
                 "IPv6 dual stack sockets are unavailable on this host, falling back to IPv4 sockets"
             );
-            return SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+            return false;
         }
     }
 
-    SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port)
+    true
 }
 
 #[cfg(test)]

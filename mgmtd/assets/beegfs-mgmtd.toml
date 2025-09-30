@@ -62,10 +62,9 @@
 #
 # interfaces = ["*"]
 
-# Prefers an interfaces ipv6 addresses over ipv4.
-# By default, ipv4 addresses are preferred. If the interface filter is given, the interface
-# order has higher priority than the address family, which is sorted per interface.
-# interfaces_prefer_ipv6 = false
+
+# Force disable IPv6.
+# ipv6_disable = false,
 
 # Maximum number of outgoing connections per node.
 # connection-limit = 12

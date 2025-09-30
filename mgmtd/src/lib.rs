@@ -27,6 +27,7 @@ use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::future::Future;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
@@ -39,6 +40,7 @@ pub struct StaticInfo {
     pub user_config: Config,
     pub auth_secret: Option<AuthSecret>,
     pub network_addrs: Vec<Nic>,
+    pub use_ipv6: bool,
 }
 
 /// Starts the management service.
@@ -59,7 +61,14 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // Static configuration which doesn't change at runtime
     let info = Box::leak(Box::new(info));
 
-    let beemsg_serve_addr = shared::nic::select_bind_addr(info.user_config.beemsg_port);
+    let beemsg_serve_addr = SocketAddr::new(
+        if info.use_ipv6 {
+            Ipv6Addr::UNSPECIFIED.into()
+        } else {
+            Ipv4Addr::UNSPECIFIED.into()
+        },
+        info.user_config.beemsg_port,
+    );
 
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);
@@ -69,6 +78,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         udp_socket.clone(),
         info.user_config.connection_limit,
         info.auth_secret,
+        info.use_ipv6,
     );
 
     let mut db = sqlite::Connections::new(info.user_config.db_file.as_path());

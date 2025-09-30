@@ -5,6 +5,7 @@ use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
 use shared::journald_logger;
+use shared::nic::check_ipv6;
 use shared::types::AuthSecret;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Write;
@@ -97,7 +98,8 @@ doc.beegfs.io.",
         None
     };
 
-    let network_addrs = shared::nic::query_nics(&user_config.interfaces)?;
+    let use_ipv6 = check_ipv6(user_config.beemsg_port, !user_config.ipv6_disable);
+    let network_addrs = shared::nic::query_nics(&user_config.interfaces, use_ipv6)?;
 
     // Configure the tokio runtime
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -136,6 +138,7 @@ doc.beegfs.io.",
         // Start the actual daemon
         let run = start(
             StaticInfo {
+                use_ipv6,
                 user_config,
                 auth_secret,
                 network_addrs,

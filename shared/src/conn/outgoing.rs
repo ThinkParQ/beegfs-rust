@@ -26,6 +26,7 @@ pub struct Pool {
     store: Store,
     udp_socket: Arc<UdpSocket>,
     auth_secret: Option<AuthSecret>,
+    use_ipv6: bool,
 }
 
 impl Pool {
@@ -34,11 +35,13 @@ impl Pool {
         udp_socket: Arc<UdpSocket>,
         connection_limit: usize,
         auth_secret: Option<AuthSecret>,
+        use_ipv6: bool,
     ) -> Self {
         Self {
             store: Store::new(connection_limit),
             auth_secret,
             udp_socket,
+            use_ipv6,
         }
     }
 
@@ -118,6 +121,10 @@ impl Pool {
             log::debug!("Connecting new stream to {node_uid:?}");
 
             for addr in addrs.iter() {
+                if addr.is_ipv6() && !self.use_ipv6 {
+                    continue;
+                }
+
                 match Stream::connect_tcp(addr).await {
                     Ok(stream) => {
                         let mut stream = StoredStream::from_stream(stream, permit);
@@ -210,6 +217,10 @@ impl Pool {
 
             let mut errs = vec![];
             for addr in addrs.iter() {
+                if addr.is_ipv6() && !self.use_ipv6 {
+                    continue;
+                }
+
                 if let Err(err) = buf.send_to_socket(&self.udp_socket, addr).await {
                     log::debug!(
                         "Sending datagram to node with uid {node_uid} using {addr} failed: {err}"
