@@ -45,11 +45,9 @@ impl NicFilter {
         let mut split = input.split_whitespace().peekable();
         let mut res = Self::default();
 
-        if let Some(field) = split.peek() {
-            if *field == "!" {
-                res.invert = true;
-                split.next();
-            }
+        if let Some(field) = split.peek() && *field == "!" {
+            res.invert = true;
+            split.next();
         }
 
         if let Some(field) = split.next() && field != "*" {
