@@ -192,7 +192,7 @@ fn init_db(db_file: &Path, v7_path: Option<&Path>, fs_uuid: Option<Uuid>) -> Res
                 .parent()
                 .ok_or_else(|| anyhow!("File does not have a parent folder"))?,
         )?;
-        conn.backup(rusqlite::DatabaseName::Main, db_file, None)?;
+        conn.backup(rusqlite::MAIN_DB, db_file, None)?;
 
         Ok(())
     })()
