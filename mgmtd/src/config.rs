@@ -429,10 +429,10 @@ generate_structs! {
 
 impl Config {
     pub fn check_validity(&self) -> Result<()> {
-        if let Some(ref uuid) = self.fs_uuid {
-            if uuid.get_version_num() != 4 {
-                bail!("Provided file system UUID is not a valid v4 UUID");
-            }
+        if let Some(ref uuid) = self.fs_uuid
+            && uuid.get_version_num() != 4
+        {
+            bail!("Provided file system UUID is not a valid v4 UUID");
         }
 
         if self.quota_enforce && !self.quota_enable {
