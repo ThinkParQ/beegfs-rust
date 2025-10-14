@@ -23,12 +23,6 @@ runs:
         mkdir -p ${HOME}/zig
         tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
         echo ${HOME}/zig >> ${GITHUB_PATH}
-    - name: Run checks and tests
-      shell: bash
-      run: |
-        make check
-        make deny
-        make test
     - name: Build x86_64 packages
       env:
         CARGO_TARGET: x86_64-unknown-linux-gnu

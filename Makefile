@@ -112,11 +112,9 @@ package:
 	# Build packages
 	# These don't respect CARGO_BUILD_TARGET, so we need to add --target manually using $(TARGET_FLAG)
 	cargo deb --locked $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ \
-		--deb-version="20:$(VERSION_TRIMMED)" \
-		--deb-revision=""
+		--deb-version="20:$(VERSION_TRIMMED)" 
 	cargo deb --locked $(TARGET_FLAG) --no-build -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
-		--deb-version="20:$(VERSION_TRIMMED)" \
-		--deb-revision=""
+		--deb-version="20:$(VERSION_TRIMMED)" 
 
 	# We don't want the epoch in the file names
 	find $(PACKAGE_DIR) -name "*_20:*.deb" -exec bash -c 'mv "$$1" $$(echo "$$1" | sed "s/_20:/_/g")' bash {} \;
