@@ -3,6 +3,7 @@ use rusqlite::config::DbConfig;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -79,12 +80,29 @@ pub struct InnerConnections {
     db_file: PathBuf,
 }
 
+/// Increased whenever new_in_memory is called. Makes sure that the test binary can run multiple
+/// tests in parallel with distinct in memory db instances (otherwise they would clash)
+static MEMORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 impl Connections {
+    /// Create a new db connection pool using the given db file
     pub fn new(db_file: impl AsRef<Path>) -> Self {
         Self {
             inner: Arc::new(InnerConnections {
                 conns: Mutex::new(vec![]),
                 db_file: db_file.as_ref().to_path_buf(),
+            }),
+        }
+    }
+
+    /// Create a new db connection pool using an in memory db
+    pub fn new_in_memory() -> Self {
+        let count = MEMORY_COUNTER.fetch_add(1, Ordering::Relaxed);
+
+        Self {
+            inner: Arc::new(InnerConnections {
+                conns: Mutex::new(vec![]),
+                db_file: format!("file:memdb{count}?mode=memory&cache=shared").into(),
             }),
         }
     }
