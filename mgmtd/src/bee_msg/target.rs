@@ -127,6 +127,8 @@ impl HandleWithResponse for RegisterTarget {
         let (id, is_new) = ctx
             .db
             .write_tx(move |tx| {
+                let reg_token = str::from_utf8(&self.reg_token)?;
+
                 // Do not do anything if the target already exists
                 if let Some(id) = try_resolve_num_id(
                     tx,
@@ -134,6 +136,24 @@ impl HandleWithResponse for RegisterTarget {
                     NodeType::Storage,
                     self.target_id.into(),
                 )? {
+                    let stored_reg_token: Option<String> = tx.query_row(
+                        sql!(
+                            "SELECT reg_token FROM targets
+                            WHERE target_id = ?1 AND node_type = ?2"
+                        ),
+                        rusqlite::params![id.num_id(), NodeType::Storage.sql_variant()],
+                        |row| row.get(0),
+                    )?;
+
+                    if let Some(st) = stored_reg_token
+                        && st != reg_token
+                    {
+                        bail!(
+                            "Storage target {id} has already been registered and its \
+registration token ({reg_token}) does not match the stored token ({st})"
+                        );
+                    }
+
                     return Ok((id.num_id().try_into()?, false));
                 }
 
@@ -142,11 +162,7 @@ impl HandleWithResponse for RegisterTarget {
                 }
 
                 Ok((
-                    db::target::insert_storage(
-                        tx,
-                        self.target_id,
-                        Some(format!("target_{}", std::str::from_utf8(&self.alias)?).try_into()?),
-                    )?,
+                    db::target::insert_storage(tx, self.target_id, Some(reg_token))?,
                     true,
                 ))
             })
@@ -155,7 +171,7 @@ impl HandleWithResponse for RegisterTarget {
         if is_new {
             log::info!("Registered new storage target with Id {id}");
         } else {
-            log::debug!("Re-registered existing storage target with Id {id}");
+            log::debug!("Re-registered existing storage target with Id {id}",);
         }
 
         Ok(RegisterTargetResp { id })
