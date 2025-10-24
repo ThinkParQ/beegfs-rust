@@ -94,7 +94,7 @@ impl Deserializable for TargetReachabilityState {
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterTarget {
     #[bee_serde(as = CStr<0>)]
-    pub alias: Vec<u8>,
+    pub reg_token: Vec<u8>,
     pub target_id: TargetId,
 }
 
