@@ -37,17 +37,9 @@ pub(crate) fn validate_ids(
 ///
 /// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
 /// meta target per meta node with their IDs being the same.
-pub(crate) fn insert_meta(
-    tx: &Transaction,
-    target_id: TargetId,
-    alias: Option<Alias>,
-) -> Result<()> {
+pub(crate) fn insert_meta(tx: &Transaction, target_id: TargetId) -> Result<()> {
     let target_id = if target_id == 0 {
         misc::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=0xFFFF)?
-    } else if try_resolve_num_id(tx, EntityType::Target, NodeType::Meta, target_id.into())?
-        .is_some()
-    {
-        bail!(TypedError::value_exists("numeric target id", target_id));
     } else {
         target_id
     };
@@ -55,7 +47,7 @@ pub(crate) fn insert_meta(
     insert(
         tx,
         target_id,
-        alias,
+        None,
         NodeTypeServer::Meta,
         Some(target_id.into()),
     )?;
@@ -78,45 +70,36 @@ pub(crate) fn insert_meta(
 pub(crate) fn insert_storage(
     tx: &Transaction,
     target_id: TargetId,
-    alias: Option<Alias>,
+    reg_token: Option<&str>,
 ) -> Result<TargetId> {
     let target_id = if target_id == 0 {
         misc::find_new_id(tx, "targets", "target_id", NodeType::Storage, 1..=0xFFFF)?
-    } else if try_resolve_num_id(tx, EntityType::Target, NodeType::Storage, target_id.into())?
-        .is_some()
-    {
-        return Ok(target_id);
     } else {
         target_id
     };
 
-    insert(tx, target_id, alias, NodeTypeServer::Storage, None)?;
+    insert(tx, target_id, reg_token, NodeTypeServer::Storage, None)?;
 
     Ok(target_id)
 }
 
-pub(crate) fn insert(
+fn insert(
     tx: &Transaction,
     target_id: TargetId,
-    alias: Option<Alias>,
+    reg_token: Option<&str>,
     node_type: NodeTypeServer,
     // This is optional because storage targets come "unmapped"
     node_id: Option<NodeId>,
 ) -> Result<()> {
     anyhow::ensure!(target_id > 0, "A target id must be > 0");
 
-    let alias = if let Some(alias) = alias {
-        alias
-    } else {
-        format!("target_{}_{}", node_type.user_str(), target_id).try_into()?
-    };
-
+    let alias = format!("target_{}_{target_id}", node_type.user_str()).try_into()?;
     let new_uid = entity::insert(tx, EntityType::Target, &alias)?;
 
     tx.execute(
         sql!(
-            "INSERT INTO targets (target_uid, node_type, target_id, node_id, pool_id)
-            VALUES (?1, ?2, ?3, ?4, ?5)"
+            "INSERT INTO targets (target_uid, node_type, target_id, node_id, pool_id, registration_token)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
         ),
         params![
             new_uid,
@@ -127,7 +110,8 @@ pub(crate) fn insert(
                 Some(1)
             } else {
                 None
-            }
+            },
+            reg_token
         ],
     )?;
 
@@ -287,11 +271,10 @@ mod test {
     #[test]
     fn set_get_meta() {
         with_test_data(|tx| {
-            super::insert_meta(tx, 1, Some("existing_meta_target".try_into().unwrap()))
-                .unwrap_err();
-            super::insert_meta(tx, 99, Some("new_meta_target".try_into().unwrap())).unwrap();
-            // existing alias
-            super::insert_meta(tx, 99, Some("new_meta_target".try_into().unwrap())).unwrap_err();
+            super::insert_meta(tx, 1).unwrap_err();
+            super::insert_meta(tx, 99).unwrap();
+            // existing id
+            super::insert_meta(tx, 99).unwrap_err();
 
             let targets: i64 = tx
                 .query_row(sql!("SELECT COUNT(*) FROM meta_targets"), [], |row| {
@@ -306,15 +289,11 @@ mod test {
     #[test]
     fn set_get_storage_and_map() {
         with_test_data(|tx| {
-            let new_target_id =
-                super::insert_storage(tx, 0, Some("new_storage_target".try_into().unwrap()))
-                    .unwrap();
-            super::insert_storage(tx, 1000, Some("new_storage_target_2".try_into().unwrap()))
-                .unwrap();
+            let new_target_id = super::insert_storage(tx, 0, Some("new_storage_target")).unwrap();
+            super::insert_storage(tx, 1000, Some("new_storage_target_2")).unwrap();
 
-            // existing alias
-            super::insert_storage(tx, 0, Some("new_storage_target".try_into().unwrap()))
-                .unwrap_err();
+            // existing id
+            super::insert_storage(tx, 1000, Some("new_storage_target")).unwrap_err();
 
             super::update_storage_node_mappings(tx, &[new_target_id, 1000], 1).unwrap();
 
