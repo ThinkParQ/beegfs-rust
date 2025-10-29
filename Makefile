@@ -17,7 +17,7 @@ endif
 
 # Defines VERSION from the git history. Used by the binaries to build their own version string.
 # To satisfy semver we fall back to `0.0.0` if there is no matching tag
-VERSION := $(shell (git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0.0.0") | sed 's/\-/~/g')
+VERSION ?= $(shell (git describe --tags --match "v*.*.*" 2>/dev/null || echo "v0.0.0") | sed 's/\-/~/g')
 # Strip the first character, which is usually "v" to allow usage in semver contexts
 VERSION_TRIMMED := $(shell V="$(VERSION)" && echo $${V:1})
 
