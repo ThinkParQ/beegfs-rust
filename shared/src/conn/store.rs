@@ -3,8 +3,8 @@
 //!
 //! Also provides a permit system to limit outgoing connections to a defined maximum.
 
+use super::TCP_BUF_LEN;
 use super::async_queue::AsyncQueue;
-use crate::conn::MsgBuf;
 use crate::conn::stream::Stream;
 use crate::types::Uid;
 use anyhow::{Result, anyhow};
@@ -23,7 +23,7 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 pub struct Store {
     #[allow(clippy::type_complexity)]
     streams: Mutex<HashMap<Uid, (Arc<AsyncQueue<StoredStream>>, Arc<Semaphore>)>>,
-    bufs: Mutex<VecDeque<MsgBuf>>,
+    bufs: Mutex<VecDeque<Vec<u8>>>,
     addrs: RwLock<HashMap<Uid, Arc<[SocketAddr]>>>,
     connection_limit: usize,
 }
@@ -112,12 +112,17 @@ impl Store {
     }
 
     /// Pop a message buffer from the store
-    pub fn pop_buf(&self) -> Option<MsgBuf> {
+    pub fn pop_buf(&self) -> Option<Vec<u8>> {
         self.bufs.lock().unwrap().pop_front()
     }
 
+    /// Pop a message buffer from the store or create a new one suitable for stream / TCP messages
+    pub fn pop_buf_or_create(&self) -> Vec<u8> {
+        self.pop_buf().unwrap_or_else(|| vec![0; TCP_BUF_LEN])
+    }
+
     /// Push back a message buffer to the store
-    pub fn push_buf(&self, buf: MsgBuf) {
+    pub fn push_buf(&self, buf: Vec<u8>) {
         self.bufs.lock().unwrap().push_back(buf);
     }
 
