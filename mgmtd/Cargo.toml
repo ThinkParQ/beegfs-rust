@@ -25,7 +25,7 @@ sqlite_check = { path = "../sqlite_check" }
 
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-daemonize = "0"
+daemonize = "=0.5.0"
 env_logger = { workspace = true }
 itertools = { workspace = true }
 libc = { workspace = true }
