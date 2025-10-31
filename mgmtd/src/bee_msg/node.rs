@@ -246,7 +246,7 @@ client version < 8.0)"
                         );
                     };
 
-                    db::target::insert_meta(tx, target_id, None)?;
+                    db::target::insert_meta(tx, target_id)?;
                 }
 
                 (node, true)
