@@ -160,7 +160,9 @@ pub struct Nic {
     pub address: IpAddr,
     pub nic_type: NicType,
     pub name: String,
-    pub priority: usize,
+    priority: usize,
+    interface_index: u32,
+    addr_index: usize,
 }
 impl PartialOrd for Nic {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -178,8 +180,8 @@ impl Ord for Nic {
             .then_with(|| other.address.is_ipv4().cmp(&self.address.is_ipv4()))
             // Then rdma interfaces
             .then_with(|| self.nic_type.cmp(&other.nic_type))
-            .then_with(|| self.address.cmp(&other.address))
-            .then_with(|| self.name.cmp(&other.name))
+            .then_with(|| self.interface_index.cmp(&other.interface_index))
+            .then_with(|| self.addr_index.cmp(&other.addr_index))
     }
 }
 
@@ -191,7 +193,7 @@ pub fn query_nics(filter: &[NicFilter], use_ipv6: bool) -> Result<Vec<Nic>> {
     let mut filtered_nics = vec![];
 
     for interface in pnet_datalink::interfaces() {
-        for ip in interface.ips {
+        for (addr_index, ip) in interface.ips.iter().enumerate() {
             if !use_ipv6 && ip.is_ipv6() {
                 continue;
             }
@@ -202,6 +204,8 @@ pub fn query_nics(filter: &[NicFilter], use_ipv6: bool) -> Result<Vec<Nic>> {
                     address: ip.ip(),
                     nic_type: NicType::Ethernet,
                     priority,
+                    interface_index: interface.index,
+                    addr_index,
                 });
             }
         }
@@ -459,39 +463,67 @@ mod test {
                 nic_type: NicType::Ethernet,
                 name: "a".into(),
                 priority: 0,
+                interface_index: 0,
+                addr_index: 0,
             },
             Nic {
                 address: IpAddr::from_str("192.168.0.2").unwrap(),
                 nic_type: NicType::Ethernet,
                 name: "b".into(),
                 priority: 1,
+                interface_index: 0,
+                addr_index: 0,
             },
             Nic {
                 address: IpAddr::from_str("192.168.0.1").unwrap(),
                 nic_type: NicType::Ethernet,
                 name: "a".into(),
                 priority: 0,
+                interface_index: 0,
+                addr_index: 0,
             },
             Nic {
                 address: IpAddr::from_str("192.168.0.3").unwrap(),
                 nic_type: NicType::Rdma,
                 name: "a".into(),
                 priority: 0,
+                interface_index: 1,
+                addr_index: 0,
             },
             Nic {
                 address: IpAddr::from_str("::1").unwrap(),
                 nic_type: NicType::Ethernet,
                 name: "a".into(),
                 priority: 0,
+                interface_index: 0,
+                addr_index: 0,
+            },
+            Nic {
+                address: IpAddr::from_str("192.168.0.4").unwrap(),
+                nic_type: NicType::Rdma,
+                name: "a".into(),
+                priority: 0,
+                interface_index: 0,
+                addr_index: 1,
+            },
+            Nic {
+                address: IpAddr::from_str("192.168.0.5").unwrap(),
+                nic_type: NicType::Rdma,
+                name: "a".into(),
+                priority: 0,
+                interface_index: 0,
+                addr_index: 0,
             },
         ];
 
         nics.sort();
 
-        assert_eq!(nics[0].address, IpAddr::from_str("192.168.0.3").unwrap());
-        assert_eq!(nics[1].address, IpAddr::from_str("192.168.0.1").unwrap());
-        assert_eq!(nics[2].address, IpAddr::from_str("127.0.0.1").unwrap());
-        assert_eq!(nics[3].address, IpAddr::from_str("::1").unwrap());
-        assert_eq!(nics[4].address, IpAddr::from_str("192.168.0.2").unwrap());
+        assert_eq!(nics[0].address, IpAddr::from_str("192.168.0.5").unwrap());
+        assert_eq!(nics[1].address, IpAddr::from_str("192.168.0.4").unwrap());
+        assert_eq!(nics[2].address, IpAddr::from_str("192.168.0.3").unwrap());
+        assert_eq!(nics[3].address, IpAddr::from_str("192.168.0.1").unwrap());
+        assert_eq!(nics[4].address, IpAddr::from_str("127.0.0.1").unwrap());
+        assert_eq!(nics[5].address, IpAddr::from_str("::1").unwrap());
+        assert_eq!(nics[6].address, IpAddr::from_str("192.168.0.2").unwrap());
     }
 }
