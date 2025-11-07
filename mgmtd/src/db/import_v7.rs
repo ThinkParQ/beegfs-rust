@@ -144,7 +144,7 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
             );
         };
 
-        target::insert_meta(tx, target_id)?;
+        target::insert_meta(tx, target_id, None)?;
     }
 
     if root_id == 0 {
