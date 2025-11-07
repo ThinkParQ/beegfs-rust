@@ -37,7 +37,11 @@ pub(crate) fn validate_ids(
 ///
 /// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
 /// meta target per meta node with their IDs being the same.
-pub(crate) fn insert_meta(tx: &Transaction, target_id: TargetId) -> Result<()> {
+pub(crate) fn insert_meta(
+    tx: &Transaction,
+    target_id: TargetId,
+    reg_token: Option<&str>,
+) -> Result<()> {
     let target_id = if target_id == 0 {
         misc::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=0xFFFF)?
     } else {
@@ -47,7 +51,7 @@ pub(crate) fn insert_meta(tx: &Transaction, target_id: TargetId) -> Result<()> {
     insert(
         tx,
         target_id,
-        None,
+        reg_token,
         NodeTypeServer::Meta,
         Some(target_id.into()),
     )?;
@@ -271,10 +275,10 @@ mod test {
     #[test]
     fn set_get_meta() {
         with_test_data(|tx| {
-            super::insert_meta(tx, 1).unwrap_err();
-            super::insert_meta(tx, 99).unwrap();
+            super::insert_meta(tx, 1, None).unwrap_err();
+            super::insert_meta(tx, 99, None).unwrap();
             // existing id
-            super::insert_meta(tx, 99).unwrap_err();
+            super::insert_meta(tx, 99, None).unwrap_err();
 
             let targets: i64 = tx
                 .query_row(sql!("SELECT COUNT(*) FROM meta_targets"), [], |row| {

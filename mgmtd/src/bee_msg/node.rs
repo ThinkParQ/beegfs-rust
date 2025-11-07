@@ -195,9 +195,45 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
                 }
             }
 
+            let new_alias_or_reg_token = String::from_utf8(msg.node_alias)?;
+
             let (node, is_new) = if let Some(node) = node {
                 // Existing node, update data
                 db::node::update(tx, node.uid, msg.port, machine_uuid)?;
+
+                // If the updated node is a meta node, check if its corresponding target has a
+                // registration token
+                if msg.node_type == NodeType::Meta {
+                    let stored_reg_token: Option<String> = tx.query_row(
+                        sql!("SELECT reg_token FROM meta_targets WHERE node_id = ?1"),
+                        [node.num_id()],
+                        |row| row.get(0),
+                    )?;
+
+                    if let Some(ref t) = stored_reg_token
+                        && t != &new_alias_or_reg_token
+                    {
+                        bail!(
+                            "Meta node {} has already been registered and its \
+registration token ({}) does not match the stored token ({})",
+                            node,
+                            new_alias_or_reg_token,
+                            t
+                        );
+                    } else if stored_reg_token.is_none() {
+                        tx.execute(
+                            sql!(
+                                "UPDATE targets SET reg_token = ?1
+                                WHERE node_id = ?2 AND node_type = ?3"
+                            ),
+                            rusqlite::params![
+                                new_alias_or_reg_token,
+                                node.num_id(),
+                                NodeType::Meta.sql_variant()
+                            ],
+                        )?;
+                    }
+                }
 
                 (node, false)
             } else {
@@ -216,9 +252,7 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
                     // updated to no longer start with a number, thus it is unlikely this
                     // would happen unless BeeGFS 8 was mounted by a BeeGFS 7 client.
 
-                    let new_alias = String::from_utf8(msg.node_alias)
-                        .ok()
-                        .and_then(|s| Alias::try_from(s).ok());
+                    let new_alias = Alias::try_from(new_alias_or_reg_token.clone()).ok();
 
                     if new_alias.is_none() {
                         log::warn!(
@@ -246,7 +280,7 @@ client version < 8.0)"
                         );
                     };
 
-                    db::target::insert_meta(tx, target_id)?;
+                    db::target::insert_meta(tx, target_id, Some(&new_alias_or_reg_token))?;
                 }
 
                 (node, true)
