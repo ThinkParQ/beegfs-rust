@@ -29,16 +29,20 @@ runs:
         make check
         make deny
         make test
+    - name: Configure release version
+      shell: bash
+      run: |
+        if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          echo "VERSION=${{ github.ref_name }}" >> "$GITHUB_ENV"
+        fi
     - name: Build x86_64 packages
       env:
-        VERSION: ${{ github.ref_name }}
         CARGO_TARGET: x86_64-unknown-linux-gnu
         GLIBC_VERSION: 2.27
       shell: bash
       run: make package
     - name: Build aarch64 packages
       env:
-        VERSION: ${{ github.ref_name }}
         CARGO_TARGET: aarch64-unknown-linux-gnu
         BIN_UTIL_PREFIX: aarch64-linux-gnu-
         GLIBC_VERSION: 2.27
