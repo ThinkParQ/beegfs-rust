@@ -1,105 +1,100 @@
-//! BeeGFS compatible network message (de-)serialization
+//! BeeSerde, the BeeGFS network message (and some on disk data) (de-)serialization
 
+use crate::bee_msg::Header;
 use anyhow::{Result, bail};
-use bytes::{Buf, BufMut, BytesMut};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem::size_of;
 
+// SERIALIZATION
+
+/// Makes a type BeeSerde serializable
 pub trait Serializable {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()>;
 }
 
-pub trait Deserializable {
-    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self>
-    where
-        Self: Sized;
-}
-
-/// Provides conversion functionality to and from BeeSerde serializable types.
-///
-/// Mainly meant for enums that need to be converted in to a raw integer type, which also might
-/// differ between messages. The generic parameter allows implementing it for multiple types.
-pub trait BeeSerdeConversion<S>: Sized {
-    fn into_bee_serde(self) -> S;
-    fn try_from_bee_serde(value: S) -> Result<Self>;
-}
-
-/// Interface for serialization helpers to be used with the `bee_serde` derive macro
-///
-/// Serialization helpers are meant to control the `bee_serde` macro in case a value in the
-/// message struct shall be serialized as a different type or in case it doesn't have its own
-/// [BeeSerde] implementation. Also necessary for maps and sequences since the serializer can't
-/// know on its own whether to include collection size or not (it's totally message dependent).
-///
-/// # Example
-///
-/// ```ignore
-/// #[derive(Debug, BeeSerde)]
-/// pub struct ExampleMsg {
-///     // Serializer doesn't know by itself whether or not C/C++ BeeGFS serializer expects sequence
-///     // size included or not - in this case it is not
-///     #[bee_serde(as = Seq<false, _>)]
-///     int_sequence: Vec<u32>,
-/// }
-/// ```
-pub trait BeeSerdeHelper<In> {
-    fn serialize_as(data: &In, ser: &mut Serializer<'_>) -> Result<()>;
-    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<In>;
-}
-
-/// Serializes one BeeGFS message into a provided buffer
+/// Serializes one `impl Serializable` into a target buffer
+#[derive(Debug)]
 pub struct Serializer<'a> {
     /// The target buffer
-    target_buf: &'a mut BytesMut,
-    /// BeeGFS message feature flags obtained, used for conditional serialization by certain
-    /// messages. To be set by the serialization function.
-    pub msg_feature_flags: u16,
-    /// The number of bytes written to the buffer
-    bytes_written: usize,
+    target_buf: &'a mut [u8],
+    /// The position of the write cursor in the buffer. This equals to the number of bytes written.
+    write_pos: usize,
+    /// BeeMsg header, some fields are used for conditional serialization by certain
+    /// messages. To be set by the serialization function (except msg_len and msg_id).
+    //
+    // Note that in an ideal world, this would be generic and opaque as core bee_serde doesn't need
+    // to know about the type of this serialization metadata. But since it would require
+    // carrying the type everywhere (would make the code more complicated overall) we don't do
+    // it and accept a little coupling of core bee_serde to the BeeMsg header. It's almost only
+    // used for BeeMsg anyway (the header itself and v7 data import are the exceptions).
+    pub header: Header,
 }
 
 macro_rules! fn_serialize_primitive {
-    ($P:ident, $put_f:ident) => {
+    ($P:ident) => {
         pub fn $P(&mut self, v: $P) -> Result<()> {
-            self.target_buf.$put_f(v);
-            self.bytes_written += size_of::<$P>();
-            Ok(())
+            self.bytes(&v.to_le_bytes())
         }
     };
 }
 
 impl<'a> Serializer<'a> {
-    /// Creates a new Serializer object
-    ///
-    /// `msg_feature_flags` can be accessed from the (de-)serialization definition and is used for
-    /// conditional serialization on some messages.
-    /// `msg_feature_flags` is supposed to be obtained from the message definition, and is used
-    /// for conditional serialization by certain messages.
-    pub fn new(target_buf: &'a mut BytesMut) -> Self {
+    /// Creates a new Serializer object, writing into the given buffer. The buffer must be big
+    /// enough to take all the data.
+    pub fn with_header(buf: &'a mut [u8], header: Header) -> Self {
         Self {
-            target_buf,
-            msg_feature_flags: 0,
-            bytes_written: 0,
+            target_buf: buf,
+            write_pos: 0,
+            header,
         }
     }
 
-    fn_serialize_primitive!(u8, put_u8);
-    fn_serialize_primitive!(i8, put_i8);
-    fn_serialize_primitive!(u16, put_u16_le);
-    fn_serialize_primitive!(i16, put_i16_le);
-    fn_serialize_primitive!(u32, put_u32_le);
-    fn_serialize_primitive!(i32, put_i32_le);
-    fn_serialize_primitive!(u64, put_u64_le);
-    fn_serialize_primitive!(i64, put_i64_le);
-    fn_serialize_primitive!(u128, put_u128_le);
-    fn_serialize_primitive!(i128, put_i128_le);
+    /// Creates a new Serializer object with default header used as metadata. Meant for data that
+    /// does not do conditional serialization based on these fields (e.g. non BeeMsg or the
+    /// header itself).
+    pub fn new(buf: &'a mut [u8]) -> Self {
+        Self::with_header(buf, Header::default())
+    }
 
-    /// Serialize the given slice as bytes as expected by BeeGFS
+    /// Finishes the serialization by consuming the serializer and returning the header
+    /// that might be set by certain BeeMsgs.
+    pub fn finish(self) -> Header {
+        self.header
+    }
+
+    fn_serialize_primitive!(u8);
+    fn_serialize_primitive!(i8);
+    fn_serialize_primitive!(u16);
+    fn_serialize_primitive!(i16);
+    fn_serialize_primitive!(u32);
+    fn_serialize_primitive!(i32);
+    fn_serialize_primitive!(u64);
+    fn_serialize_primitive!(i64);
+    fn_serialize_primitive!(u128);
+    fn_serialize_primitive!(i128);
+
+    /// Serialize the given slice as bytes. This is also the base operation for the other ops.
     pub fn bytes(&mut self, v: &[u8]) -> Result<()> {
-        self.target_buf.put(v);
-        self.bytes_written += v.len();
+        match self
+            .target_buf
+            .get_mut(self.write_pos..(self.write_pos + v.len()))
+        {
+            Some(ref mut sub) => {
+                sub.clone_from_slice(v);
+                self.write_pos += v.len();
+            }
+            None => {
+                bail!(
+                    "Tried to write {} bytes but target buffer only has {} left",
+                    v.len(),
+                    self.target_buf.len() - self.write_pos
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -142,7 +137,7 @@ impl<'a> Serializer<'a> {
         include_total_size: bool,
         f: impl Fn(&mut Self, T) -> Result<()>,
     ) -> Result<()> {
-        let before = self.bytes_written;
+        let before = self.write_pos;
 
         // For the total size and length of the sequence we insert placeholders to be replaced
         // later when the values are known
@@ -151,14 +146,14 @@ impl<'a> Serializer<'a> {
         // `BytesMut` and not the generic `BufMut` - the latter doesn't allow random access to
         // already written data
         let size_pos = if include_total_size {
-            let size_pos = self.bytes_written;
+            let size_pos = self.write_pos;
             self.u32(0xFFFFFFFFu32)?;
             size_pos
         } else {
             0
         };
 
-        let count_pos = self.bytes_written;
+        let count_pos = self.write_pos;
         self.u32(0xFFFFFFFFu32)?;
 
         let mut count = 0u32;
@@ -172,15 +167,13 @@ impl<'a> Serializer<'a> {
         // the placeholders in the beginning of the sequence with the actual values
 
         if include_total_size {
-            let written = (self.bytes_written - before) as u32;
-            for (p, b) in written.to_le_bytes().iter().enumerate() {
-                self.target_buf[size_pos + p] = *b;
-            }
+            let written = (self.write_pos - before) as u32;
+            self.target_buf[size_pos..(size_pos + size_of::<u32>())]
+                .clone_from_slice(&written.to_le_bytes());
         }
 
-        for (p, b) in count.to_le_bytes().iter().enumerate() {
-            self.target_buf[count_pos + p] = *b;
-        }
+        self.target_buf[count_pos..(count_pos + size_of::<u32>())]
+            .clone_from_slice(&count.to_le_bytes());
 
         Ok(())
     }
@@ -218,39 +211,56 @@ impl<'a> Serializer<'a> {
         Ok(())
     }
 
-    /// The amount of bytes written to the buffer (so far)
+    /// The amount of bytes written to the buffer
     pub fn bytes_written(&self) -> usize {
-        self.bytes_written
+        self.write_pos
     }
 }
 
-/// Deserializes one BeeGFS message from the given buffer
+// DESERIALIZATION
+
+/// Makes a type BeeSerde deserializable
+pub trait Deserializable {
+    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+/// Deserializes one `impl Deserializable` object from a source buffer
 pub struct Deserializer<'a> {
     /// The source buffer
     source_buf: &'a [u8],
-    /// BeeGFS message feature flags obtained from the message definition, used for
-    /// conditional deserialization by certain messages.
-    pub msg_feature_flags: u16,
+    /// BeeMsg header, used for conditional deserialization by certain messages. Can be
+    /// accessed from the deserialization definition.
+    pub header: Cow<'a, Header>,
 }
 
 macro_rules! fn_deserialize_primitive {
-    ($P:ident, $get_f:ident) => {
+    ($P:ident) => {
         pub fn $P(&mut self) -> Result<$P> {
-            self.check_remaining(size_of::<$P>())?;
-            Ok(self.source_buf.$get_f())
+            let b = self.take(size_of::<$P>())?;
+            Ok($P::from_le_bytes(b.try_into()?))
         }
     };
 }
 
 impl<'a> Deserializer<'a> {
-    /// Creates a new Deserializer object
-    ///
-    /// `msg_feature_flags` is supposed to be obtained from the message definition, and is used
-    /// for conditional serialization by certain messages.
-    pub fn new(source_buf: &'a [u8], msg_feature_flags: u16) -> Self {
+    /// Creates a new Deserializer object with the given header used as metadata. Meant for BeeMsg -
+    /// they sometimes do conditional deserialization based on these fields.
+    pub fn with_header(buf: &'a [u8], header: &'a Header) -> Self {
         Self {
-            source_buf,
-            msg_feature_flags,
+            source_buf: buf,
+            header: Cow::Borrowed(header),
+        }
+    }
+
+    /// Creates a new Deserializer object with default header used as metadata. Meant for data that
+    /// does not do conditional deserialization based on these fields (e.g. non BeeMsg or the
+    /// header itself).
+    pub fn new(buf: &'a [u8]) -> Self {
+        Self {
+            source_buf: buf,
+            header: Cow::Owned(Header::default()),
         }
     }
 
@@ -265,25 +275,20 @@ impl<'a> Deserializer<'a> {
         Ok(())
     }
 
-    fn_deserialize_primitive!(u8, get_u8);
-    fn_deserialize_primitive!(i8, get_i8);
-    fn_deserialize_primitive!(u16, get_u16_le);
-    fn_deserialize_primitive!(i16, get_i16_le);
-    fn_deserialize_primitive!(u32, get_u32_le);
-    fn_deserialize_primitive!(i32, get_i32_le);
-    fn_deserialize_primitive!(u64, get_u64_le);
-    fn_deserialize_primitive!(i64, get_i64_le);
-    fn_deserialize_primitive!(u128, get_u128_le);
-    fn_deserialize_primitive!(i128, get_i128_le);
+    fn_deserialize_primitive!(u8);
+    fn_deserialize_primitive!(i8);
+    fn_deserialize_primitive!(u16);
+    fn_deserialize_primitive!(i16);
+    fn_deserialize_primitive!(u32);
+    fn_deserialize_primitive!(i32);
+    fn_deserialize_primitive!(u64);
+    fn_deserialize_primitive!(i64);
+    fn_deserialize_primitive!(u128);
+    fn_deserialize_primitive!(i128);
 
     /// Deserialize a block of bytes as expected by BeeGFS
     pub fn bytes(&mut self, len: usize) -> Result<Vec<u8>> {
-        let mut v = vec![0; len];
-
-        self.check_remaining(len)?;
-        self.source_buf.copy_to_slice(&mut v);
-
-        Ok(v)
+        Ok(self.take(len)?.to_owned())
     }
 
     /// Deserialize a BeeGFS serialized c string
@@ -293,11 +298,7 @@ impl<'a> Deserializer<'a> {
     /// don't.
     pub fn cstr(&mut self, align_to: usize) -> Result<Vec<u8>> {
         let len = self.u32()? as usize;
-
-        let mut v = vec![0; len];
-
-        self.check_remaining(len)?;
-        self.source_buf.copy_to_slice(&mut v);
+        let v = self.take(len)?.to_owned();
 
         let terminator: u8 = self.u8()?;
         if terminator != 0 {
@@ -387,26 +388,59 @@ impl<'a> Deserializer<'a> {
     ///
     /// The opposite of fill_zeroes() in serialization.
     pub fn skip(&mut self, n: usize) -> Result<()> {
-        self.check_remaining(n)?;
-        self.source_buf.advance(n);
-
+        self.take(n)?;
         Ok(())
     }
 
-    /// Ensures that the source buffer has at least `n` bytes left
-    ///
-    /// Meant to check that there are enough bytes left before calling `Bytes` functions that would
-    /// panic otherwise (which we wan't to avoid)
-    fn check_remaining(&self, n: usize) -> Result<()> {
-        if self.source_buf.remaining() < n {
-            bail!(
-                "Unexpected end of source buffer. Needed at least {}, got {}",
-                n,
-                self.source_buf.remaining()
-            );
+    /// Takes the next n bytes from the source buffer, checking that there are enough left.
+    fn take(&mut self, n: usize) -> Result<&[u8]> {
+        match self.source_buf.split_at_checked(n) {
+            Some((taken, rest)) => {
+                self.source_buf = rest;
+                Ok(taken)
+            }
+            None => {
+                bail!(
+                    "Unexpected end of source buffer. Needed at least {n}, got {}",
+                    self.source_buf.len()
+                );
+            }
         }
-        Ok(())
     }
+}
+
+// HELPER / CONVENIENCE FUNCTIONS
+
+/// Provides conversion functionality to and from BeeSerde serializable types.
+///
+/// Mainly meant for enums that need to be converted in to a raw integer type, which also might
+/// differ between messages. The generic parameter allows implementing it for multiple types.
+pub trait BeeSerdeConversion<S>: Sized {
+    fn into_bee_serde(self) -> S;
+    fn try_from_bee_serde(value: S) -> Result<Self>;
+}
+
+/// Interface for serialization helpers to be used with the `bee_serde` derive macro
+///
+/// Serialization helpers are meant to control the `bee_serde` macro in case a value in the
+/// message struct shall be serialized as a different type or in case it doesn't have its own
+/// [BeeSerde] implementation. Also necessary for maps and sequences since the serializer can't
+/// know on its own whether to include collection size or not (it's totally message dependent).
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Debug, BeeSerde)]
+/// pub struct ExampleMsg {
+///     // Serializer doesn't know by itself whether or not C/C++ BeeGFS serializer expects sequence
+///     // size included or not - in this case it is not
+///     #[bee_serde(as = Seq<false, _>)]
+///     int_sequence: Vec<u32>,
+/// }
+/// ```
+pub trait BeeSerdeHelper<In> {
+    fn serialize_as(data: &In, ser: &mut Serializer<'_>) -> Result<()>;
+    fn deserialize_as(des: &mut Deserializer<'_>) -> Result<In>;
 }
 
 /// Serialize an arbitrary type as Integer
@@ -530,7 +564,7 @@ mod test {
 
     #[test]
     fn primitives() {
-        let mut buf = BytesMut::new();
+        let mut buf = vec![0; 1 + 1 + 2 + 2 + 4 + 4 + 8 + 8];
 
         let mut ser = Serializer::new(&mut buf);
         ser.u8(123).unwrap();
@@ -542,10 +576,7 @@ mod test {
         ser.u64(0xAABBCCDDEEFF1122u64).unwrap();
         ser.i64(-0x1ABBCCDDEEFF1122i64).unwrap();
 
-        // 1 + 2 + 2 + 4 + 4 + 8
-        assert_eq!(1 + 1 + 2 + 2 + 4 + 4 + 8 + 8, ser.bytes_written);
-
-        let mut des = Deserializer::new(&buf, 0);
+        let mut des = Deserializer::new(&buf);
         assert_eq!(123, des.u8().unwrap());
         assert_eq!(-123, des.i8().unwrap());
         assert_eq!(22222, des.u16().unwrap());
@@ -561,17 +592,14 @@ mod test {
 
     #[test]
     fn bytes() {
-        let bytes: Vec<u8> = vec![0, 1, 2, 3, 4, 5];
-
-        let mut buf = BytesMut::new();
+        let bytes = vec![0, 1, 2, 3, 4, 5];
+        let mut buf = vec![0; 12];
 
         let mut ser = Serializer::new(&mut buf);
         ser.bytes(&bytes).unwrap();
         ser.bytes(&bytes).unwrap();
 
-        assert_eq!(12, ser.bytes_written);
-
-        let mut des = Deserializer::new(&buf, 0);
+        let mut des = Deserializer::new(&buf);
         assert_eq!(bytes, des.bytes(6).unwrap());
         assert_eq!(bytes, des.bytes(6).unwrap());
 
@@ -581,23 +609,17 @@ mod test {
     #[test]
     fn cstr() {
         let str: Vec<u8> = "text".into();
-
-        let mut buf = BytesMut::new();
+        // alignment applies to string length + null byte terminator
+        // Last one with align_to = 5 is intended and correct: Wrote 9 bytes, 9 % align_to = 1,
+        // align_to - 1 = 4
+        let mut buf = vec![0; (4 + 4 + 1) + (4 + 4 + 1) + (4 + 4 + 1 + 4)];
 
         let mut ser = Serializer::new(&mut buf);
         ser.cstr(&str, 0).unwrap();
         ser.cstr(&str, 4).unwrap();
         ser.cstr(&str, 5).unwrap();
 
-        assert_eq!(
-            // alignment applies to string length + null byte terminator
-            // Last one with align_to = 5 is intended and correct: Wrote 9 bytes, 9 % align_to = 1,
-            // align_to - 1 = 4
-            (4 + 4 + 1) + (4 + 4 + 1) + (4 + 4 + 1 + 4),
-            ser.bytes_written
-        );
-
-        let mut des = Deserializer::new(&buf, 0);
+        let mut des = Deserializer::new(&buf);
         assert_eq!(str, des.cstr(0).unwrap());
         assert_eq!(str, des.cstr(4).unwrap());
         assert_eq!(str, des.cstr(5).unwrap());
@@ -683,22 +705,19 @@ mod test {
             c2: HashMap::from([(18, vec!["aaa".into(), "bbbbb".into()])]),
         };
 
-        let mut buf = BytesMut::new();
-
-        let mut ser = Serializer::new(&mut buf);
-
-        s.serialize(&mut ser).unwrap();
-
-        assert_eq!(
+        let mut buf = vec![
+            0;
             1 + 8
                 + (8 + 3 * 8)
                 + (4 + 2 + 8)
                 + (8 + (4 + 2 + 4))
-                + (8 + (2 + (4 + (4 + 3 + 1) + (4 + 5 + 1)))),
-            ser.bytes_written
-        );
+                + (8 + (2 + (4 + (4 + 3 + 1) + (4 + 5 + 1))))
+        ];
 
-        let mut des = Deserializer::new(&buf, 0);
+        let mut ser = Serializer::new(&mut buf);
+        s.serialize(&mut ser).unwrap();
+
+        let mut des = Deserializer::new(&buf);
 
         let s2 = S::deserialize(&mut des).unwrap();
 
@@ -708,23 +727,19 @@ mod test {
 
     #[test]
     fn wrong_buffer_len() {
-        let bytes: Vec<u8> = vec![0, 1, 2, 3, 4, 5];
+        let mut buf = vec![0, 1, 2, 3, 4, 5];
 
-        let mut buf = BytesMut::new();
         let mut ser = Serializer::new(&mut buf);
-        ser.bytes(&bytes).unwrap();
+        // Write too much
+        ser.u64(123).unwrap_err();
 
-        let mut des = Deserializer::new(&buf, 0);
+        let mut des = Deserializer::new(&buf);
         des.bytes(5).unwrap();
-
         // Some buffer left
         des.finish().unwrap_err();
-
         // Consume too much
         des.bytes(2).unwrap_err();
-
         des.bytes(1).unwrap();
-
         // Complete buffer consumed
         des.finish().unwrap();
     }
