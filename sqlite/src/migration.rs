@@ -198,7 +198,7 @@ pub fn backup_db(conn: &mut rusqlite::Connection) -> Result<PathBuf> {
 
     let backup_file = format!("{db_file}.v{version}");
 
-    conn.backup(rusqlite::DatabaseName::Main, &backup_file, None)
+    conn.backup(rusqlite::MAIN_DB, &backup_file, None)
         .with_context(|| format!("Database backup to {backup_file} failed"))?;
 
     Ok(PathBuf::from(backup_file))

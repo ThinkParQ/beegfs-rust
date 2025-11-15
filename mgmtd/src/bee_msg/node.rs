@@ -187,12 +187,11 @@ async fn update_node(msg: RegisterNode, ctx: &Context) -> Result<NodeId> {
                 None
             };
 
-            if let Some(machine_uuid) = machine_uuid {
-                if db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
+            if let Some(machine_uuid) = machine_uuid
+                && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
                     >= licensed_machines
-                {
-                    bail!("Licensed machine limit reached. Node registration denied.");
-                }
+            {
+                bail!("Licensed machine limit reached. Node registration denied.");
             }
 
             let (node, is_new) = if let Some(node) = node {

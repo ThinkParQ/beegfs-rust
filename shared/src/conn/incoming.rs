@@ -111,11 +111,11 @@ async fn stream_loop(
         .await
         {
             // If the error comes from the connection being closed, we only log a debug message
-            if let Some(inner) = err.downcast_ref::<io::Error>() {
-                if let ErrorKind::UnexpectedEof = inner.kind() {
-                    log::debug!("Closed stream from {:?}: {err:#}", stream.addr());
-                    return;
-                }
+            if let Some(inner) = err.downcast_ref::<io::Error>()
+                && let ErrorKind::UnexpectedEof = inner.kind()
+            {
+                log::debug!("Closed stream from {:?}: {err:#}", stream.addr());
+                return;
             }
 
             log::error!(
