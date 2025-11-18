@@ -1,8 +1,7 @@
 //! Facilities for dispatching TCP and UDP messages to their message handlers
 
-use super::msg_buf::MsgBuf;
 use super::stream::Stream;
-use crate::bee_msg::{Msg, MsgId};
+use crate::bee_msg::{Header, Msg, MsgId, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
 use anyhow::Result;
 use std::fmt::Debug;
@@ -34,13 +33,14 @@ pub trait Request: Send + Sync {
 #[derive(Debug)]
 pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
-    pub(super) buf: &'a mut MsgBuf,
+    pub(super) buf: &'a mut [u8],
+    pub header: &'a Header,
 }
 
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        self.buf.serialize_msg(msg)?;
-        self.buf.write_to_stream(self.stream).await
+        let msg_len = serialize(msg, self.buf)?;
+        self.stream.write_all(&self.buf[0..msg_len]).await
     }
 
     fn authenticate_connection(&mut self) {
@@ -58,11 +58,11 @@ impl Request for StreamRequest<'_> {
     }
 
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
-        self.buf.deserialize_msg()
+        deserialize_body(self.header, &self.buf[Header::LEN..])
     }
 
     fn msg_id(&self) -> MsgId {
-        self.buf.msg_id()
+        self.header.msg_id()
     }
 }
 
@@ -71,16 +71,17 @@ impl Request for StreamRequest<'_> {
 pub struct SocketRequest<'a> {
     pub(crate) sock: Arc<UdpSocket>,
     pub(crate) peer_addr: SocketAddr,
-    pub(crate) msg_buf: &'a mut MsgBuf,
+    pub(crate) buf: &'a mut [u8],
+    pub header: &'a Header,
 }
 
 impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        self.msg_buf.serialize_msg(msg)?;
-
-        self.msg_buf
-            .send_to_socket(&self.sock, &self.peer_addr)
-            .await
+        let msg_len = serialize(msg, self.buf)?;
+        self.sock
+            .send_to(&self.buf[0..msg_len], &self.peer_addr)
+            .await?;
+        Ok(())
     }
 
     fn authenticate_connection(&mut self) {
@@ -92,10 +93,10 @@ impl Request for SocketRequest<'_> {
     }
 
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
-        self.msg_buf.deserialize_msg()
+        deserialize_body(self.header, &self.buf[Header::LEN..])
     }
 
     fn msg_id(&self) -> MsgId {
-        self.msg_buf.msg_id()
+        self.header.msg_id()
     }
 }

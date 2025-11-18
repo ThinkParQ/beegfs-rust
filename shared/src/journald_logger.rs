@@ -1,6 +1,5 @@
 //! Journald logger implementation for the `log` interface
 
-use bytes::BufMut;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::os::unix::net::UnixDatagram;
 
@@ -37,7 +36,7 @@ impl Log for JournaldLogger {
             .into_bytes();
 
             buf.reserve(msg.len() + 8 + 1);
-            buf.put_u64_le(msg.len() as u64);
+            buf.extend((msg.len() as u64).to_le_bytes());
             buf.extend(msg);
             buf.extend(b"\n");
 
