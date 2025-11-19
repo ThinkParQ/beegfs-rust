@@ -100,3 +100,45 @@ impl Request for SocketRequest<'_> {
         self.header.msg_id()
     }
 }
+
+pub mod test {
+    use super::*;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+
+    pub struct TestRequest {
+        pub msg_id: MsgId,
+        pub authenticate_connection: bool,
+    }
+
+    impl TestRequest {
+        pub fn new(msg_id: MsgId) -> Self {
+            Self {
+                msg_id,
+                authenticate_connection: false,
+            }
+        }
+    }
+
+    impl Request for TestRequest {
+        async fn respond<M: Msg + Serializable>(self, _msg: &M) -> Result<()> {
+            // do nothing
+            Ok(())
+        }
+
+        fn authenticate_connection(&mut self) {
+            self.authenticate_connection = true;
+        }
+
+        fn addr(&self) -> SocketAddr {
+            SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0).into()
+        }
+
+        fn msg_id(&self) -> MsgId {
+            self.msg_id
+        }
+
+        fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
+            unimplemented!()
+        }
+    }
+}
