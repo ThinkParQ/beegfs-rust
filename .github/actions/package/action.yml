@@ -1,5 +1,10 @@
 name: "Build packages"
 description: "Build RPM and DEB packages for multiple architectures"
+inputs:
+  build-targets:
+    description: "Set to x86_64, aarch64, or both to choose which packages to build"
+    required: false
+    default: both
 
 runs:
   using: "composite"
@@ -23,6 +28,24 @@ runs:
         mkdir -p ${HOME}/zig
         tar -xJ -C ${HOME}/zig --strip-components=1 -f zig.tar.xz
         echo ${HOME}/zig >> ${GITHUB_PATH}
+    - name: Cache cargo registry and git indexes
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registries-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registries-
+    - name: Cache host target artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          target/debug
+          target/release
+        key: ${{ runner.os }}-cargo-host-targets-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-host-targets-
     - name: Run checks and tests
       shell: bash
       run: |
@@ -35,13 +58,31 @@ runs:
         if [[ "${{ github.ref_type }}" == "tag" ]]; then
           echo "VERSION=${{ github.ref_name }}" >> "$GITHUB_ENV"
         fi
+    - name: Cache x86_64 build artifacts
+      if: ${{ inputs.build-targets != 'aarch64' }}
+      uses: actions/cache@v4
+      with:
+        path: target/x86_64-unknown-linux-gnu
+        key: ${{ runner.os }}-cargo-x86_64-target-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-x86_64-target-
     - name: Build x86_64 packages
+      if: ${{ inputs.build-targets != 'aarch64' }}
       env:
         CARGO_TARGET: x86_64-unknown-linux-gnu
         GLIBC_VERSION: 2.27
       shell: bash
       run: make package
+    - name: Cache aarch64 build artifacts
+      if: ${{ inputs.build-targets != 'x86_64' }}
+      uses: actions/cache@v4
+      with:
+        path: target/aarch64-unknown-linux-gnu
+        key: ${{ runner.os }}-cargo-aarch64-target-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-aarch64-target-
     - name: Build aarch64 packages
+      if: ${{ inputs.build-targets != 'x86_64' }}
       env:
         CARGO_TARGET: aarch64-unknown-linux-gnu
         BIN_UTIL_PREFIX: aarch64-linux-gnu-
