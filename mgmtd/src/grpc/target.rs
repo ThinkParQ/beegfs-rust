@@ -2,6 +2,7 @@ use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::misc::RefreshCapacityPools;
+use shared::bee_msg::storage_pool::RefreshStoragePools;
 use shared::bee_msg::target::{
     RefreshTargetStates, SetTargetConsistencyStates, SetTargetConsistencyStatesResp,
 };
@@ -213,6 +214,14 @@ pub(crate) async fn delete(
             &ctx,
             &[NodeType::Meta],
             &RefreshCapacityPools { ack_id: "".into() },
+        )
+        .await;
+
+        // Storage targets deletion alter pool membership, so trigger an immediate pool refresh
+        notify_nodes(
+            &ctx,
+            &[NodeType::Meta, NodeType::Storage],
+            &RefreshStoragePools { ack_id: "".into() },
         )
         .await;
     }
