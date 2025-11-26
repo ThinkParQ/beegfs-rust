@@ -2,6 +2,7 @@ use super::*;
 use crate::db::target::TargetCapacities;
 use crate::types::ResolveEntityId;
 use rusqlite::Transaction;
+use shared::bee_msg::storage_pool::RefreshStoragePools;
 use shared::bee_msg::target::*;
 use std::time::Duration;
 
@@ -170,7 +171,8 @@ impl HandleWithResponse for MapTargets {
 
         let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
 
-        ctx.db
+        let updated = ctx
+            .db
             .write_tx(move |tx| {
                 // Check node Id exists
                 let node = LegacyId {
@@ -181,8 +183,9 @@ impl HandleWithResponse for MapTargets {
                 // Check all target Ids exist
                 db::target::validate_ids(tx, &target_ids, NodeTypeServer::Storage)?;
                 // Due to the check above, this must always match all the given ids
-                db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
-                Ok(())
+                let updated =
+                    db::target::update_storage_node_mappings(tx, &target_ids, node.num_id())?;
+                Ok(updated)
             })
             .await?;
 
@@ -204,6 +207,16 @@ impl HandleWithResponse for MapTargets {
             },
         )
         .await;
+
+        // Map targets alter pool membership, so trigger an immediate pool refresh
+        if updated > 0 {
+            notify_nodes(
+                ctx,
+                &[NodeType::Meta, NodeType::Storage],
+                &RefreshStoragePools { ack_id: "".into() },
+            )
+            .await;
+        }
 
         // Storage server expects a separate status code for each target map requested. We, however,
         // do a all-or-nothing approach. If e.g. one target id doesn't exist (which is an

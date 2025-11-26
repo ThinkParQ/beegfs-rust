@@ -7,6 +7,7 @@ use shared::bee_msg::buddy_group::{
     GetStorageResyncStatsResp, RemoveBuddyGroup, RemoveBuddyGroupResp, SetLastBuddyCommOverride,
     SetMetadataMirroring, SetMetadataMirroringResp, SetMirrorBuddyGroup,
 };
+use shared::bee_msg::storage_pool::RefreshStoragePools;
 use shared::bee_msg::target::{RefreshTargetStates, SetTargetConsistencyStatesResp};
 use tokio::time::{Duration, Instant, sleep};
 
@@ -144,6 +145,16 @@ pub(crate) async fn create(
     )
     .await;
 
+    // Storage buddy groups alter pool membership, so trigger an immediate pool refresh
+    if node_type == NodeTypeServer::Storage {
+        notify_nodes(
+            &ctx,
+            &[NodeType::Meta, NodeType::Storage],
+            &RefreshStoragePools { ack_id: "".into() },
+        )
+        .await;
+    }
+
     Ok(pm::CreateBuddyGroupResponse {
         group: Some(group.into()),
     })
@@ -220,6 +231,14 @@ Primary result: {:?}, Secondary result: {:?}",
 
     if execute {
         log::info!("Buddy group deleted: {group}");
+
+        // Storage buddy groups alter pool membership, so trigger an immediate pool refresh
+        notify_nodes(
+            &ctx,
+            &[NodeType::Meta, NodeType::Storage],
+            &RefreshStoragePools { ack_id: "".into() },
+        )
+        .await;
     }
 
     Ok(pm::DeleteBuddyGroupResponse {
