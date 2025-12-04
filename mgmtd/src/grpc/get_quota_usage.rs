@@ -131,20 +131,20 @@ pub(crate) async fn get_quota_usage(
 
             // If this if the first entry, include the quota refresh period. Do not send it again
             // after to minimize message size.
-            if offset == 0 {
-                if let Some(entry) = entries.next() {
-                    stream
-                        .send(pm::GetQuotaUsageResponse {
-                            entry: Some(entry),
-                            refresh_period_s: Some(
-                                app.static_info()
-                                    .user_config
-                                    .quota_update_interval
-                                    .as_secs(),
-                            ),
-                        })
-                        .await?;
-                }
+            if offset == 0
+                && let Some(entry) = entries.next()
+            {
+                stream
+                    .send(pm::GetQuotaUsageResponse {
+                        entry: Some(entry),
+                        refresh_period_s: Some(
+                            app.static_info()
+                                .user_config
+                                .quota_update_interval
+                                .as_secs(),
+                        ),
+                    })
+                    .await?;
             }
 
             // Send all the (remaining) entries to the client
