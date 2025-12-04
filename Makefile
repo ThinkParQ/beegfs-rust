@@ -130,7 +130,7 @@ package:
 		--set-metadata='epoch=20' \
 		--set-metadata='license="BeeGFS EULA"' \
 		--set-metadata='provides={"beegfs-mgmtd" = "= $(VERSION_TRIMMED)"}'
-	
+
 	# Replace tilde in package filename with hypens.
 	# Github release action and api substitutes tilde (~) with dot (.) in file names when uploaded to Github packages. 
 	find $(PACKAGE_DIR)/ -type f \( -name "*~*.deb" -o -name "*~*.rpm" \) -exec bash -c 'mv "$$1" "$${1//\~/-}"' _ {} \;
@@ -141,6 +141,33 @@ clean-package:
 
 
 ### Utilities ###
+
+COVERAGE_DIR=$(shell echo $$(pwd)/target/coverage)
+
+# Generates test coverage of the code excluding doctests and prints a report
+.PHONY: coverage
+coverage:
+	# Ensure the required llvm-tools are installed - these must be exactly the ones required.
+	# See https://doc.rust-lang.org/rustc/instrument-coverage.html
+	rustup component add llvm-tools
+	# Figure out the path to the installed llvm binaries for the local machine
+	LLVM=$$(rustc --print sysroot)/lib/rustlib/$$(rustc -Vv | grep host | awk '{print $$2}')/bin
+
+	rm -f $(COVERAGE_DIR)/*
+	export RUSTFLAGS="-C instrument-coverage"
+	export LLVM_PROFILE_FILE="$(COVERAGE_DIR)/%m_%p.profraw"
+
+	# Run tests with instrumentation. Then print a summary of the runs to extract the test binaries.
+	cargo test $(LOCKED_FLAG) --all-features --tests
+	TEST_BINARIES="$$( \
+		for f in $$(cargo test $(LOCKED_FLAG) --all-features --tests --no-run 2>&1 | grep -E -o "target\/.*[^)]"); \
+		do \
+			printf "%s %s " -object $$f; \
+		done \
+	)"
+	$$LLVM/llvm-profdata merge -sparse $(COVERAGE_DIR)/*.profraw -o $(COVERAGE_DIR)/merged.profdata
+	git ls-files "*.rs" | xargs $$LLVM/llvm-cov report $$TEST_BINARIES -instr-profile=$(COVERAGE_DIR)/merged.profdata -sources
+
 
 # Quickly installs the newest versions most of the tools and components used by this repo. Requires
 # `rustup` to be installed. You can install that by either going to `https://rustup.rs` and use the
