@@ -24,9 +24,8 @@ impl CapacityInfo for &TargetOrBuddyGroup {
 impl HandleWithResponse for GetStoragePools {
     type Response = GetStoragePoolsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let (pools, targets, buddy_groups) = ctx
-            .db
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        let (pools, targets, buddy_groups) = app
             .read_tx(move |tx| {
                 let pools: Vec<(PoolId, String)> = tx.query_map_collect(
                     sql!(
@@ -105,8 +104,11 @@ impl HandleWithResponse for GetStoragePools {
                 let f_buddy_groups = buddy_groups.iter().filter(|t| t.pool_id == pool.0);
 
                 let cp_targets_calc = CapPoolCalculator::new(
-                    ctx.info.user_config.cap_pool_storage_limits.clone(),
-                    ctx.info
+                    app.static_info()
+                        .user_config
+                        .cap_pool_storage_limits
+                        .clone(),
+                    app.static_info()
                         .user_config
                         .cap_pool_dynamic_storage_limits
                         .as_ref(),
@@ -114,8 +116,11 @@ impl HandleWithResponse for GetStoragePools {
                 )?;
 
                 let cp_buddy_groups_calc = CapPoolCalculator::new(
-                    ctx.info.user_config.cap_pool_storage_limits.clone(),
-                    ctx.info
+                    app.static_info()
+                        .user_config
+                        .cap_pool_storage_limits
+                        .clone(),
+                    app.static_info()
                         .user_config
                         .cap_pool_dynamic_storage_limits
                         .as_ref(),

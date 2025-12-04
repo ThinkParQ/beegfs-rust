@@ -12,9 +12,8 @@ impl HandleWithResponse for RequestExceededQuota {
         }
     }
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        let inner = ctx
-            .db
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        let inner = app
             .read_tx(move |tx| {
                 let exceeded_ids = db::quota_usage::exceeded_quota_ids(
                     tx,

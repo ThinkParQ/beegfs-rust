@@ -1,6 +1,6 @@
 //! Functionality for fetching and updating quota information from / to nodes and the database.
 
-use crate::context::Context;
+use crate::app::*;
 use crate::db;
 use crate::db::quota_usage::QuotaData;
 use crate::types::SqliteEnumExt;
@@ -16,11 +16,10 @@ use std::collections::HashSet;
 use std::path::Path;
 
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
-pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
+pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     // Fetch quota data from storage daemons
 
-    let targets: Vec<(TargetId, PoolId, Uid)> = ctx
-        .db
+    let targets: Vec<(TargetId, PoolId, Uid)> = app
         .read_tx(move |tx| {
             tx.query_map_collect(
                 sql!(
@@ -49,7 +48,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
 
     // If configured, add system User IDS
-    let user_ids_min = ctx.info.user_config.quota_user_system_ids_min;
+    let user_ids_min = app.static_info().user_config.quota_user_system_ids_min;
 
     if let Some(user_ids_min) = user_ids_min {
         system_ids::user_ids()
@@ -61,7 +60,7 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     }
 
     // If configured, add system Group IDS
-    let group_ids_min = ctx.info.user_config.quota_group_system_ids_min;
+    let group_ids_min = app.static_info().user_config.quota_group_system_ids_min;
 
     if let Some(group_ids_min) = group_ids_min {
         system_ids::group_ids()
@@ -73,22 +72,22 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     }
 
     // If configured, add user IDs from file
-    if let Some(ref path) = ctx.info.user_config.quota_user_ids_file {
+    if let Some(ref path) = app.static_info().user_config.quota_user_ids_file {
         try_read_quota_ids(path, &mut user_ids)?;
     }
 
     // If configured, add group IDs from file
-    if let Some(ref path) = ctx.info.user_config.quota_group_ids_file {
+    if let Some(ref path) = app.static_info().user_config.quota_group_ids_file {
         try_read_quota_ids(path, &mut group_ids)?;
     }
 
     // If configured, add range based user IDs
-    if let Some(range) = &ctx.info.user_config.quota_user_ids_range {
+    if let Some(range) = &app.static_info().user_config.quota_user_ids_range {
         user_ids.extend(range.clone());
     }
 
     // If configured, add range based group IDs
-    if let Some(range) = &ctx.info.user_config.quota_group_ids_range {
+    if let Some(range) = &app.static_info().user_config.quota_group_ids_range {
         group_ids.extend(range.clone());
     }
 
@@ -96,13 +95,12 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
     // Sends one request per target to the respective owner node
     // Requesting is done concurrently.
     for (target_id, pool_id, node_uid) in targets {
-        let ctx2 = ctx.clone();
+        let app2 = app.clone();
         let user_ids2 = user_ids.clone();
 
         // Users
         tasks.push(tokio::spawn(async move {
-            let resp: Result<GetQuotaInfoResp> = ctx2
-                .conn
+            let resp: Result<GetQuotaInfoResp> = app2
                 .request(
                     node_uid,
                     &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
@@ -119,13 +117,12 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
             (target_id, resp)
         }));
 
-        let ctx2 = ctx.clone();
+        let app2 = app.clone();
         let group_ids2 = group_ids.clone();
 
         // Groups
         tasks.push(tokio::spawn(async move {
-            let resp = ctx2
-                .conn
+            let resp = app2
                 .request(
                     node_uid,
                     &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
@@ -149,36 +146,34 @@ pub(crate) async fn update_and_distribute(ctx: &Context) -> Result<()> {
         let (target_id, resp) = t.await?;
         if let Ok(r) = resp {
             // Insert quota usage data into the database
-            ctx.db
-                .write_tx(move |tx| {
-                    db::quota_usage::update(
-                        tx,
-                        target_id,
-                        r.quota_entry.into_iter().map(|e| QuotaData {
-                            quota_id: e.id,
-                            id_type: e.id_type,
-                            space: e.space,
-                            inodes: e.inodes,
-                        }),
-                    )
-                })
-                .await?;
+            app.write_tx(move |tx| {
+                db::quota_usage::update(
+                    tx,
+                    target_id,
+                    r.quota_entry.into_iter().map(|e| QuotaData {
+                        quota_id: e.id,
+                        id_type: e.id_type,
+                        space: e.space,
+                        inodes: e.inodes,
+                    }),
+                )
+            })
+            .await?;
         }
     }
 
-    if ctx.info.user_config.quota_enforce {
-        exceeded_quota(ctx).await?;
+    if app.static_info().user_config.quota_enforce {
+        exceeded_quota(app).await?;
     }
 
     Ok(())
 }
 
 /// Calculate and push exceeded quota info to the nodes
-async fn exceeded_quota(ctx: &Context) -> Result<()> {
+async fn exceeded_quota(app: &impl App) -> Result<()> {
     log::info!("Calculating and pushing exceeded quota");
 
-    let (msges, nodes) = ctx
-        .db
+    let (msges, nodes) = app
         .read_tx(|tx| {
             let pools: Vec<_> =
                 tx.query_map_collect(sql!("SELECT pool_id FROM pools"), [], |row| row.get(0))?;
@@ -235,9 +230,9 @@ async fn exceeded_quota(ctx: &Context) -> Result<()> {
     for msg in msges {
         let mut request_fails = 0;
         let mut non_success_count = 0;
+
         for node_uid in &nodes {
-            match ctx
-                .conn
+            match app
                 .request::<_, SetExceededQuotaResp>(*node_uid, &msg)
                 .await
             {

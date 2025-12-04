@@ -2,68 +2,6 @@ use super::*;
 use crate::cap_pool::{CapPoolCalculator, CapacityInfo};
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
-use shared::types::PoolId;
-use sqlite::TransactionExt;
-use sqlite_check::sql;
-
-impl HandleNoResponse for Ack {
-    async fn handle(self, _ctx: &Context, req: &mut impl Request) -> Result<()> {
-        log::debug!("Ignoring Ack from {:?}: Id: {:?}", req.addr(), self.ack_id);
-        Ok(())
-    }
-}
-
-impl HandleNoResponse for AuthenticateChannel {
-    async fn handle(self, ctx: &Context, req: &mut impl Request) -> Result<()> {
-        if let Some(ref secret) = ctx.info.auth_secret {
-            if secret == &self.auth_secret {
-                req.authenticate_connection();
-            } else {
-                log::error!(
-                    "Peer {:?} tried to authenticate stream with wrong secret",
-                    req.addr()
-                );
-            }
-        } else {
-            log::debug!(
-                "Peer {:?} tried to authenticate stream, but authentication is not required",
-                req.addr()
-            );
-        }
-
-        Ok(())
-    }
-}
-
-impl HandleNoResponse for PeerInfo {
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
-        // This is supposed to give some information about a connection, but it looks
-        // like this isnt used at all
-        Ok(())
-    }
-}
-
-impl HandleNoResponse for SetChannelDirect {
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<()> {
-        // do nothing
-        Ok(())
-    }
-}
-
-impl HandleWithResponse for RefreshCapacityPools {
-    type Response = Ack;
-
-    async fn handle(self, _ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
-        // This message is superfluous and therefore ignored. It is meant to tell the
-        // mgmtd to trigger a capacity pool pull immediately after a node starts.
-        // meta and storage send a SetTargetInfo before this msg though,
-        // so we handle triggering pulls there.
-
-        Ok(Ack {
-            ack_id: self.ack_id,
-        })
-    }
-}
 
 #[derive(Debug)]
 struct TargetOrBuddyGroup {
@@ -138,20 +76,22 @@ fn load_buddy_groups_info_by_type(
 impl HandleWithResponse for GetNodeCapacityPools {
     type Response = GetNodeCapacityPoolsResp;
 
-    async fn handle(self, ctx: &Context, _req: &mut impl Request) -> Result<Self::Response> {
+    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
         // We return raw u16 here as ID because BeeGFS expects a u16 that can be
         // either a NodeNUmID, TargetNumID or BuddyGroupID
 
         let pools: HashMap<PoolId, Vec<Vec<u16>>> = match self.query_type {
             CapacityPoolQueryType::Meta => {
-                let targets = ctx
-                    .db
+                let targets = app
                     .read_tx(|tx| load_targets_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
-                    ctx.info.user_config.cap_pool_meta_limits.clone(),
-                    ctx.info.user_config.cap_pool_dynamic_meta_limits.as_ref(),
+                    app.static_info().user_config.cap_pool_meta_limits.clone(),
+                    app.static_info()
+                        .user_config
+                        .cap_pool_dynamic_meta_limits
+                        .as_ref(),
                     &targets,
                 )?;
 
@@ -167,8 +107,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             }
 
             CapacityPoolQueryType::Storage => {
-                let (targets, pools) = ctx
-                    .db
+                let (targets, pools) = app
                     .read_tx(|tx| {
                         let targets = load_targets_info_by_type(tx, NodeTypeServer::Storage)?;
 
@@ -187,8 +126,11 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     let f_targets = targets.iter().filter(|e| e.pool_id == Some(sp));
 
                     let cp_calc = CapPoolCalculator::new(
-                        ctx.info.user_config.cap_pool_storage_limits.clone(),
-                        ctx.info
+                        app.static_info()
+                            .user_config
+                            .cap_pool_storage_limits
+                            .clone(),
+                        app.static_info()
                             .user_config
                             .cap_pool_dynamic_storage_limits
                             .as_ref(),
@@ -208,14 +150,16 @@ impl HandleWithResponse for GetNodeCapacityPools {
             }
 
             CapacityPoolQueryType::MetaMirrored => {
-                let groups = ctx
-                    .db
+                let groups = app
                     .read_tx(|tx| load_buddy_groups_info_by_type(tx, NodeTypeServer::Meta))
                     .await?;
 
                 let cp_calc = CapPoolCalculator::new(
-                    ctx.info.user_config.cap_pool_meta_limits.clone(),
-                    ctx.info.user_config.cap_pool_dynamic_meta_limits.as_ref(),
+                    app.static_info().user_config.cap_pool_meta_limits.clone(),
+                    app.static_info()
+                        .user_config
+                        .cap_pool_dynamic_meta_limits
+                        .as_ref(),
                     &groups,
                 )?;
 
@@ -232,8 +176,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
             }
 
             CapacityPoolQueryType::StorageMirrored => {
-                let (groups, pools) = ctx
-                    .db
+                let (groups, pools) = app
                     .read_tx(|tx| {
                         let groups = load_buddy_groups_info_by_type(tx, NodeTypeServer::Storage)?;
 
@@ -252,8 +195,11 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     let f_groups = groups.iter().filter(|e| e.pool_id == Some(sp));
 
                     let cp_calc = CapPoolCalculator::new(
-                        ctx.info.user_config.cap_pool_storage_limits.clone(),
-                        ctx.info
+                        app.static_info()
+                            .user_config
+                            .cap_pool_storage_limits
+                            .clone(),
+                        app.static_info()
                             .user_config
                             .cap_pool_dynamic_storage_limits
                             .as_ref(),

@@ -200,7 +200,10 @@ impl LicenseVerifier {
     /// not required for subsequent operations on the certificate, because the library caches the
     /// last certificate it was asked to verify, regardless of verification success. In case of
     /// verification failure, returns an `Error` that contains the failure reason.
-    pub async fn load_and_verify_cert(&self, cert_path: impl AsRef<Path>) -> Result<String> {
+    pub async fn load_and_verify_license_cert(
+        &self,
+        cert_path: impl AsRef<Path>,
+    ) -> Result<String> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded.");
         };
@@ -238,7 +241,7 @@ impl LicenseVerifier {
     /// verified, regardless of verification success. This is useful for consumers like ctl that
     /// might be interested in certificate for invalid certificates. The `GetCertDataResult` will
     /// also contain the verification status. `Error`s are simply propagated.
-    pub fn get_cert_data(&self) -> Result<GetCertDataResult> {
+    pub fn get_license_cert_data(&self) -> Result<GetCertDataResult> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded.");
         };
@@ -250,9 +253,9 @@ impl LicenseVerifier {
     /// Fetches the number of machines the license is valid for. Defaults to maximum if library is
     /// not loaded or certificate is not loaded or certificate doesn't contain the required
     /// information.
-    pub fn get_num_machines(&self) -> Result<u32> {
+    pub fn get_licensed_machines(&self) -> Result<u32> {
         let cert_data = self
-            .get_cert_data()?
+            .get_license_cert_data()?
             .data
             .ok_or_else(|| anyhow!("No certificate loaded"))?;
 
@@ -273,7 +276,7 @@ impl LicenseVerifier {
     ///
     /// Returns `Ok(())` in case of verification success and an `Error` that contains the reason for
     /// verification failure otherwise.
-    pub fn verify_feature(&self, feature: LicensedFeature) -> Result<()> {
+    pub fn verify_licensed_feature(&self, feature: LicensedFeature) -> Result<()> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded. Feature {feature:?} unavailable.");
         };
