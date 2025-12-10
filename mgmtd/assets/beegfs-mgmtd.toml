@@ -8,6 +8,12 @@
 # binary with `--help` to display it.
 
 
+# Decides how to upgrade the managements database schema, when required.
+# Can be set to "auto" to perform an auto upgrade on startup without having to manually run with
+# the --db-upgrade flag. Automatically creates a backup of the existing database file in the same
+# directory.
+# db-upgrade = "false"
+
 # Managements database file location.
 # db-file = "/var/lib/beegfs/mgmtd.sqlite"
 
