@@ -14,8 +14,9 @@ mod types;
 
 use crate::app::RuntimeApp;
 use crate::config::Config;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use app::App;
+use config::DbUpgrade;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use shared::bee_msg::target::RefreshTargetStates;
@@ -82,8 +83,19 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         info.use_ipv6,
     );
 
-    let mut db = sqlite::Connections::new(info.user_config.db_file.as_path());
-    sqlite::check_schema_async(&mut db, db::MIGRATIONS).await?;
+    let db = sqlite::Connections::new(info.user_config.db_file.as_path());
+
+    let schema_check = db
+        .read_tx(|tx| Ok(sqlite::check_schema(tx, db::MIGRATIONS)))
+        .await?;
+
+    if info.user_config.db_upgrade == DbUpgrade::Auto {
+        if schema_check.is_err() {
+            upgrade_db(&db).await?;
+        }
+    } else {
+        schema_check?;
+    }
 
     log::info!(
         "Opened database at {:?}",
@@ -150,6 +162,27 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         run_state_control,
         shutdown_client_rx,
     })
+}
+
+// Db schema auto upgrade. This requires slightly different handling and logging than the version
+// in main.rs.
+async fn upgrade_db(db: &sqlite::Connections) -> Result<()> {
+    db.conn(|conn| {
+        let backup_file = sqlite::backup_db(conn)?;
+        log::warn!("Old database backed up to {backup_file:?}");
+        Ok(())
+    })
+    .await?;
+
+    let version = db
+        .write_tx(|tx| {
+            sqlite::migrate_schema(tx, db::MIGRATIONS)
+                .with_context(|| "Upgrading database schema failed")
+        })
+        .await?;
+
+    log::warn!("Database upgraded to version {version}");
+    Ok(())
 }
 
 /// Controls the running application.
