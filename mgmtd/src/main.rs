@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 fn main() -> Result<(), i32> {
     inner_main().map_err(|err| {
+        log::error!("{err:#}");
         eprintln!("{err:#}");
         1
     })?;
