@@ -1,4 +1,3 @@
-use crate::Connections;
 use anyhow::{Context, Result, anyhow, bail};
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
@@ -125,26 +124,19 @@ pub fn flatten_migrations(migrations: &[OwnedMigration]) -> Result<String> {
 }
 
 /// Checks that the database schema is up to date to the current latest migrations
-pub async fn check_schema_async(
-    conn: &mut Connections,
-    migrations: &'static [Migration],
-) -> Result<()> {
+///
+/// # Return value
+/// Returns true if the schema must be migrated, false if it is up to date.
+pub fn check_schema(tx: &rusqlite::Transaction, migrations: &'static [Migration]) -> Result<bool> {
     let (base, latest) = check_migration_versions(migrations.iter().map(|m| m.version))?;
 
-    let version: u32 = conn
-        .read_tx(|tx| {
-            // The databases version is stored in this special sqlite header variable
-            Ok(tx.query_row("PRAGMA user_version", [], |row| row.get(0))?)
-        })
-        .await?;
+    // The databases version is stored in this special sqlite header variable
+    let version: u32 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
     if version == latest {
-        Ok(())
+        Ok(false)
     } else if (base..latest).contains(&version) {
-        bail!(
-            "Database schema version {version} is outdated. Please upgrade to latest version \
-            {latest}"
-        );
+        Ok(true)
     } else {
         bail!(
             "Database schema version {version} is outside of the valid range ({base} to {latest})"
@@ -189,7 +181,7 @@ pub fn migrate_schema(tx: &rusqlite::Transaction, migrations: &[Migration]) -> R
 }
 
 /// Safely backs up the database
-pub fn backup_db(conn: &mut rusqlite::Connection) -> Result<PathBuf> {
+pub fn backup_db(conn: &rusqlite::Connection) -> Result<PathBuf> {
     let version: u32 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
     let Some(db_file) = conn.path() else {

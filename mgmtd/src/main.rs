@@ -73,7 +73,10 @@ fn inner_main() -> Result<()> {
     }
 
     if user_config.upgrade {
-        upgrade_db(&user_config.db_file)?;
+        println!(
+            "--upgrade is deprecated. Upgrading the database now happens automatically \
+on running the management. Exiting."
+        );
         return Ok(());
     }
 
@@ -211,21 +214,6 @@ beegfs-mgmtd.conf. Before starting the management, you must MANUALLY transfer yo
         println!();
     }
 
-    Ok(())
-}
-
-fn upgrade_db(db_file: &Path) -> Result<()> {
-    let mut conn = sqlite::open(db_file)?;
-
-    let backup_file = sqlite::backup_db(&mut conn)?;
-    println!("Old database backed up to {backup_file:?}");
-
-    let tx = conn.transaction()?;
-    let version = sqlite::migrate_schema(&tx, db::MIGRATIONS)
-        .with_context(|| "Upgrading database schema failed")?;
-    tx.commit()?;
-
-    println!("Upgraded database to version {version}");
     Ok(())
 }
 
