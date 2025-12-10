@@ -119,13 +119,15 @@ generate_structs! {
     #[serde(skip)]
     fs_uuid: Option<Uuid> = None,
 
-    /// Upgrades an outdated management database to the current version, then exits.
+    /// Upgrades an outdated management database schema to the current version, then exits.
     ///
+    /// Can be set to "auto" to perform an auto upgrade on startup without having to manually run
+    /// with the --db-upgrade flag.
     /// Automatically creates a backup of the existing database file in the same directory.
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
-    #[serde(skip)]
-    upgrade: bool = false,
+    #[arg(alias("upgrade"))]
+    db_upgrade: DbUpgrade = DbUpgrade::False,
 
     /// Imports a BeeGFS v7 installation from the provided directory into a new database.
     ///
@@ -583,4 +585,15 @@ impl From<LogLevel> for LevelFilter {
             LogLevel::Trace => LevelFilter::Trace,
         }
     }
+}
+
+/// DB upgrade mode
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DbUpgrade {
+    // We never want the True setting in the config file, so we skip this one
+    #[serde(skip)]
+    True,
+    False,
+    Auto,
 }
