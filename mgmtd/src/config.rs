@@ -63,7 +63,7 @@ macro_rules! generate_structs {
 
         /// The BeeGFS management service
         ///
-        /// To set up a new system, use `--init`. To upgrade an existing database, use `--upgrade`.
+        /// To set up a new system, use `--init`.
         ///
         /// To specify a config file to load configuration from, use `--config-file`. Command line
         /// parameters overwrite config file parameters. If there is a config file in the default
@@ -119,11 +119,11 @@ generate_structs! {
     #[serde(skip)]
     fs_uuid: Option<Uuid> = None,
 
-    /// Upgrades an outdated management database to the current version, then exits.
-    ///
-    /// Automatically creates a backup of the existing database file in the same directory.
+    /// Used to upgrade the database. Deprecated, does nothing but exiting the program. Upgrading
+    /// happens automatically now.
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
+    #[arg(hide = true)]
     #[serde(skip)]
     upgrade: bool = false,
 
