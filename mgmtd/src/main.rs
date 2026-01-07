@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, anyhow, bail};
 use log::LevelFilter;
-use mgmtd::config::LogTarget;
+use mgmtd::config::{DbUpgrade, LogTarget};
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 fn main() -> Result<(), i32> {
     inner_main().map_err(|err| {
+        log::error!("{err:#}");
         eprintln!("{err:#}");
         1
     })?;
@@ -72,7 +73,7 @@ fn inner_main() -> Result<()> {
         return Ok(());
     }
 
-    if user_config.upgrade {
+    if user_config.db_upgrade == DbUpgrade::True {
         upgrade_db(&user_config.db_file)?;
         return Ok(());
     }
@@ -214,18 +215,21 @@ beegfs-mgmtd.conf. Before starting the management, you must MANUALLY transfer yo
     Ok(())
 }
 
+/// Db schema upgrade. This requires slightly different handling and logging than the automatic
+/// version in lib.rs.
 fn upgrade_db(db_file: &Path) -> Result<()> {
     let mut conn = sqlite::open(db_file)?;
 
-    let backup_file = sqlite::backup_db(&mut conn)?;
+    let tx = conn.transaction()?;
+
+    let backup_file = sqlite::backup_db(&tx)?;
     println!("Old database backed up to {backup_file:?}");
 
-    let tx = conn.transaction()?;
     let version = sqlite::migrate_schema(&tx, db::MIGRATIONS)
         .with_context(|| "Upgrading database schema failed")?;
     tx.commit()?;
 
-    println!("Upgraded database to version {version}");
+    println!("Database upgraded to version {version}");
     Ok(())
 }
 
