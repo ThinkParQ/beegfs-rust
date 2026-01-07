@@ -16,7 +16,7 @@ env_logger = "0"
 itertools = "0"
 libc = "0"
 log = { version = "0", features = ["std"] }
-prost = "0"
+prost = "0.13"
 protobuf = { git = "https://github.com/thinkparq/protobuf", rev = "24f942a79ffa8a879b84dc014384c9f06780d2b7" }
 regex = "1"
 ring = "0"
