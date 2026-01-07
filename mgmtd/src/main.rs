@@ -215,6 +215,8 @@ beegfs-mgmtd.conf. Before starting the management, you must MANUALLY transfer yo
     Ok(())
 }
 
+/// Db schema upgrade. This requires slightly different handling and logging than the automatic
+/// version in lib.rs.
 fn upgrade_db(db_file: &Path) -> Result<()> {
     let mut conn = sqlite::open(db_file)?;
 

@@ -164,8 +164,8 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     })
 }
 
-// Db schema auto upgrade. This requires slightly different handling and logging than the version
-// in main.rs.
+/// Db schema auto upgrade. This requires slightly different handling and logging than the manual
+/// version in main.rs.
 async fn upgrade_db(db: &sqlite::Connections) -> Result<()> {
     db.conn(|conn| {
         let backup_file = sqlite::backup_db(conn)?;
@@ -181,7 +181,7 @@ async fn upgrade_db(db: &sqlite::Connections) -> Result<()> {
         })
         .await?;
 
-    log::warn!("Database upgraded to version {version}");
+    log::warn!("Database automatically upgraded to version {version}");
     Ok(())
 }
 
