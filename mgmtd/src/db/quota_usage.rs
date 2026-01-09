@@ -95,50 +95,36 @@ pub(crate) fn update(
     target_id: TargetId,
     data: impl IntoIterator<Item = QuotaData>,
 ) -> Result<()> {
+    tx.execute_cached(
+        sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
+        [target_id],
+    )?;
+
     let mut insert_stmt = tx.prepare_cached(sql!(
         "INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
-        VALUES (?1, ?2, ?3 ,?4 ,?5)
-        ON CONFLICT (quota_id, id_type, quota_type, target_id) DO
-        UPDATE SET value = ?5"
-    ))?;
-
-    let mut delete_stmt = tx.prepare_cached(sql!(
-        "DELETE FROM quota_usage
-        WHERE quota_id = ?1 AND id_type = ?2 AND quota_type = ?3 AND target_id = ?4"
+        VALUES (?1, ?2, ?3 ,?4 ,?5)"
     ))?;
 
     for d in data {
-        match d.space {
-            0 => delete_stmt.execute(params![
-                d.quota_id,
-                d.id_type.sql_variant(),
-                QuotaType::Space.sql_variant(),
-                target_id,
-            ])?,
-            _ => insert_stmt.execute(params![
+        if d.space > 0 {
+            insert_stmt.execute(params![
                 d.quota_id,
                 d.id_type.sql_variant(),
                 QuotaType::Space.sql_variant(),
                 target_id,
                 d.space
-            ])?,
-        };
+            ])?;
+        }
 
-        match d.inodes {
-            0 => delete_stmt.execute(params![
-                d.quota_id,
-                d.id_type.sql_variant(),
-                QuotaType::Inode.sql_variant(),
-                target_id,
-            ])?,
-            _ => insert_stmt.execute(params![
+        if d.inodes > 0 {
+            insert_stmt.execute(params![
                 d.quota_id,
                 d.id_type.sql_variant(),
                 QuotaType::Inode.sql_variant(),
                 target_id,
                 d.inodes
-            ])?,
-        };
+            ])?;
+        }
     }
 
     Ok(())
@@ -201,21 +187,36 @@ mod test {
                 .len()
             );
 
-            assert_eq!(4, all_exceeded_quota_ids(tx,).unwrap().len());
+            assert_eq!(4, all_exceeded_quota_ids(tx).unwrap().len());
 
             update(
                 tx,
-                1,
+                5,
                 [QuotaData {
-                    quota_id: 1001,
+                    quota_id: 1003,
                     id_type: QuotaIdType::User,
                     space: 0,
-                    inodes: 500,
+                    inodes: 2500,
                 }],
             )
             .unwrap();
 
-            assert_eq!(2, all_exceeded_quota_ids(tx,).unwrap().len());
+            assert_eq!(5, all_exceeded_quota_ids(tx).unwrap().len());
+
+            // This should replace all entries of target 1
+            update(
+                tx,
+                1,
+                [QuotaData {
+                    quota_id: 1000,
+                    id_type: QuotaIdType::User,
+                    space: 2500,
+                    inodes: 2500,
+                }],
+            )
+            .unwrap();
+
+            assert_eq!(3, all_exceeded_quota_ids(tx).unwrap().len());
         })
     }
 }
