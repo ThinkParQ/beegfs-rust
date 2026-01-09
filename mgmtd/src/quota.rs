@@ -2,9 +2,9 @@
 
 use crate::app::*;
 use crate::db;
-use crate::db::quota_usage::QuotaData;
 use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
+use rusqlite::params;
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
@@ -97,66 +97,87 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     for (target_id, pool_id, node_uid) in targets {
         let app2 = app.clone();
         let user_ids2 = user_ids.clone();
+        let group_ids2 = group_ids.clone();
 
-        // Users
         tasks.push(tokio::spawn(async move {
-            let resp: Result<GetQuotaInfoResp> = app2
+            let resp_users: Result<GetQuotaInfoResp> = app2
                 .request(
                     node_uid,
                     &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
                 )
                 .await;
 
-            // Log immediately so there is no delay if other tasks have to wait and get joined
-            // first
-            if let Err(ref err) = resp {
-                log::error!(
-                    "Fetching user quota info for storage target {target_id} failed: {err:#}"
-                );
-            }
-            (target_id, resp)
-        }));
-
-        let app2 = app.clone();
-        let group_ids2 = group_ids.clone();
-
-        // Groups
-        tasks.push(tokio::spawn(async move {
-            let resp = app2
+            let resp_groups: Result<GetQuotaInfoResp> = app2
                 .request(
                     node_uid,
                     &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
                 )
                 .await;
 
-            // Log immediately so there is no delay if other tasks have to wait and get joined
-            // first
-            if let Err(ref err) = resp {
+            if resp_users.is_err() || resp_groups.is_err() {
                 log::error!(
-                    "Fetching group quota info for storage target {target_id} failed: {err:#}",
+                    "Fetching quota info for storage target {target_id} from node with uid
+{node_uid} failed. Users: {resp_users:?}, Groups: {resp_groups:?}"
                 );
+
+                return (target_id, None);
             }
 
-            (target_id, resp)
+            let mut entries = resp_users.expect("impossible").quota_entry;
+            entries.append(&mut resp_groups.expect("impossible").quota_entry);
+
+            (target_id, Some(entries))
         }));
     }
 
     // Await all the responses
     for t in tasks {
-        let (target_id, resp) = t.await?;
-        if let Ok(r) = resp {
-            // Insert quota usage data into the database
+        let (target_id, entries) = t.await?;
+
+        // Only process that target if there were not errors when fetching for this target
+        if let Some(entries) = entries {
             app.write_tx(move |tx| {
-                db::quota_usage::update(
-                    tx,
-                    target_id,
-                    r.quota_entry.into_iter().map(|e| QuotaData {
-                        quota_id: e.id,
-                        id_type: e.id_type,
-                        space: e.space,
-                        inodes: e.inodes,
-                    }),
-                )
+                // Always delete all the old entries for that target to make sure entries for no
+                // longer queried ids are removed. We always get the complete list from the
+                // storages and we only update if there was no fetch error.
+                tx.execute_cached(
+                    sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
+                    [target_id],
+                )?;
+
+                let mut insert_stmt = tx.prepare_cached(sql!(
+                    "INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
+                    VALUES (?1, ?2, ?3 ,?4 ,?5)"
+                ))?;
+
+                log::debug!(
+                    "Setting {} quota usage entries for target {target_id}",
+                    entries.len()
+                );
+
+                for e in entries {
+                    if e.space > 0 {
+                        insert_stmt.execute(params![
+                            e.id,
+                            e.id_type.sql_variant(),
+                            QuotaType::Space.sql_variant(),
+                            target_id,
+                            e.space
+                        ])?;
+                    }
+
+                    if e.inodes > 0 {
+                        insert_stmt.execute(params![
+                            e.id,
+                            e.id_type.sql_variant(),
+                            QuotaType::Inode.sql_variant(),
+                            target_id,
+                            e.inodes
+                        ])?;
+                    }
+                }
+
+                Ok(())
             })
             .await?;
         }
