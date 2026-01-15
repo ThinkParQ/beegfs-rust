@@ -14,7 +14,7 @@ mod types;
 
 use crate::app::RuntimeApp;
 use crate::config::Config;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use app::App;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
@@ -82,8 +82,15 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         info.use_ipv6,
     );
 
-    let mut db = sqlite::Connections::new(info.user_config.db_file.as_path());
-    sqlite::check_schema_async(&mut db, db::MIGRATIONS).await?;
+    let db = sqlite::Connections::new(info.user_config.db_file.as_path());
+
+    let need_migration = db
+        .read_tx(|tx| Ok(sqlite::check_schema(tx, db::MIGRATIONS)))
+        .await??;
+
+    if need_migration {
+        migrate_db_schema(&db).await?;
+    }
 
     log::info!(
         "Opened database at {:?}",
@@ -150,6 +157,28 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         run_state_control,
         shutdown_client_rx,
     })
+}
+
+/// Db schema migration
+async fn migrate_db_schema(db: &sqlite::Connections) -> Result<()> {
+    log::warn!("The database needs to be migrated. Applying migrations...");
+
+    db.conn(|conn| {
+        let backup_file = sqlite::backup_db(conn)?;
+        log::warn!("Old database backed up to {backup_file:?}");
+        Ok(())
+    })
+    .await?;
+
+    let version = db
+        .write_tx(|tx| {
+            sqlite::migrate_schema(tx, db::MIGRATIONS)
+                .with_context(|| "Migrating database schema failed")
+        })
+        .await?;
+
+    log::warn!("Database automatically migrated to version {version}");
+    Ok(())
 }
 
 /// Controls the running application.
