@@ -11,7 +11,7 @@ use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Write;
 use std::path::Path;
 use std::{fs, panic};
-use tokio::signal::ctrl_c;
+use tokio::signal::unix::{SignalKind, signal};
 use uuid::Uuid;
 
 fn main() -> Result<(), i32> {
@@ -151,7 +151,7 @@ doc.beegfs.io.",
         // notification that the service has completed startup and is ready for serving
         let _ = sd_notify::notify(true, &[sd_notify::NotifyState::Ready]);
 
-        run.wait_for_shutdown(ctrl_c).await;
+        run.wait_for_shutdown(wait_for_shutdown_signal).await;
 
         Ok(())
     })
@@ -241,5 +241,15 @@ fn panic_handler(info: &std::panic::PanicHookInfo) {
         log::error!("{s}");
     } else {
         eprintln!("{s}");
+    }
+}
+
+async fn wait_for_shutdown_signal() {
+    let mut sig_int = signal(SignalKind::interrupt()).expect("Failed to install signal handler");
+    let mut sig_term = signal(SignalKind::terminate()).expect("Failed to install signal handler");
+
+    tokio::select! {
+        _ = sig_int.recv() => {}
+        _ = sig_term.recv() => {}
     }
 }
