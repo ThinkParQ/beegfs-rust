@@ -2,6 +2,7 @@
 
 use crate::bee_msg::Header;
 use anyhow::{Result, bail};
+use std::array::TryFromSliceError;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -557,6 +558,19 @@ impl_traits_for_primitive!(u32);
 impl_traits_for_primitive!(i32);
 impl_traits_for_primitive!(u64);
 impl_traits_for_primitive!(i64);
+
+impl<const SIZE: usize> Serializable for [u8; SIZE] {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        ser.bytes(self)
+    }
+}
+
+impl<const SIZE: usize> Deserializable for [u8; SIZE] {
+    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
+        des.take(SIZE)
+            .and_then(|e| e.try_into().map_err(TryFromSliceError::into))
+    }
+}
 
 #[cfg(test)]
 mod test {
