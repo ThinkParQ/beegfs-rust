@@ -3,6 +3,7 @@
 use super::stream::Stream;
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
+use crate::crypto::aes256_encrypt;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;
@@ -40,6 +41,9 @@ pub struct StreamRequest<'a> {
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         let msg_len = serialize(msg, self.buf)?;
+        // Encrypt the response with the stream's send counter before sending.
+        let seq = self.stream.next_send_seq();
+        aes256_encrypt(seq, &mut self.buf[..msg_len])?;
         self.stream.write_all(&self.buf[0..msg_len]).await
     }
 
@@ -78,6 +82,8 @@ pub struct SocketRequest<'a> {
 impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         let msg_len = serialize(msg, self.buf)?;
+        // Datagrams are connectionless: encrypt with counter 0 (matching the C++ datagram path).
+        aes256_encrypt(0, &mut self.buf[..msg_len])?;
         self.sock
             .send_to(&self.buf[0..msg_len], &self.peer_addr)
             .await?;
