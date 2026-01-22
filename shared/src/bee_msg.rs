@@ -1,9 +1,9 @@
 //! BeeGFS network message definitions
 
 use crate::bee_serde::*;
-use crate::crypto::AesEncryptionInfo;
+use crate::crypto::{AesEncryptionInfo, aes256_encrypt};
 use crate::types::*;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use bee_serde_derive::BeeSerde;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -142,6 +142,24 @@ pub fn serialize_header(header: &Header, buf: &mut [u8]) -> Result<usize> {
     Ok(ser_header.bytes_written())
 }
 
+pub fn set_encryption_header(info: &AesEncryptionInfo, buf: &mut [u8]) -> Result<()> {
+    // TODO how to accept the buffer here? Could be from the beginning or only the encryption info
+    // slice
+    if buf.len() != Header::ENCRYPTION_INFO_LEN {
+        bail!(
+            "Failed to set the encryption header - it must be {} bytes long but got {}",
+            Header::ENCRYPTION_INFO_LEN,
+            buf.len()
+        );
+    }
+
+    // TODO get rid of the magic 4
+    let mut ser = Serializer::new(&mut buf[4..Header::ENCRYPTION_INFO_LEN]);
+    info.serialize(&mut ser)?;
+
+    Ok(())
+}
+
 /// Serializes a complete BeeMsg (header + body) into the provided buffer.
 ///
 /// # Return value
@@ -153,6 +171,10 @@ pub fn serialize<M: Msg + Serializable>(msg: &M, buf: &mut [u8]) -> Result<usize
     header.msg_id = M::ID;
 
     let _ = serialize_header(&header, &mut buf[0..Header::LEN])?;
+
+    // Encrypt TODO
+    let info = aes256_encrypt(&mut buf[Header::ENCRYPTION_INFO_LEN..(written + Header::LEN)])?;
+    set_encryption_header(&info, &mut buf[..Header::ENCRYPTION_INFO_LEN])?;
 
     Ok(header.msg_len())
 }
