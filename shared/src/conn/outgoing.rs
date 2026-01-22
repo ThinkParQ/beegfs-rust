@@ -1,11 +1,14 @@
 //! Outgoing communication functionality
 use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serialize};
+use crate::bee_msg::{
+    Header, Msg, deserialize_body, deserialize_encryption_header, deserialize_header, serialize,
+};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::TCP_BUF_LEN;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
+use crate::crypto::aes256_decrypt;
 use crate::types::{AuthSecret, Uid};
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
@@ -197,14 +200,16 @@ impl Pool {
         let header = if expect_response {
             // Read header
             stream.as_mut().read_exact(&mut buf[0..Header::LEN]).await?;
-            let header = deserialize_header(&buf[0..Header::LEN])?;
+            let (len, info) = deserialize_encryption_header(&buf[0..Header::ENCRYPTION_INFO_LEN])?;
 
             // Read body
             stream
                 .as_mut()
-                .read_exact(&mut buf[Header::LEN..header.msg_len()])
+                .read_exact(&mut buf[Header::LEN..len])
                 .await?;
-            header
+
+            aes256_decrypt(&info, &mut buf[Header::ENCRYPTION_INFO_LEN..len])?;
+            deserialize_header(&buf[..Header::LEN])?
         } else {
             Header::default()
         };
