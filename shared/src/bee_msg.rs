@@ -49,6 +49,8 @@ impl OpsErr {
 /// The BeeMsg header
 #[derive(Clone, Debug, PartialEq, Eq, BeeSerde)]
 pub struct Header {
+    /// Fixed value to identify a BeeMsg header (see MSG_PREFIX below)
+    msg_prefix: u32,
     /// Total length of the serialized message, including the header itself
     msg_len: u32,
     /// Sometimes used for additional message specific payload and/or serialization info
@@ -57,8 +59,6 @@ pub struct Header {
     pub msg_compat_feature_flags: u8,
     /// Sometimes used for additional message specific payload and/or serialization info
     pub msg_flags: u8,
-    /// Fixed value to identify a BeeMsg header (see MSG_PREFIX below)
-    msg_prefix: u64,
     /// Uniquely identifies the message type as defined in the C++ codebase in NetMessageTypes.h
     msg_id: MsgId,
     /// Sometimes used for additional message specific payload and/or serialization info
@@ -73,11 +73,12 @@ pub struct Header {
 
 impl Header {
     /// The serialized length of the header
-    pub const LEN: usize = 40;
-    /// Fixed value for identifying BeeMsges. In theory, this has some kind of version modifier
-    /// (thus the + 0), but it is unused
-    #[allow(clippy::identity_op)]
-    pub const MSG_PREFIX: u64 = (0x42474653 << 32) + 0;
+    pub const LEN: usize = 36;
+    /// The length of the unencrypted part at the start of the header
+    pub const ENCRYPTION_INFO_LEN: usize = 8;
+
+    /// Fixed value for identifying BeeMsges
+    pub const MSG_PREFIX: u32 = 0x53464742;
 
     /// The total length of the serialized message
     pub fn msg_len(&self) -> usize {
@@ -93,11 +94,11 @@ impl Header {
 impl Default for Header {
     fn default() -> Self {
         Self {
+            msg_prefix: Self::MSG_PREFIX,
             msg_len: 0,
             msg_feature_flags: 0,
             msg_compat_feature_flags: 0,
             msg_flags: 0,
-            msg_prefix: Self::MSG_PREFIX,
             msg_id: 0,
             msg_target_id: 0,
             msg_user_id: 0,
@@ -137,17 +138,45 @@ pub fn serialize_header(header: &Header, buf: &mut [u8]) -> Result<usize> {
 
 /// Serializes a complete BeeMsg (header + body) into the provided buffer.
 ///
+/// The message is left as **plaintext**: `msg_len` already reserves the trailing 16 bytes for the
+/// AES-GCM tag, but encryption itself happens at the connection layer (where the per-connection
+/// nonce counter lives). See [`crate::crypto`] and the connection send paths.
+///
 /// # Return value
 /// Returns the number of bytes written.
 pub fn serialize<M: Msg + Serializable>(msg: &M, buf: &mut [u8]) -> Result<usize> {
     let (written, mut header) = serialize_body(msg, &mut buf[Header::LEN..])?;
 
-    header.msg_len = (written + Header::LEN) as u32;
+    header.msg_len = (written + Header::LEN + 16) as u32;
     header.msg_id = M::ID;
 
     let _ = serialize_header(&header, &mut buf[0..Header::LEN])?;
 
     Ok(header.msg_len())
+}
+
+pub fn deserialize_encryption_header(buf: &[u8]) -> Result<usize> {
+    const CTX: &str = "BeeMsg encryption header deserialization failed";
+
+    let buf = buf
+        .get(..Header::ENCRYPTION_INFO_LEN)
+        .ok_or_else(|| {
+            anyhow!(
+                "Cipher header buffer must be at least {} bytes big, got {}",
+                Header::ENCRYPTION_INFO_LEN,
+                buf.len()
+            )
+        })
+        .context(CTX)?;
+
+    let mut des = Deserializer::new(buf);
+    let msg_prefix = des.u32().context(CTX)?;
+    anyhow::ensure!(msg_prefix == Header::MSG_PREFIX);
+
+    let msg_length = des.u32().context(CTX)?;
+    des.finish().context(CTX)?;
+
+    msg_length.try_into().context(CTX)
 }
 
 /// Deserializes a BeeMsg header from the provided buffer.
@@ -196,6 +225,7 @@ pub fn deserialize_body<M: Msg + Deserializable>(header: &Header, buf: &[u8]) ->
 
     let mut des = Deserializer::with_header(&buf[0..(header.msg_len() - Header::LEN)], header);
     let des_msg = M::deserialize(&mut des).context(CTX)?;
+    des.skip(16)?;
     des.finish().context(CTX)?;
 
     Ok(des_msg)

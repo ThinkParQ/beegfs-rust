@@ -1,11 +1,14 @@
 //! Outgoing communication functionality
 use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serialize};
+use crate::bee_msg::{
+    Header, Msg, deserialize_body, deserialize_encryption_header, deserialize_header, serialize,
+};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::TCP_BUF_LEN;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
+use crate::crypto::{aes256_decrypt, aes256_encrypt};
 use crate::types::{AuthSecret, Uid};
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
@@ -150,6 +153,12 @@ impl Pool {
                             let msg_len =
                                 serialize(&AuthenticateChannel { auth_secret }, &mut auth_buf)?;
 
+                            // Encrypt with the stream's send counter. As the first message on a
+                            // fresh stream this uses counter 0, matching the C++ peer's
+                            // authenticateChannel.
+                            let seq = stream.as_mut().next_send_seq();
+                            aes256_encrypt(seq, &mut auth_buf[..msg_len])?;
+
                             stream
                                 .as_mut()
                                 .write_all(&auth_buf[0..msg_len])
@@ -207,19 +216,27 @@ impl Pool {
         send_len: usize,
         expect_response: bool,
     ) -> Result<Header> {
+        // Encrypt the request with this stream's send counter right before sending it.
+        let send_seq = stream.as_mut().next_send_seq();
+        aes256_encrypt(send_seq, &mut buf[..send_len])?;
+
         stream.as_mut().write_all(&buf[0..send_len]).await?;
 
         let header = if expect_response {
             // Read header
             stream.as_mut().read_exact(&mut buf[0..Header::LEN]).await?;
-            let header = deserialize_header(&buf[0..Header::LEN])?;
+            let len = deserialize_encryption_header(&buf[0..Header::ENCRYPTION_INFO_LEN])?;
 
             // Read body
             stream
                 .as_mut()
-                .read_exact(&mut buf[Header::LEN..header.msg_len()])
+                .read_exact(&mut buf[Header::LEN..len])
                 .await?;
-            header
+
+            // Decrypt the response with this stream's receive counter.
+            let recv_seq = stream.as_mut().next_recv_seq();
+            aes256_decrypt(recv_seq, &mut buf[..len])?;
+            deserialize_header(&buf[..Header::LEN])?
         } else {
             Header::default()
         };
@@ -241,6 +258,10 @@ impl Pool {
         let mut buf = self.store.pop_buf_or_create();
 
         let msg_len = serialize(msg, &mut buf)?;
+
+        // Datagrams are connectionless, so there is no per-connection counter: encrypt once with
+        // counter 0 (matching the C++ datagram path) and reuse the buffer for every peer.
+        aes256_encrypt(0, &mut buf[..msg_len])?;
 
         for node_uid in peers {
             let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
