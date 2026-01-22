@@ -4,7 +4,8 @@ use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::*;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_header};
+use crate::bee_msg::{Header, Msg, deserialize_encryption_header, deserialize_header};
+use crate::crypto::aes256_decrypt;
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
 use std::io::{self, ErrorKind};
@@ -141,7 +142,20 @@ async fn read_stream(
     // Read header
     stream.read_exact(&mut buf[0..Header::LEN]).await?;
 
+    // Read the unencrypted header part first so we get the message length
+    let (msg_len, info) = deserialize_encryption_header(buf)?;
+
+    // Read the rest of the message
+    stream.read_exact(&mut buf[Header::LEN..msg_len]).await?;
+
+    // Decrypt the whole message
+    aes256_decrypt(&info, &mut buf[Header::ENCRYPTION_INFO_LEN..msg_len])?;
+
+    // Deserialize the header
     let header = deserialize_header(&buf[0..Header::LEN])?;
+
+    // TODO: header and body could be deserialized together now as the only thing required to know
+    // before is the message length and encryption info
 
     // check authentication
     if stream_authentication_required
@@ -153,11 +167,6 @@ async fn read_stream(
             header.msg_id()
         );
     }
-
-    // Read body
-    stream
-        .read_exact(&mut buf[Header::LEN..header.msg_len()])
-        .await?;
 
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to
     // msg handlers and sending a response using the [`StreamRequest`] handle.
@@ -230,6 +239,10 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // immediately
     tokio::spawn(async move {
         if let Err(err) = async {
+            // Decrypt the message first
+            let (msg_len, info) = deserialize_encryption_header(&buf)?;
+            aes256_decrypt(&info, &mut buf[Header::ENCRYPTION_INFO_LEN..msg_len])?;
+
             let header = deserialize_header(&buf[0..Header::LEN])?;
 
             let req = SocketRequest {

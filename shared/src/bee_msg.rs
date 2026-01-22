@@ -1,6 +1,7 @@
 //! BeeGFS network message definitions
 
 use crate::bee_serde::*;
+use crate::crypto::AesEncryptionInfo;
 use crate::types::*;
 use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;
@@ -51,6 +52,8 @@ impl OpsErr {
 pub struct Header {
     /// Total length of the serialized message, including the header itself
     msg_len: u32,
+    /// Signature field
+    msg_encryption_info: AesEncryptionInfo,
     /// Sometimes used for additional message specific payload and/or serialization info
     pub msg_feature_flags: u16,
     /// Sometimes used for additional message specific payload and/or serialization info
@@ -73,7 +76,10 @@ pub struct Header {
 
 impl Header {
     /// The serialized length of the header
-    pub const LEN: usize = 40;
+    pub const LEN: usize = 68;
+    /// The length of the unencrypted part at the start of the header
+    pub const ENCRYPTION_INFO_LEN: usize = 32;
+
     /// Fixed value for identifying BeeMsges. In theory, this has some kind of version modifier
     /// (thus the + 0), but it is unused
     #[allow(clippy::identity_op)]
@@ -94,6 +100,7 @@ impl Default for Header {
     fn default() -> Self {
         Self {
             msg_len: 0,
+            msg_encryption_info: AesEncryptionInfo::default(),
             msg_feature_flags: 0,
             msg_compat_feature_flags: 0,
             msg_flags: 0,
@@ -148,6 +155,28 @@ pub fn serialize<M: Msg + Serializable>(msg: &M, buf: &mut [u8]) -> Result<usize
     let _ = serialize_header(&header, &mut buf[0..Header::LEN])?;
 
     Ok(header.msg_len())
+}
+
+pub fn deserialize_encryption_header(buf: &[u8]) -> Result<(usize, AesEncryptionInfo)> {
+    const CTX: &str = "BeeMsg encryption header deserialization failed";
+
+    let buf = buf
+        .get(..Header::ENCRYPTION_INFO_LEN)
+        .ok_or_else(|| {
+            anyhow!(
+                "Cipher header buffer must be at least {} bytes big, got {}",
+                Header::ENCRYPTION_INFO_LEN,
+                buf.len()
+            )
+        })
+        .context(CTX)?;
+
+    let mut des = Deserializer::new(buf);
+    let msg_length = des.u32().context(CTX)?;
+    let info = AesEncryptionInfo::deserialize(&mut des).context(CTX)?;
+    des.finish().context(CTX)?;
+
+    Ok((msg_length.try_into().context(CTX)?, info))
 }
 
 /// Deserializes a BeeMsg header from the provided buffer.
