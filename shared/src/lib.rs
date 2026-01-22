@@ -10,6 +10,7 @@ mod impl_macros;
 pub mod bee_msg;
 pub mod bee_serde;
 pub mod conn;
+pub mod crypto;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 pub mod journald_logger;
