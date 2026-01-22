@@ -10,6 +10,7 @@ documentation = "https://doc.beegfs.io"
 publish = false
 
 [workspace.dependencies]
+aes-gcm = { version = "0.10.3", features = ["heapless"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 env_logger = "0"
