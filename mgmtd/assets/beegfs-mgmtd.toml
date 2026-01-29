@@ -82,8 +82,9 @@
 # registration-disable = false
 
 # Defines after which time without contact a node/target is considered offline.
-# IMPORTANT: This setting must be the same on all nodes in the system, especially when using
-# mirroring.
+# IMPORTANT: When adjusting this setting you must also update sysTargetOfflineTimeoutSecs in all
+# meta/storage and client configuration files, especially when using mirroring. Please refer to the
+# documentation in those files for what rules apply.
 # node-offline-timeout = "180s"
 
 # Defines after which time without contact a client is considered gone and will be removed.
