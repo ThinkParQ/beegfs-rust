@@ -63,7 +63,5 @@ pub(crate) async fn delete_target(
 
     let target = Some(target.into());
 
-    log::warn!("{target:?}");
-
     Ok(pm::DeleteTargetResponse { target })
 }
