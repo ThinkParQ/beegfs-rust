@@ -64,7 +64,7 @@
 
 
 # Force disable IPv6.
-# ipv6_disable = false,
+# ipv6-disable = false
 
 # Maximum number of outgoing connections per node.
 # connection-limit = 12
