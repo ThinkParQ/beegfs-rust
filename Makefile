@@ -180,4 +180,4 @@ install-tools:
 	rustup update
 	rustup toolchain install nightly
 	rustup component add --toolchain nightly rustfmt
-	cargo install --locked cargo-deny@0.18.3 cargo-about@0.7.1 cargo-generate-rpm@0.18.1 cargo-deb@3.6.0
+	cargo install --locked cargo-deny@0.18.9 cargo-about@0.7.1 cargo-generate-rpm@0.18.1 cargo-deb@3.6.0
