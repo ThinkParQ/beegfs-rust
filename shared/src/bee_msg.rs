@@ -80,10 +80,8 @@ impl Header {
     /// The length of the unencrypted part at the start of the header
     pub const ENCRYPTION_INFO_LEN: usize = 36;
 
-    /// Fixed value for identifying BeeMsges. In theory, this has some kind of version modifier
-    /// (thus the + 0), but it is unused
-    #[allow(clippy::identity_op)]
-    pub const MSG_PREFIX: u32 = 0x42474653;
+    /// Fixed value for identifying BeeMsges
+    pub const MSG_PREFIX: u32 = 0x53464742;
 
     /// The total length of the serialized message
     pub fn msg_len(&self) -> usize {
