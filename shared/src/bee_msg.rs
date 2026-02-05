@@ -50,6 +50,8 @@ impl OpsErr {
 /// The BeeMsg header
 #[derive(Clone, Debug, PartialEq, Eq, BeeSerde)]
 pub struct Header {
+    /// Fixed value to identify a BeeMsg header (see MSG_PREFIX below)
+    msg_prefix: u32,
     /// Total length of the serialized message, including the header itself
     msg_len: u32,
     /// Signature field
@@ -60,8 +62,6 @@ pub struct Header {
     pub msg_compat_feature_flags: u8,
     /// Sometimes used for additional message specific payload and/or serialization info
     pub msg_flags: u8,
-    /// Fixed value to identify a BeeMsg header (see MSG_PREFIX below)
-    msg_prefix: u64,
     /// Uniquely identifies the message type as defined in the C++ codebase in NetMessageTypes.h
     msg_id: MsgId,
     /// Sometimes used for additional message specific payload and/or serialization info
@@ -76,14 +76,14 @@ pub struct Header {
 
 impl Header {
     /// The serialized length of the header
-    pub const LEN: usize = 68;
+    pub const LEN: usize = 64;
     /// The length of the unencrypted part at the start of the header
-    pub const ENCRYPTION_INFO_LEN: usize = 32;
+    pub const ENCRYPTION_INFO_LEN: usize = 36;
 
     /// Fixed value for identifying BeeMsges. In theory, this has some kind of version modifier
     /// (thus the + 0), but it is unused
     #[allow(clippy::identity_op)]
-    pub const MSG_PREFIX: u64 = (0x42474653 << 32) + 0;
+    pub const MSG_PREFIX: u32 = 0x42474653;
 
     /// The total length of the serialized message
     pub fn msg_len(&self) -> usize {
@@ -99,12 +99,12 @@ impl Header {
 impl Default for Header {
     fn default() -> Self {
         Self {
+            msg_prefix: Self::MSG_PREFIX,
             msg_len: 0,
             msg_encryption_info: AesEncryptionInfo::default(),
             msg_feature_flags: 0,
             msg_compat_feature_flags: 0,
             msg_flags: 0,
-            msg_prefix: Self::MSG_PREFIX,
             msg_id: 0,
             msg_target_id: 0,
             msg_user_id: 0,
@@ -153,8 +153,8 @@ pub fn set_encryption_header(info: &AesEncryptionInfo, buf: &mut [u8]) -> Result
         );
     }
 
-    // TODO get rid of the magic 4
-    let mut ser = Serializer::new(&mut buf[4..Header::ENCRYPTION_INFO_LEN]);
+    // TODO get rid of the magic 8
+    let mut ser = Serializer::new(&mut buf[8..Header::ENCRYPTION_INFO_LEN]);
     info.serialize(&mut ser)?;
 
     Ok(())
@@ -194,6 +194,9 @@ pub fn deserialize_encryption_header(buf: &[u8]) -> Result<(usize, AesEncryption
         .context(CTX)?;
 
     let mut des = Deserializer::new(buf);
+    let msg_prefix = des.u32().context(CTX)?;
+    anyhow::ensure!(msg_prefix == Header::MSG_PREFIX);
+
     let msg_length = des.u32().context(CTX)?;
     let info = AesEncryptionInfo::deserialize(&mut des).context(CTX)?;
     des.finish().context(CTX)?;
