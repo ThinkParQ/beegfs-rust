@@ -5,6 +5,10 @@ inputs:
     description: "Set to x86_64, aarch64, or both to choose which packages to build"
     required: false
     default: both
+  skip-deny:
+    description: "Set to true to skip cargo-deny checks"
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -32,7 +36,9 @@ runs:
       shell: bash
       run: |
         make check
-        make deny
+        if [[ "${{ inputs.skip-deny }}" != "true" ]]; then
+          make deny
+        fi
         make test
     - name: Configure release version
       shell: bash
