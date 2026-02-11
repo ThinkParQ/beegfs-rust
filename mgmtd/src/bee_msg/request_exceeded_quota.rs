@@ -60,3 +60,127 @@ impl HandleWithResponse for RequestExceededQuota {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+    use crate::bee_msg::HandleWithResponse;
+
+    #[tokio::test]
+    async fn request_exceeded_quota() {
+        let app = TestApp::new().await;
+        let mut req = TestRequest::new(RequestExceededQuota::ID);
+
+        let tests: &[(_, &[u32])] = &[
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Space,
+                    pool_id: 1,
+                    target_id: 0,
+                },
+                &[2, 4, 10],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::Group,
+                    quota_type: QuotaType::Space,
+                    pool_id: 1,
+                    target_id: 0,
+                },
+                &[2, 4, 11],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Inode,
+                    pool_id: 1,
+                    target_id: 0,
+                },
+                &[2, 4, 12],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::Group,
+                    quota_type: QuotaType::Inode,
+                    pool_id: 1,
+                    target_id: 0,
+                },
+                &[2, 4, 13],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Space,
+                    pool_id: 2,
+                    target_id: 0,
+                },
+                &[20],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::Group,
+                    quota_type: QuotaType::Space,
+                    pool_id: 2,
+                    target_id: 0,
+                },
+                &[],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Inode,
+                    pool_id: 2,
+                    target_id: 0,
+                },
+                &[],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::Group,
+                    quota_type: QuotaType::Inode,
+                    pool_id: 2,
+                    target_id: 0,
+                },
+                &[],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Space,
+                    pool_id: 0,
+                    target_id: 2,
+                },
+                &[20],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Space,
+                    pool_id: 4,
+                    target_id: 0,
+                },
+                &[],
+            ),
+            (
+                RequestExceededQuota {
+                    id_type: QuotaIdType::User,
+                    quota_type: QuotaType::Space,
+                    pool_id: 0,
+                    target_id: 12, // Pool 4
+                },
+                &[],
+            ),
+        ];
+
+        for (msg, exp) in tests {
+            let resp = msg.clone().handle(&app, &mut req).await.unwrap();
+            assert_eq!(resp.result, OpsErr::SUCCESS, "{msg:?}");
+            assert_eq!(resp.inner.pool_id, msg.pool_id, "{msg:?}");
+            assert_eq!(resp.inner.id_type, msg.id_type, "{msg:?}");
+            assert_eq!(resp.inner.quota_type, msg.quota_type, "{msg:?}");
+            assert_eq!(&resp.inner.exceeded_quota_ids, exp, "{msg:?}");
+        }
+    }
+}

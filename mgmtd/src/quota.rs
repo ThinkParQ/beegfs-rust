@@ -447,3 +447,214 @@ mod system_ids {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::Config;
+    use crate::app::test::*;
+    use crate::types::SqliteEnumExt;
+    use shared::bee_msg::OpsErr;
+    use shared::bee_msg::quota::{
+        GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, SetExceededQuota,
+        SetExceededQuotaResp,
+    };
+    use shared::types::{QuotaIdType, QuotaType};
+
+    #[tokio::test]
+    async fn update() {
+        let app = TestApp::with_config(Config {
+            quota_enable: true,
+            quota_enforce: false, // Exceeded calculation and push is tested separately
+            quota_user_ids_range: Some(0..=9),
+            quota_group_ids_range: Some(0..=9),
+            ..Default::default()
+        })
+        .await;
+
+        app.set_request_handler(|req| {
+            let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
+
+            let mut quota_entry = vec![];
+
+            // Provide dummy quota values for target 1 depending on the id and type
+            if r.target_id == 1 {
+                for id in r.id_list.iter().copied() {
+                    quota_entry.push(QuotaEntry {
+                        space: id as u64 * 1000 + r.id_type.sql_variant() as u64,
+                        inodes: id as u64 * 100 + r.id_type.sql_variant() as u64,
+                        id,
+                        id_type: r.id_type,
+                        valid: 1,
+                    });
+                }
+            } else if r.target_id == 2 && r.id_type == QuotaIdType::User {
+                quota_entry.push(QuotaEntry {
+                    space: 999,
+                    inodes: 999,
+                    id: 5,
+                    id_type: QuotaIdType::User,
+                    valid: 1,
+                });
+            }
+
+            Ok(Box::new(GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::AllBlockDevices,
+                quota_entry,
+            }))
+        });
+
+        super::update_and_distribute(&app).await.unwrap();
+
+        // Find the amount of target 1 entries which values match the schema they have been reported
+        // with
+        let t1_sql = format!(
+            "SELECT COUNT(*) FROM quota_usage WHERE target_id = 1 AND (
+                (quota_type = {s} AND id_type = {u} AND value = quota_id * 1000 + {u})
+                OR (quota_type = {s} AND id_type = {g} AND value = quota_id * 1000 + {g})
+                OR (quota_type = {i} AND id_type = {u} AND value = quota_id * 100 + {u})
+                OR (quota_type = {i} AND id_type = {g} AND value = quota_id * 100 + {g})
+            )",
+            s = QuotaType::Space.sql_variant(),
+            i = QuotaType::Inode.sql_variant(),
+            u = QuotaIdType::User.sql_variant(),
+            g = QuotaIdType::Group.sql_variant()
+        );
+
+        // Assert that the entries in the db are exactly the ones provided above
+        let t1_sql2 = t1_sql.clone();
+        app.db
+            .read_tx(move |tx| {
+                let usage_entries: i32 =
+                    tx.query_row("SELECT COUNT(*) FROM quota_usage", [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 42);
+
+                let usage_entries: i32 = tx.query_row(&t1_sql2, [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 40);
+
+                let usage_entries: i32 = tx.query_row(
+                    "SELECT COUNT(*) FROM quota_usage
+                        WHERE target_id = 2 AND value == 999 AND quota_id = 5",
+                    [],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(usage_entries, 2);
+
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // Now test updating and removing entries, and test that fetch errors don't lead to updates
+        app.set_request_handler(|req| {
+            let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
+
+            // Fail request for target 1 user quota (only)
+            if r.target_id == 1 && r.id_type == QuotaIdType::User {
+                return Err(anyhow::anyhow!("target 1 fail"));
+            }
+
+            Ok(Box::new(GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::AllBlockDevices,
+                quota_entry: vec![],
+            }))
+        });
+
+        super::update_and_distribute(&app).await.unwrap();
+
+        // Now target 2 quota should be empty, target 1 quota should be completely untouched due to
+        // the error (even if it only failed for user quota request)
+        app.db
+            .read_tx(move |tx| {
+                let usage_entries: i32 =
+                    tx.query_row("SELECT COUNT(*) FROM quota_usage", [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 40);
+
+                let usage_entries: i32 = tx.query_row(&t1_sql, [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 40);
+
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // Now test setting some new values to target 1
+        app.set_request_handler(|req| {
+            let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
+
+            let mut quota_entry = vec![];
+
+            if r.target_id == 1 {
+                quota_entry.push(QuotaEntry {
+                    space: 999,
+                    inodes: 999,
+                    id: 1,
+                    id_type: r.id_type,
+                    valid: 1,
+                });
+            }
+
+            Ok(Box::new(GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::AllBlockDevices,
+                quota_entry,
+            }))
+        });
+
+        super::update_and_distribute(&app).await.unwrap();
+
+        // Target 1 should now only have the couple of entries resulting from above
+        app.db
+            .read_tx(move |tx| {
+                let usage_entries: i32 =
+                    tx.query_row("SELECT COUNT(*) FROM quota_usage", [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 4);
+
+                let usage_entries: i32 = tx.query_row(
+                    "SELECT COUNT(*) FROM quota_usage WHERE target_id = 1 AND value == 999",
+                    [],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(usage_entries, 4);
+
+                Ok(())
+            })
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn exceeded_quota() {
+        // This fn doesn't need special config
+        let app = TestApp::new().await;
+
+        app.set_request_handler(move |req| {
+            let r = req.downcast_ref::<SetExceededQuota>().unwrap();
+
+            match (r.pool_id, r.id_type, r.quota_type) {
+                (1, QuotaIdType::User, QuotaType::Space) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10])
+                }
+                (1, QuotaIdType::Group, QuotaType::Space) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 11])
+                }
+                (1, QuotaIdType::User, QuotaType::Inode) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 12])
+                }
+                (1, QuotaIdType::Group, QuotaType::Inode) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 13])
+                }
+                (2, QuotaIdType::User, QuotaType::Space) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[20])
+                }
+                _ => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[]);
+                }
+            }
+
+            Ok(Box::new(SetExceededQuotaResp {
+                result: OpsErr::SUCCESS,
+            }))
+        });
+
+        super::exceeded_quota(&app).await.unwrap();
+    }
+}
