@@ -4,6 +4,7 @@ use crate::bee_serde::*;
 use crate::types::*;
 use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;
+use std::any::Any;
 use std::collections::{HashMap, HashSet};
 
 pub mod buddy_group;
@@ -16,14 +17,18 @@ pub mod target;
 /// The BeeGFS message ID as defined in `NetMsgTypes.h`
 pub type MsgId = u16;
 
+pub trait BaseMsg: Any + std::fmt::Debug + Send + Sync + 'static {}
+
 /// A BeeGFS message
 ///
 /// A struct that implements `Msg` represents a BeeGFS message that is compatible with other C/C++
 /// based BeeGFS components.
-pub trait Msg: std::fmt::Debug + Default + Clone + Send + Sync + 'static {
+pub trait Msg: BaseMsg + Default + Clone {
     /// Message type as defined in NetMessageTypes.h
     const ID: MsgId;
 }
+
+impl<M> BaseMsg for M where M: Msg {}
 
 /// Matches the `FhgfsOpsErr` value from the BeeGFS C/C++ codebase.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
