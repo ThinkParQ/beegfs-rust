@@ -1,7 +1,6 @@
 //! Functionality for fetching and updating quota information from / to nodes and the database.
 
 use crate::app::*;
-use crate::db;
 use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
 use rusqlite::params;
@@ -217,13 +216,23 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
             }
 
             // Fill the prepared messages with matching exceeded quota ids
-            for e in db::quota_usage::all_exceeded_quota_ids(tx)? {
+            let mut stmt = tx.prepare_cached(sql!(
+                "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
+                FROM quota_usage AS e
+                INNER JOIN targets AS st USING(node_type, target_id)
+                LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+                LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+                GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+                HAVING SUM(e.value) > COALESCE(l.value, d.value)"
+            ))?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
                 for m in &mut msges {
-                    if e.pool_id == m.pool_id
-                        && e.id_type == m.id_type
-                        && e.quota_type == m.quota_type
+                    if row.get::<_, PoolId>(3)? == m.pool_id
+                        && QuotaIdType::from_row(row, 1)? == m.id_type
+                        && QuotaType::from_row(row, 2)? == m.quota_type
                     {
-                        m.exceeded_quota_ids.push(e.quota_id);
+                        m.exceeded_quota_ids.push(row.get(0)?);
                         break;
                     }
                 }
