@@ -5,6 +5,7 @@ pub use shared::conn::msg_dispatch::test::TestRequest;
 use shared::nic::{NicFilter, query_nics};
 use shared::types::AuthSecret;
 use sqlite::Connections;
+use std::any::Any;
 use std::net::Ipv4Addr;
 use std::sync::Mutex;
 
@@ -16,17 +17,36 @@ use std::sync::Mutex;
 pub struct TestApp {
     pub db: Connections,
     pub info: Arc<StaticInfo>,
-    #[allow(clippy::type_complexity)]
-    pub notifications: Arc<Mutex<Vec<(MsgId, Vec<NodeType>)>>>,
+    data: Arc<Mutex<TestData>>,
+}
+
+type RequestHandler = dyn FnMut(&dyn Any) -> Result<Box<dyn Any>> + Send;
+
+#[derive(Default)]
+struct TestData {
+    pub notifications: Vec<(MsgId, Vec<NodeType>)>,
+    request_handler: Option<Box<RequestHandler>>,
+}
+
+impl Debug for TestData {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("TestData")
+            .field("notifications", &self.notifications)
+            .finish()
+    }
 }
 
 impl TestApp {
     pub async fn new() -> Self {
+        Self::with_config(Config::default()).await
+    }
+
+    pub async fn with_config(user_config: Config) -> Self {
         let db = crate::db::test::setup_with_test_data().await;
         Self {
             db,
             info: Arc::new(StaticInfo {
-                user_config: Config::default(),
+                user_config,
                 auth_secret: Some(AuthSecret::hash_from_bytes("secret")),
                 network_addrs: query_nics(
                     &[NicFilter {
@@ -38,14 +58,24 @@ impl TestApp {
                 .unwrap(),
                 use_ipv6: false,
             }),
-            notifications: Arc::new(Mutex::new(vec![])),
+            data: Arc::new(Mutex::new(TestData::default())),
         }
     }
 
+    pub fn set_request_handler<T: FnMut(&dyn Any) -> Result<Box<dyn Any>> + Send + 'static>(
+        &self,
+        handler: T,
+    ) {
+        self.data.lock().unwrap().request_handler = Some(Box::new(handler));
+    }
+}
+
+impl TestApp {
     pub fn has_sent_notification<M: Msg>(&self, receivers: &[NodeType]) -> bool {
-        self.notifications
+        self.data
             .lock()
             .unwrap()
+            .notifications
             .contains(&(M::ID, receivers.to_vec()))
     }
 }
@@ -90,9 +120,15 @@ impl App for TestApp {
     async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
         _node_uid: Uid,
-        _msg: &M,
+        msg: &M,
     ) -> Result<R> {
-        Ok(R::default())
+        let mut d = self.data.lock().unwrap();
+        if let Some(ref mut h) = d.request_handler {
+            let res = h(msg).unwrap();
+            Ok(*res.downcast().unwrap())
+        } else {
+            Ok(R::default())
+        }
     }
 
     async fn send_notifications<M: Msg + Serializable>(
@@ -100,9 +136,10 @@ impl App for TestApp {
         node_types: &'static [NodeType],
         _msg: &M,
     ) {
-        self.notifications
+        self.data
             .lock()
             .unwrap()
+            .notifications
             .push((M::ID, node_types.to_owned()));
     }
 
