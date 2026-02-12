@@ -72,8 +72,8 @@ assets = [
     { source = "assets/beegfs-mgmtd.service", dest = "/usr/lib/systemd/system/", mode = "644" },
 ]
 
-[package.metadata.generate-rpm.suggests]
-libbeegfs-license = ">= 8"
+[package.metadata.generate-rpm.requires]
+libbeegfs-license = ">= 8.3"
 
 [package.metadata.generate-rpm.variants.debug]
 name = "beegfs-mgmtd-debuginfo"
@@ -90,12 +90,12 @@ beegfs-mgmtd = "*"
 [package.metadata.deb]
 name = "beegfs-mgmtd"
 extended-description = "The BeeGFS management service"
-# We do not specify any dependencies for now as we might be linked against an older glibc than the
-# hosts and auto detect would put it as a requirement into the package. This allows the package to
-# be installed even if the systems glibc is too old, however, this is acceptable until we find a
+# We do not specify any glibc dependencies for now as we might be linked against an older glibc than
+# the hosts and auto detect would put it as a requirement into the package. This allows the package
+# to be installed even if the systems glibc is too old, however, this is acceptable until we find a
 # better solution
-depends = ""
-suggests = "libbeegfs-license (>= 8)"
+depends = "libbeegfs-license (>= 8.3)"
+suggests = ""
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     [
