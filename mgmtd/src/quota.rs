@@ -1,10 +1,11 @@
 //! Functionality for fetching and updating quota information from / to nodes and the database.
 
+mod system_id;
+
 use crate::app::*;
-use crate::db;
-use crate::db::quota_usage::QuotaData;
 use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
+use rusqlite::params;
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
     GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
@@ -51,7 +52,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     let user_ids_min = app.static_info().user_config.quota_user_system_ids_min;
 
     if let Some(user_ids_min) = user_ids_min {
-        system_ids::user_ids()
+        system_id::user_ids()
             .await
             .filter(|e| e >= &user_ids_min)
             .for_each(|e| {
@@ -63,7 +64,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     let group_ids_min = app.static_info().user_config.quota_group_system_ids_min;
 
     if let Some(group_ids_min) = group_ids_min {
-        system_ids::group_ids()
+        system_id::group_ids()
             .await
             .filter(|e| e >= &group_ids_min)
             .for_each(|e| {
@@ -97,66 +98,87 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     for (target_id, pool_id, node_uid) in targets {
         let app2 = app.clone();
         let user_ids2 = user_ids.clone();
+        let group_ids2 = group_ids.clone();
 
-        // Users
         tasks.push(tokio::spawn(async move {
-            let resp: Result<GetQuotaInfoResp> = app2
+            let resp_users: Result<GetQuotaInfoResp> = app2
                 .request(
                     node_uid,
                     &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
                 )
                 .await;
 
-            // Log immediately so there is no delay if other tasks have to wait and get joined
-            // first
-            if let Err(ref err) = resp {
-                log::error!(
-                    "Fetching user quota info for storage target {target_id} failed: {err:#}"
-                );
-            }
-            (target_id, resp)
-        }));
-
-        let app2 = app.clone();
-        let group_ids2 = group_ids.clone();
-
-        // Groups
-        tasks.push(tokio::spawn(async move {
-            let resp = app2
+            let resp_groups: Result<GetQuotaInfoResp> = app2
                 .request(
                     node_uid,
                     &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
                 )
                 .await;
 
-            // Log immediately so there is no delay if other tasks have to wait and get joined
-            // first
-            if let Err(ref err) = resp {
+            if resp_users.is_err() || resp_groups.is_err() {
                 log::error!(
-                    "Fetching group quota info for storage target {target_id} failed: {err:#}",
+                    "Fetching quota info for storage target {target_id} from node with uid
+{node_uid} failed. Users: {resp_users:?}, Groups: {resp_groups:?}"
                 );
+
+                return (target_id, None);
             }
 
-            (target_id, resp)
+            let mut entries = resp_users.expect("impossible").quota_entry;
+            entries.append(&mut resp_groups.expect("impossible").quota_entry);
+
+            (target_id, Some(entries))
         }));
     }
 
     // Await all the responses
     for t in tasks {
-        let (target_id, resp) = t.await?;
-        if let Ok(r) = resp {
-            // Insert quota usage data into the database
+        let (target_id, entries) = t.await?;
+
+        // Only process that target if there were not errors when fetching for this target
+        if let Some(entries) = entries {
             app.write_tx(move |tx| {
-                db::quota_usage::update(
-                    tx,
-                    target_id,
-                    r.quota_entry.into_iter().map(|e| QuotaData {
-                        quota_id: e.id,
-                        id_type: e.id_type,
-                        space: e.space,
-                        inodes: e.inodes,
-                    }),
-                )
+                // Always delete all the old entries for that target to make sure entries for no
+                // longer queried ids are removed. We always get the complete list from the
+                // storages and we only update if there was no fetch error.
+                tx.execute_cached(
+                    sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
+                    [target_id],
+                )?;
+
+                let mut insert_stmt = tx.prepare_cached(sql!(
+                    "INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
+                    VALUES (?1, ?2, ?3 ,?4 ,?5)"
+                ))?;
+
+                log::debug!(
+                    "Setting {} quota usage entries for target {target_id}",
+                    entries.len()
+                );
+
+                for e in entries {
+                    if e.space > 0 {
+                        insert_stmt.execute(params![
+                            e.id,
+                            e.id_type.sql_variant(),
+                            QuotaType::Space.sql_variant(),
+                            target_id,
+                            e.space
+                        ])?;
+                    }
+
+                    if e.inodes > 0 {
+                        insert_stmt.execute(params![
+                            e.id,
+                            e.id_type.sql_variant(),
+                            QuotaType::Inode.sql_variant(),
+                            target_id,
+                            e.inodes
+                        ])?;
+                    }
+                }
+
+                Ok(())
             })
             .await?;
         }
@@ -196,13 +218,23 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
             }
 
             // Fill the prepared messages with matching exceeded quota ids
-            for e in db::quota_usage::all_exceeded_quota_ids(tx)? {
+            let mut stmt = tx.prepare_cached(sql!(
+                "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
+                FROM quota_usage AS e
+                INNER JOIN targets AS st USING(node_type, target_id)
+                LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+                LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+                GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+                HAVING SUM(e.value) > COALESCE(l.value, d.value)"
+            ))?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
                 for m in &mut msges {
-                    if e.pool_id == m.pool_id
-                        && e.id_type == m.id_type
-                        && e.quota_type == m.quota_type
+                    if row.get::<_, PoolId>(3)? == m.pool_id
+                        && QuotaIdType::from_row(row, 1)? == m.id_type
+                        && QuotaType::from_row(row, 2)? == m.quota_type
                     {
-                        m.exceeded_quota_ids.push(e.quota_id);
+                        m.exceeded_quota_ids.push(row.get(0)?);
                         break;
                     }
                 }
@@ -270,150 +302,213 @@ fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaId>) -> Result<(
     Ok(())
 }
 
-/// Contains functionality to query the systems user and group database.
-mod system_ids {
-    use std::sync::OnceLock;
-    use tokio::sync::{Mutex, MutexGuard};
+#[cfg(test)]
+mod test {
+    use crate::Config;
+    use crate::app::test::*;
+    use crate::types::SqliteEnumExt;
+    use shared::bee_msg::OpsErr;
+    use shared::bee_msg::quota::{
+        GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, SetExceededQuota,
+        SetExceededQuotaResp,
+    };
+    use shared::types::{QuotaIdType, QuotaType};
 
-    // SAFETY (applies to both user and group id iterators)
-    //
-    // * The global mutex assures that no more than one iterator object exists and therefore
-    // undefined results by concurrent access are prevented (it obviously doesn't prevent reusing
-    // libc::setpwent() elsewhere, don't do this!)
-    // * getpwent() / getgrent() return the next entry or a nullptr in case EOF is reached or an
-    // error occurs. Both cases are covered.
+    #[tokio::test]
+    async fn update() {
+        let app = TestApp::with_config(Config {
+            quota_enable: true,
+            quota_enforce: false, // Exceeded calculation and push is tested separately
+            quota_user_ids_range: Some(0..=9),
+            quota_group_ids_range: Some(0..=9),
+            ..Default::default()
+        })
+        .await;
 
-    static MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+        app.set_request_handler(|req| {
+            let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
 
-    /// Iterator over system user IDs
-    pub struct UserIDIter<'a> {
-        _lock: MutexGuard<'a, ()>,
-    }
+            let mut quota_entry = vec![];
 
-    /// Retrieves system user IDs.
-    ///
-    /// Uses `getpwent()` libc call family.
-    ///
-    /// # Return value
-    /// An iterator iterating over the systems user IDs. This function will block all other tasks
-    /// until the iterator is dropped.
-    pub async fn user_ids<'a>() -> UserIDIter<'a> {
-        let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
-
-        // SAFETY: See above
-        unsafe {
-            libc::setpwent();
-        }
-
-        UserIDIter { _lock }
-    }
-
-    impl Drop for UserIDIter<'_> {
-        fn drop(&mut self) {
-            // SAFETY: See above
-            unsafe {
-                libc::endpwent();
+            // Provide dummy quota values for target 1 depending on the id and type
+            if r.target_id == 1 {
+                for id in r.id_list.iter().copied() {
+                    quota_entry.push(QuotaEntry {
+                        space: id as u64 * 1000 + r.id_type.sql_variant() as u64,
+                        inodes: id as u64 * 100 + r.id_type.sql_variant() as u64,
+                        id,
+                        id_type: r.id_type,
+                        valid: 1,
+                    });
+                }
+            } else if r.target_id == 2 && r.id_type == QuotaIdType::User {
+                quota_entry.push(QuotaEntry {
+                    space: 999,
+                    inodes: 999,
+                    id: 5,
+                    id_type: QuotaIdType::User,
+                    valid: 1,
+                });
             }
-        }
+
+            Ok(Box::new(GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::AllBlockDevices,
+                quota_entry,
+            }))
+        });
+
+        super::update_and_distribute(&app).await.unwrap();
+
+        // Find the amount of target 1 entries which values match the schema they have been reported
+        // with
+        let t1_sql = format!(
+            "SELECT COUNT(*) FROM quota_usage WHERE target_id = 1 AND (
+                (quota_type = {s} AND id_type = {u} AND value = quota_id * 1000 + {u})
+                OR (quota_type = {s} AND id_type = {g} AND value = quota_id * 1000 + {g})
+                OR (quota_type = {i} AND id_type = {u} AND value = quota_id * 100 + {u})
+                OR (quota_type = {i} AND id_type = {g} AND value = quota_id * 100 + {g})
+            )",
+            s = QuotaType::Space.sql_variant(),
+            i = QuotaType::Inode.sql_variant(),
+            u = QuotaIdType::User.sql_variant(),
+            g = QuotaIdType::Group.sql_variant()
+        );
+
+        // Assert that the entries in the db are exactly the ones provided above
+        let t1_sql2 = t1_sql.clone();
+        app.db
+            .read_tx(move |tx| {
+                let usage_entries: i32 =
+                    tx.query_row("SELECT COUNT(*) FROM quota_usage", [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 42);
+
+                let usage_entries: i32 = tx.query_row(&t1_sql2, [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 40);
+
+                let usage_entries: i32 = tx.query_row(
+                    "SELECT COUNT(*) FROM quota_usage
+                        WHERE target_id = 2 AND value == 999 AND quota_id = 5",
+                    [],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(usage_entries, 2);
+
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // Now test updating and removing entries, and test that fetch errors don't lead to updates
+        app.set_request_handler(|req| {
+            let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
+
+            // Fail request for target 1 user quota (only)
+            if r.target_id == 1 && r.id_type == QuotaIdType::User {
+                return Err(anyhow::anyhow!("target 1 fail"));
+            }
+
+            Ok(Box::new(GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::AllBlockDevices,
+                quota_entry: vec![],
+            }))
+        });
+
+        super::update_and_distribute(&app).await.unwrap();
+
+        // Now target 2 quota should be empty, target 1 quota should be completely untouched due to
+        // the error (even if it only failed for user quota request)
+        app.db
+            .read_tx(move |tx| {
+                let usage_entries: i32 =
+                    tx.query_row("SELECT COUNT(*) FROM quota_usage", [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 40);
+
+                let usage_entries: i32 = tx.query_row(&t1_sql, [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 40);
+
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // Now test setting some new values to target 1
+        app.set_request_handler(|req| {
+            let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
+
+            let mut quota_entry = vec![];
+
+            if r.target_id == 1 {
+                quota_entry.push(QuotaEntry {
+                    space: 999,
+                    inodes: 999,
+                    id: 1,
+                    id_type: r.id_type,
+                    valid: 1,
+                });
+            }
+
+            Ok(Box::new(GetQuotaInfoResp {
+                quota_inode_support: QuotaInodeSupport::AllBlockDevices,
+                quota_entry,
+            }))
+        });
+
+        super::update_and_distribute(&app).await.unwrap();
+
+        // Target 1 should now only have the couple of entries resulting from above
+        app.db
+            .read_tx(move |tx| {
+                let usage_entries: i32 =
+                    tx.query_row("SELECT COUNT(*) FROM quota_usage", [], |row| row.get(0))?;
+                assert_eq!(usage_entries, 4);
+
+                let usage_entries: i32 = tx.query_row(
+                    "SELECT COUNT(*) FROM quota_usage WHERE target_id = 1 AND value == 999",
+                    [],
+                    |row| row.get(0),
+                )?;
+                assert_eq!(usage_entries, 4);
+
+                Ok(())
+            })
+            .await
+            .unwrap();
     }
 
-    impl Iterator for UserIDIter<'_> {
-        type Item = u32;
+    #[tokio::test]
+    async fn exceeded_quota() {
+        // This fn doesn't need special config
+        let app = TestApp::new().await;
 
-        fn next(&mut self) -> Option<Self::Item> {
-            // SAFETY: See above
-            unsafe {
-                let passwd: *mut libc::passwd = libc::getpwent();
-                if passwd.is_null() {
-                    None
-                } else {
-                    Some((*passwd).pw_uid)
+        app.set_request_handler(move |req| {
+            let r = req.downcast_ref::<SetExceededQuota>().unwrap();
+
+            match (r.pool_id, r.id_type, r.quota_type) {
+                (1, QuotaIdType::User, QuotaType::Space) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10])
+                }
+                (1, QuotaIdType::Group, QuotaType::Space) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 11])
+                }
+                (1, QuotaIdType::User, QuotaType::Inode) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 12])
+                }
+                (1, QuotaIdType::Group, QuotaType::Inode) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 13])
+                }
+                (2, QuotaIdType::User, QuotaType::Space) => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[20])
+                }
+                _ => {
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[]);
                 }
             }
-        }
-    }
 
-    /// Iterator over system group IDs
-    pub struct GroupIDIter<'a> {
-        _lock: MutexGuard<'a, ()>,
-    }
+            Ok(Box::new(SetExceededQuotaResp {
+                result: OpsErr::SUCCESS,
+            }))
+        });
 
-    /// Retrieves system group IDs.
-    ///
-    /// Uses `getgrent()` libc call.
-    ///
-    /// # Return value
-    /// An iterator iterating over the systems group IDs. This function will block all other tasks
-    /// until the iterator is dropped.
-    pub async fn group_ids<'a>() -> GroupIDIter<'a> {
-        let _lock = MUTEX.get_or_init(|| Mutex::new(())).lock().await;
-
-        // SAFETY: See above
-        unsafe {
-            libc::setgrent();
-        }
-
-        GroupIDIter { _lock }
-    }
-
-    impl Drop for GroupIDIter<'_> {
-        fn drop(&mut self) {
-            // SAFETY: See above
-            unsafe {
-                libc::endgrent();
-            }
-        }
-    }
-
-    impl Iterator for GroupIDIter<'_> {
-        type Item = u32;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            // SAFETY: See above
-            unsafe {
-                let passwd: *mut libc::group = libc::getgrent();
-                if passwd.is_null() {
-                    None
-                } else {
-                    Some((*passwd).gr_gid)
-                }
-            }
-        }
-    }
-
-    #[cfg(test)]
-    mod test {
-        use super::*;
-        use itertools::Itertools;
-
-        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-        async fn user_ids_thread_safety() {
-            let tasks: Vec<_> = (0..16)
-                .map(|_| tokio::spawn(async { user_ids().await.collect() }))
-                .collect();
-
-            let mut results = vec![];
-            for t in tasks {
-                let r: Vec<_> = t.await.unwrap();
-                results.push(r);
-            }
-
-            assert!(results.into_iter().all_equal());
-        }
-
-        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-        async fn group_ids_thread_safety() {
-            let tasks: Vec<_> = (0..16)
-                .map(|_| tokio::spawn(async { group_ids().await.collect() }))
-                .collect();
-
-            let mut results = vec![];
-            for t in tasks {
-                let r: Vec<_> = t.await.unwrap();
-                results.push(r);
-            }
-
-            assert!(results.into_iter().all_equal());
-        }
+        super::exceeded_quota(&app).await.unwrap();
     }
 }

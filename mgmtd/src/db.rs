@@ -13,7 +13,6 @@ mod import_v7;
 pub(crate) mod misc;
 pub(crate) mod node;
 pub(crate) mod node_nic;
-pub(crate) mod quota_usage;
 pub(crate) mod storage_pool;
 pub(crate) mod target;
 
