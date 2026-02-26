@@ -16,13 +16,14 @@ impl HandleWithResponse for SetTargetConsistencyStates {
 
         let node_type = self.node_type.try_into()?;
         let msg = self.clone();
+        let node_offline_timeout = app.static_info().user_config.node_offline_timeout;
 
         app.write_tx(move |tx| {
             // Check given target Ids exist
             db::target::validate_ids(tx, &msg.target_ids, node_type)?;
 
             if msg.set_online > 0 {
-                update_last_contact_times(tx, &msg.target_ids, node_type)?;
+                update_last_contact_times(tx, &msg.target_ids, node_type, node_offline_timeout)?;
             }
 
             db::target::update_consistency_states(
