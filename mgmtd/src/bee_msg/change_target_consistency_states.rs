@@ -18,35 +18,40 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         // see no apparent reason to that the old state matches before setting. We have the
         // authority, whatever nodes think their old state was doesn't matter.
 
-        let changed = app
+        let node_offline_timeout = app.static_info().user_config.node_offline_timeout;
+        let target_ids = self.target_ids.clone();
+        let (consistencies_changed, reachabilities_changed) = app
             .write_tx(move |tx| {
                 let node_type = self.node_type.try_into()?;
 
                 // Check given target Ids exist
-                db::target::validate_ids(tx, &self.target_ids, node_type)?;
+                db::target::validate_ids(tx, &target_ids, node_type)?;
 
                 // Old management updates contact time while handling this message (comes usually in
-                // every 30 seconds), so we do it as well
-                update_last_contact_times(tx, &self.target_ids, node_type)?;
+                // every 30 seconds), so we do it as well.
+                let reachabilities_changed =
+                    update_last_contact_times(tx, &target_ids, node_type, node_offline_timeout)?;
 
-                let affected = db::target::update_consistency_states(
+                // ... or if any consistency state changed.
+                let consistencies_changed = db::target::update_consistency_states(
                     tx,
-                    self.target_ids
-                        .into_iter()
-                        .zip(self.new_states.iter().copied()),
+                    target_ids.into_iter().zip(self.new_states.iter().copied()),
                     node_type,
                 )?;
 
-                Ok(affected > 0)
+                Ok((consistencies_changed, reachabilities_changed))
             })
             .await?;
 
         log::debug!(
-            "Updated target consistency states for {:?} nodes",
-            self.node_type
+            "Updated target states for {:?} targets {:?}, {consistencies_changed} consistency states and {reachabilities_changed} reachability states changed",
+            self.node_type,
+            self.target_ids,
         );
 
-        if changed {
+        // To avoid spamming, we only send out the refresh notification if there is any actual
+        // change
+        if consistencies_changed > 0 || reachabilities_changed > 0 {
             app.send_notifications(
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &RefreshTargetStates { ack_id: "".into() },

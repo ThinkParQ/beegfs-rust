@@ -268,11 +268,16 @@ pub(super) fn get_targets_with_states(
 
 /// Updates the `last_contact` time for all the nodes belonging to the passed targets and the
 /// targets `last_update` times themselves.
+///
+/// # Return Value
+/// Returns the number of targets (not nodes) that were not considered "online" before. Meaning they
+/// were at least "probably offline".
 pub(super) fn update_last_contact_times(
     tx: &Transaction,
     target_ids: &[TargetId],
     node_type: NodeTypeServer,
-) -> Result<()> {
+    offline_timeout: Duration,
+) -> Result<usize> {
     let target_ids_param = sqlite::rarray_param(target_ids.iter().copied());
 
     tx.execute_cached(
@@ -285,6 +290,20 @@ pub(super) fn update_last_contact_times(
         rusqlite::params![&target_ids_param, node_type.sql_variant()],
     )?;
 
+    let reachabilities_changed: usize = tx.query_row_cached(
+        sql!(
+            "SELECT COUNT(*) FROM targets
+            WHERE target_id IN rarray(?1) AND node_type = ?2
+                AND UNIXEPOCH(last_update) < UNIXEPOCH('now') - ?3"
+        ),
+        rusqlite::params![
+            &target_ids_param,
+            node_type.sql_variant(),
+            offline_timeout.as_secs() / 2
+        ],
+        |row| row.get(0),
+    )?;
+
     tx.execute_cached(
         sql!(
             "UPDATE targets SET last_update = DATETIME('now')
@@ -293,5 +312,5 @@ pub(super) fn update_last_contact_times(
         rusqlite::params![&target_ids_param, node_type.sql_variant()],
     )?;
 
-    Ok(())
+    Ok(reachabilities_changed)
 }
