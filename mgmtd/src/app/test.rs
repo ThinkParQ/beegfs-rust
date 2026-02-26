@@ -78,6 +78,16 @@ impl TestApp {
             .notifications
             .contains(&(M::ID, receivers.to_vec()))
     }
+
+    pub fn sent_notifications<M: Msg>(&self) -> usize {
+        self.data
+            .lock()
+            .unwrap()
+            .notifications
+            .iter()
+            .filter(|(id, _)| id == &M::ID)
+            .count()
+    }
 }
 
 impl App for TestApp {

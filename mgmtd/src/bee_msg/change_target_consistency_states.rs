@@ -64,3 +64,84 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         })
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+
+    #[tokio::test]
+    async fn change_target_consistency_states() {
+        let app = TestApp::new().await;
+        let mut req = TestRequest::new(ChangeTargetConsistencyStates::ID);
+
+        // Prepare times
+        app.db
+            .write_tx(|tx| {
+                tx.execute("UPDATE targets SET last_update = DATETIME(0)", [])
+                    .unwrap();
+                tx.execute("UPDATE nodes SET last_contact = DATETIME(0)", [])
+                    .unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        // No change of consistency states
+        let msg = ChangeTargetConsistencyStates {
+            node_type: NodeType::Storage,
+            target_ids: vec![1, 5],
+            old_states: vec![],
+            new_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
+            ack_id: "".into(),
+        };
+        let resp = msg.clone().handle(&app, &mut req).await.unwrap();
+
+        assert_eq!(resp.result, OpsErr::SUCCESS);
+
+        // Since the targets were "offline" before, a notification should go out
+        assert_eq!(app.sent_notifications::<RefreshTargetStates>(), 1);
+
+        msg.handle(&app, &mut req).await.unwrap();
+
+        // Now the targets were already "online", no additional notification should be sent
+        assert_eq!(app.sent_notifications::<RefreshTargetStates>(), 1);
+
+        // Change of consistency states
+        let msg = ChangeTargetConsistencyStates {
+            node_type: NodeType::Storage,
+            target_ids: vec![1, 5],
+            old_states: vec![],
+            new_states: vec![
+                TargetConsistencyState::NeedsResync,
+                TargetConsistencyState::Bad,
+            ],
+            ack_id: "".into(),
+        };
+        msg.handle(&app, &mut req).await.unwrap();
+
+        // Since consistency states changed, a notification should go out
+        assert_eq!(app.sent_notifications::<RefreshTargetStates>(), 2);
+
+        assert_eq_db!(
+            app,
+            "SELECT COUNT(*) FROM storage_targets WHERE consistency = ?1",
+            [TargetConsistencyState::NeedsResync.sql_variant()],
+            1
+        );
+        assert_eq_db!(
+            app,
+            "SELECT COUNT(*) FROM storage_targets WHERE consistency = ?1",
+            [TargetConsistencyState::Bad.sql_variant()],
+            1
+        );
+
+        // With all that, the node last_contact times of some nodes should also be up to date
+        assert_eq_db!(
+            app,
+            "SELECT COUNT(*) FROM storage_nodes WHERE last_contact > UNIXEPOCH('now') - 30",
+            [],
+            2
+        );
+    }
+}
