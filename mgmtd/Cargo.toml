@@ -63,6 +63,7 @@ extended-description = "The BeeGFS management service"
 # be installed even if the systems glibc is too old, however, this is acceptable until we find a
 # better solution
 auto-req = "disabled"
+license = "BeeGFS LICENSE AGREEMENT"
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     { source = "target/release/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },

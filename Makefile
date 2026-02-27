@@ -139,12 +139,10 @@ package:
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
-		--set-metadata='license="BeeGFS EULA"' \
 		--set-metadata='provides={"beegfs-mgmtd" = "= $(VERSION_TRIMMED)"}'
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
-		--set-metadata='license="BeeGFS EULA"' \
 		--set-metadata='provides={"beegfs-mgmtd" = "= $(VERSION_TRIMMED)"}'
 
 	# Replace tilde in package filename with hypens.
