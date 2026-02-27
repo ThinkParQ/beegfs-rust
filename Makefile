@@ -95,6 +95,24 @@ RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
 #   and the zig compiler to be installed and available.
 .PHONY: package
 package:
+	# Patch mgmtds Cargo.toml to depend on linked libc version if specified
+	if [ "$(GLIBC_VERSION)" != "" ]; then
+		# We don't want to auto modify files in a devs repo, so restore the original file on exit
+		# (even works on erroring out).
+		function clean_up() {
+			mv mgmtd/Cargo.toml.orig mgmtd/Cargo.toml 2> /dev/null
+		}
+		trap clean_up EXIT
+		cp mgmtd/Cargo.toml mgmtd/Cargo.toml.orig
+
+		# Patch deb specs
+		sed -i 's/depends = "libbeegfs-license/depends = "libc6 (>= $(GLIBC_VERSION)), libbeegfs-license/' mgmtd/Cargo.toml
+		grep -q 'libc6 (>=' mgmtd/Cargo.toml || { echo "ERROR: DEB libc6 patch failed"; exit 1; }
+		# Patch rpm specs
+		sed -i 's/libbeegfs-license = ">=/glibc = ">= $(GLIBC_VERSION)"\nlibbeegfs-license = ">=/' mgmtd/Cargo.toml
+		grep -q 'glibc = ">=' mgmtd/Cargo.toml || { echo "ERROR: RPM glibc patch failed"; exit 1; }
+	fi
+
 	# Build thirdparty license summary
 	mkdir -p $(TARGET_DIR)
 	cargo about generate about.hbs --all-features -o $(TARGET_DIR)/thirdparty-licenses.html
@@ -119,7 +137,6 @@ package:
 	# We don't want the epoch in the file names
 	find $(PACKAGE_DIR) -name "*_20:*.deb" -exec bash -c 'mv "$$1" $$(echo "$$1" | sed "s/_20:/_/g")' bash {} \;
 
-	# We add a license field since generate-rpm fails if it is not there (even if license-file is given)
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
