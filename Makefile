@@ -95,6 +95,22 @@ RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
 #   and the zig compiler to be installed and available.
 .PHONY: package
 package:
+	# Patch mgmtds Cargo.toml to depend on linked libc version if specified
+	if [ "$(GLIBC_VERSION)" != "" ]; then
+		# We don't want to auto modify files in a devs repo, so restore the original file on exit
+		# (even works on erroring out).
+		function clean_up() {
+			mv mgmtd/Cargo.toml.orig mgmtd/Cargo.toml 2> /dev/null
+		}
+		trap clean_up EXIT
+		cp mgmtd/Cargo.toml mgmtd/Cargo.toml.orig
+
+		# Patch deb specs
+		sed -i 's/depends = "libbeegfs-license/depends = "libc6 (>= $(GLIBC_VERSION)), libbeegfs-license/' mgmtd/Cargo.toml
+		# Patch rpm specs
+		sed -i 's/libbeegfs-license = ">=/libc6 = ">= $(GLIBC_VERSION)"\nlibbeegfs-license = ">=/' mgmtd/Cargo.toml
+	fi
+
 	# Build thirdparty license summary
 	mkdir -p $(TARGET_DIR)
 	cargo about generate about.hbs --all-features -o $(TARGET_DIR)/thirdparty-licenses.html
