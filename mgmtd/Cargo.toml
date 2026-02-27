@@ -3,7 +3,7 @@ name = "mgmtd"
 description = "The BeeGFS management service"
 readme = "README.md"
 version = "0.0.0"
-license-file = "LICENSE.md"
+license-file = "../LICENSE.md"
 edition.workspace = true
 authors.workspace = true
 documentation.workspace = true
@@ -59,6 +59,7 @@ undocumented_unsafe_blocks = "deny"
 name = "beegfs-mgmtd"
 extended-description = "The BeeGFS management service"
 auto-req = "disabled"
+license = "BeeGFS LICENSE AGREEMENT"
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     { source = "target/release/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },
