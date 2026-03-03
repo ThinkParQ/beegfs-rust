@@ -72,15 +72,18 @@ PACKAGE_DIR := target/package
 TARGET_DIR := target/$(CARGO_TARGET)/release
 
 # Define the command to build the release binaries based on configuration
-ifneq ($(CARGO_TARGET),)
-	ifneq ($(GLIBC_VERSION),)
-		RELEASE_BUILD_CMD := cargo zigbuild --target=$(CARGO_TARGET).$(GLIBC_VERSION)
-	else
-		RELEASE_BUILD_CMD := cargo build --target=$(CARGO_TARGET)
-	endif
-else
-	RELEASE_BUILD_CMD := cargo build
+
+RELEASE_BUILD_CMD := cargo build $(TARGET_FLAG)
+
+# If glibc version is given, use zigbuild to link against specific libc
+ifneq ($(GLIBC_VERSION),)
+    # Zigbuild requires a specified target
+    ifeq ($(CARGO_TARGET),)
+        $(error GLIBC_VERSION requires CARGO_TARGET which was not provided)
+    endif
+    RELEASE_BUILD_CMD := cargo zigbuild --target=$(CARGO_TARGET).$(GLIBC_VERSION)
 endif
+
 # We want to include the full debug info so it can be split off
 RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
 	--release --locked --config='profile.release.debug = "full"'
