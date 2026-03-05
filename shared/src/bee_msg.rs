@@ -171,10 +171,10 @@ pub fn serialize<M: Msg + Serializable>(msg: &M, buf: &mut [u8]) -> Result<usize
     let _ = serialize_header(&header, &mut buf[0..Header::LEN])?;
 
     // Encrypt TODO
-    let info = aes256_encrypt(&mut buf[Header::ENCRYPTION_INFO_LEN..(written + Header::LEN)])?;
+    let info = aes256_encrypt(&mut buf[Header::ENCRYPTION_INFO_LEN..(written + Header::LEN + 16)])?;
     set_encryption_header(&info, &mut buf[..Header::ENCRYPTION_INFO_LEN])?;
 
-    Ok(header.msg_len())
+    Ok(header.msg_len() + 16)
 }
 
 pub fn deserialize_encryption_header(buf: &[u8]) -> Result<(usize, AesEncryptionInfo)> {
@@ -248,6 +248,7 @@ pub fn deserialize_body<M: Msg + Deserializable>(header: &Header, buf: &[u8]) ->
 
     let mut des = Deserializer::with_header(&buf[0..(header.msg_len() - Header::LEN)], header);
     let des_msg = M::deserialize(&mut des).context(CTX)?;
+    des.skip(16)?;
     des.finish().context(CTX)?;
 
     Ok(des_msg)

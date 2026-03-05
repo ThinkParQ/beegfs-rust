@@ -12,15 +12,19 @@ pub struct AesEncryptionInfo {
 }
 
 pub fn aes256_encrypt(buf: &mut [u8]) -> Result<AesEncryptionInfo> {
+    let clear_len = buf.len() - 16;
+
     let key = Key::<Aes256Gcm>::from_slice(&DUMMY_KEY);
     let cipher = Aes256Gcm::new(key);
 
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
     let tag = cipher
-        .encrypt_in_place_detached(&nonce, &[], buf)
+        .encrypt_in_place_detached(&nonce, &[], &mut buf[..clear_len])
         .map_err(|err| anyhow!(err))
         .context("AES256 encryption failed")?;
+
+    buf[clear_len..clear_len + 16].clone_from_slice(&tag);
 
     Ok(AesEncryptionInfo {
         iv: nonce.into(),
@@ -29,14 +33,16 @@ pub fn aes256_encrypt(buf: &mut [u8]) -> Result<AesEncryptionInfo> {
 }
 
 pub fn aes256_decrypt(info: &AesEncryptionInfo, buf: &mut [u8]) -> Result<()> {
+    let clear_len = buf.len() - 16;
+
     let key = Key::<Aes256Gcm>::from_slice(&DUMMY_KEY);
     let cipher = Aes256Gcm::new(key);
 
     let nonce = Nonce::from_slice(&info.iv);
-    let tag = Tag::from_slice(&info.tag);
+    let tag = Tag::clone_from_slice(&buf[clear_len..]);
 
     cipher
-        .decrypt_in_place_detached(nonce, &[], buf, tag)
+        .decrypt_in_place_detached(nonce, &[], &mut buf[..clear_len], &tag)
         .map_err(|err| anyhow!(err))
         .context("AES256 decryption failed")?;
 
