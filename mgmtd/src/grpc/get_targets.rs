@@ -128,11 +128,10 @@ pub(crate) async fn get_targets(
         .iter_mut()
         .filter(|t| t.node_type() == pb::NodeType::Meta)
     {
-        if t.free_space_bytes.is_some() && t.free_inodes.is_some() {
-            t.cap_pool = pb::CapacityPool::from(
-                cap_pool_meta_calc.cap_pool(t.free_space_bytes.unwrap(), t.free_inodes.unwrap()),
-            )
-            .into();
+        if let Some(fs) = t.free_space_bytes
+            && let Some(fi) = t.free_inodes
+        {
+            t.cap_pool = pb::CapacityPool::from(cap_pool_meta_calc.cap_pool(fs, fi)).into();
         }
     }
 
@@ -158,12 +157,10 @@ pub(crate) async fn get_targets(
                 .as_ref()
                 .is_some_and(|e| e.uid == Some(sp_uid))
         }) {
-            if t.free_space_bytes.is_some() && t.free_inodes.is_some() {
-                t.cap_pool = pb::CapacityPool::from(
-                    cap_pool_storage_calc
-                        .cap_pool(t.free_space_bytes.unwrap(), t.free_inodes.unwrap()),
-                )
-                .into();
+            if let Some(fs) = t.free_space_bytes
+                && let Some(fi) = t.free_inodes
+            {
+                t.cap_pool = pb::CapacityPool::from(cap_pool_storage_calc.cap_pool(fs, fi)).into();
             }
         }
     }
