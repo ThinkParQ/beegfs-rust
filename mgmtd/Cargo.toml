@@ -63,6 +63,7 @@ extended-description = "The BeeGFS management service"
 # be installed even if the systems glibc is too old, however, this is acceptable until we find a
 # better solution
 auto-req = "disabled"
+license = "BeeGFS LICENSE AGREEMENT"
 assets = [
     # We use the binary generated and postprocessed from the Makefile
     { source = "target/release/beegfs-mgmtd", dest = "/opt/beegfs/sbin/", mode = "755" },
@@ -73,6 +74,9 @@ assets = [
 ]
 
 [package.metadata.generate-rpm.requires]
+# We do not specify any libc requirement by default as the version linked against depends on the
+# build command. If a specific version is given, the dependency on the correct version will be added
+# temporarily below.
 libbeegfs-license = ">= 8.3"
 
 [package.metadata.generate-rpm.variants.debug]
@@ -90,10 +94,9 @@ beegfs-mgmtd = "*"
 [package.metadata.deb]
 name = "beegfs-mgmtd"
 extended-description = "The BeeGFS management service"
-# We do not specify any glibc dependencies for now as we might be linked against an older glibc than
-# the hosts and auto detect would put it as a requirement into the package. This allows the package
-# to be installed even if the systems glibc is too old, however, this is acceptable until we find a
-# better solution
+# We do not specify any libc requirement by default as the version linked against depends on the
+# build command. If a specific version is given, the following line will be patched temporarily
+# to contain the dependency on the correct version.
 depends = "libbeegfs-license (>= 8.3)"
 suggests = ""
 assets = [

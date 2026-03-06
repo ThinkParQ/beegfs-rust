@@ -72,15 +72,18 @@ PACKAGE_DIR := target/package
 TARGET_DIR := target/$(CARGO_TARGET)/release
 
 # Define the command to build the release binaries based on configuration
-ifneq ($(CARGO_TARGET),)
-	ifneq ($(GLIBC_VERSION),)
-		RELEASE_BUILD_CMD := cargo zigbuild --target=$(CARGO_TARGET).$(GLIBC_VERSION)
-	else
-		RELEASE_BUILD_CMD := cargo build --target=$(CARGO_TARGET)
-	endif
-else
-	RELEASE_BUILD_CMD := cargo build
+
+RELEASE_BUILD_CMD := cargo build $(TARGET_FLAG)
+
+# If glibc version is given, use zigbuild to link against specific libc
+ifneq ($(GLIBC_VERSION),)
+    # Zigbuild requires a specified target
+    ifeq ($(CARGO_TARGET),)
+        $(error GLIBC_VERSION requires CARGO_TARGET which was not provided)
+    endif
+    RELEASE_BUILD_CMD := cargo zigbuild --target=$(CARGO_TARGET).$(GLIBC_VERSION)
 endif
+
 # We want to include the full debug info so it can be split off
 RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
 	--release --locked --config='profile.release.debug = "full"'
@@ -95,6 +98,22 @@ RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
 #   and the zig compiler to be installed and available.
 .PHONY: package
 package:
+	# Patch mgmtds Cargo.toml to depend on linked libc version if specified
+	if [ "$(GLIBC_VERSION)" != "" ]; then
+		# We don't want to auto modify files in a devs repo, so restore the original file on exit
+		# (even works on erroring out).
+		function clean_up() {
+			mv mgmtd/Cargo.toml.orig mgmtd/Cargo.toml 2> /dev/null
+		}
+		trap clean_up EXIT
+		cp mgmtd/Cargo.toml mgmtd/Cargo.toml.orig
+
+		# Patch deb specs
+		sed -i 's/depends = "libbeegfs-license/depends = "libc6 (>= $(GLIBC_VERSION)), libbeegfs-license/' mgmtd/Cargo.toml
+		# Patch rpm specs
+		sed -i 's/libbeegfs-license = ">=/libc6 = ">= $(GLIBC_VERSION)"\nlibbeegfs-license = ">=/' mgmtd/Cargo.toml
+	fi
+
 	# Build thirdparty license summary
 	mkdir -p $(TARGET_DIR)
 	cargo about generate about.hbs --all-features -o $(TARGET_DIR)/thirdparty-licenses.html
@@ -123,12 +142,10 @@ package:
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
-		--set-metadata='license="BeeGFS EULA"' \
 		--set-metadata='provides={"beegfs-mgmtd" = "= $(VERSION_TRIMMED)"}'
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ --variant=debug \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
-		--set-metadata='license="BeeGFS EULA"' \
 		--set-metadata='provides={"beegfs-mgmtd" = "= $(VERSION_TRIMMED)"}'
 
 	# Replace tilde in package filename with hypens.
