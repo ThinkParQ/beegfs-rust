@@ -111,7 +111,7 @@ package:
 		# Patch deb specs
 		sed -i 's/depends = "libbeegfs-license/depends = "libc6 (>= $(GLIBC_VERSION)), libbeegfs-license/' mgmtd/Cargo.toml
 		# Patch rpm specs
-		sed -i 's/libbeegfs-license = ">=/libc6 = ">= $(GLIBC_VERSION)"\nlibbeegfs-license = ">=/' mgmtd/Cargo.toml
+		sed -i 's/libbeegfs-license = ">=/glibc = ">= $(GLIBC_VERSION)"\nlibbeegfs-license = ">=/' mgmtd/Cargo.toml
 	fi
 
 	# Build thirdparty license summary
@@ -138,7 +138,6 @@ package:
 	# We don't want the epoch in the file names
 	find $(PACKAGE_DIR) -name "*_20:*.deb" -exec bash -c 'mv "$$1" $$(echo "$$1" | sed "s/_20:/_/g")' bash {} \;
 
-	# We add a license field since generate-rpm fails if it is not there (even if license-file is given)
 	cargo generate-rpm $(TARGET_FLAG) -p mgmtd -o $(PACKAGE_DIR)/ \
 		--set-metadata='version="$(VERSION_TRIMMED)"' \
 		--set-metadata='epoch=20' \
