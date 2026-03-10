@@ -16,8 +16,8 @@ env_logger = "0"
 itertools = "0"
 libc = "0"
 log = { version = "0", features = ["std"] }
-prost = "0.13"
-protobuf = { git = "https://github.com/thinkparq/protobuf", rev = "24f942a79ffa8a879b84dc014384c9f06780d2b7" }
+prost = "0.14"
+protobuf = { git = "https://github.com/thinkparq/protobuf", rev = "22c0e932f71f4cbfbd91244916d7d011f6954b46" }
 regex = "1"
 ring = "0"
 rusqlite = { version = "0", features = ["bundled", "vtab", "array", "fallible_uint"] }
@@ -25,5 +25,5 @@ serde = "1"
 thiserror = "~2"
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
 tokio-stream = { version = "0" }
-tonic = { version = "0.13", features = ["tls-ring"] }
+tonic = { version = "0.14", features = ["tls-ring"] }
 uuid = { version = "1", features = ["v4"] }
