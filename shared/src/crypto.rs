@@ -3,9 +3,8 @@ use aes_gcm::{self, AeadCore, Aes256Gcm, Key, KeyInit, Nonce, Tag};
 use anyhow::{Context, Result, anyhow};
 
 const DUMMY_KEY: [u8; 32] = *b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\0";
-
 const AES_TAG_LEN: usize = 16;
-
+const ENCRYPT: bool = false;
 pub type AesIv = [u8; 12];
 
 pub fn aes256_encrypt(buf: &mut [u8]) -> Result<AesIv> {
@@ -16,10 +15,13 @@ pub fn aes256_encrypt(buf: &mut [u8]) -> Result<AesIv> {
 
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
-    let tag = cipher
-        .encrypt_in_place_detached(&nonce, &[], &mut buf[..clear_len])
-        .map_err(|err| anyhow!(err))
-        .context("AES256 encryption failed")?;
+    let tag = if ENCRYPT {
+        cipher.encrypt_in_place_detached(&nonce, &[], &mut buf[..clear_len])
+    } else {
+        cipher.encrypt_in_place_detached(&nonce, &buf[..clear_len], &mut [])
+    }
+    .map_err(|err| anyhow!(err))
+    .context("AES256 encryption failed")?;
 
     buf[clear_len..clear_len + AES_TAG_LEN].clone_from_slice(&tag);
 
@@ -35,10 +37,13 @@ pub fn aes256_decrypt(iv: &AesIv, buf: &mut [u8]) -> Result<()> {
     let nonce = Nonce::from_slice(iv);
     let tag = Tag::clone_from_slice(&buf[clear_len..]);
 
-    cipher
-        .decrypt_in_place_detached(nonce, &[], &mut buf[..clear_len], &tag)
-        .map_err(|err| anyhow!(err))
-        .context("AES256 decryption failed")?;
+    if ENCRYPT {
+        cipher.decrypt_in_place_detached(nonce, &[], &mut buf[..clear_len], &tag)
+    } else {
+        cipher.decrypt_in_place_detached(nonce, &buf[..clear_len], &mut [], &tag)
+    }
+    .map_err(|err| anyhow!(err))
+    .context("AES256 decryption failed")?;
 
     Ok(())
 }
