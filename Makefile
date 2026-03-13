@@ -110,8 +110,10 @@ package:
 
 		# Patch deb specs
 		sed -i 's/depends = "libbeegfs-license/depends = "libc6 (>= $(GLIBC_VERSION)), libbeegfs-license/' mgmtd/Cargo.toml
+		grep -q 'libc6 (>=' mgmtd/Cargo.toml || { echo "ERROR: DEB libc6 patch failed"; exit 1; }
 		# Patch rpm specs
 		sed -i 's/libbeegfs-license = ">=/glibc = ">= $(GLIBC_VERSION)"\nlibbeegfs-license = ">=/' mgmtd/Cargo.toml
+		grep -q 'glibc = ">=' mgmtd/Cargo.toml || { echo "ERROR: RPM glibc patch failed"; exit 1; }
 	fi
 
 	# Build thirdparty license summary
