@@ -197,6 +197,7 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
     };
 
     let app2 = app.clone();
+
     let service = pm::management_server::ManagementServer::with_interceptor(
         ManagementService { app: app.clone() },
         move |req: Request<()>| {
