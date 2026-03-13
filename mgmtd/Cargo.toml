@@ -58,10 +58,6 @@ undocumented_unsafe_blocks = "deny"
 [package.metadata.generate-rpm]
 name = "beegfs-mgmtd"
 extended-description = "The BeeGFS management service"
-# We do not specify any dependencies for now as we might be linked against an older glibc than the
-# hosts and auto detect would put it as a requirement into the package. This allows the package to
-# be installed even if the systems glibc is too old, however, this is acceptable until we find a
-# better solution
 auto-req = "disabled"
 license = "BeeGFS LICENSE AGREEMENT"
 assets = [

@@ -17,7 +17,7 @@ itertools = "0"
 libc = "0"
 log = { version = "0", features = ["std"] }
 prost = "0.14"
-protobuf = { git = "https://github.com/thinkparq/protobuf", rev = "22c0e932f71f4cbfbd91244916d7d011f6954b46" }
+protobuf = { git = "https://github.com/thinkparq/protobuf", rev = "e2e774e7db7e3d4474d6e7232bb06bbdffc5610c" }
 regex = "1"
 ring = "0"
 rusqlite = { version = "0", features = ["bundled", "vtab", "array", "fallible_uint"] }
