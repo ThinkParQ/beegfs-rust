@@ -122,14 +122,18 @@ client version < 8.0)"
 
                 // if this is a meta node, auto-add a corresponding meta target after the node.
                 if msg.node_type == NodeType::Meta {
-                    // Convert the NodeID to a TargetID. Due to the difference in bitsize, meta
-                    // node IDs are not allowed to be bigger than u16
-                    let Ok(target_id) = TargetId::try_from(node.num_id()) else {
-                        bail!(
-                            "{} is not a valid numeric meta node id\
-(must be between 1 and 65535)",
-                            node.num_id()
-                        );
+                    // Either create a new TargetID/NodeID or use the given NodeID. In the latter
+                    // case, convert it to a TargetID. Due to the difference in bitsize, meta node
+                    // IDs are not allowed to be bigger than u16.
+                    let target_id = match node.num_id() {
+                        0 => db::misc::find_new_id(
+                            tx,
+                            "targets",
+                            "target_id",
+                            NodeType::Meta,
+                            1..=0xFFFF,
+                        )?,
+                        n => TargetId::try_from(n).map_err(|_| anyhow!("{n} is not a valid numeric meta node id (must be between 1 and 65535)"))?,
                     };
 
                     // Do not set a registration token if the provided string is empty. This makes
@@ -141,7 +145,19 @@ client version < 8.0)"
                         None
                     };
 
-                    db::target::insert_meta(tx, target_id, tk)?;
+                    db::target::insert(
+                        tx,
+                        target_id,
+                        tk,
+                        NodeTypeServer::Meta,
+                        Some(target_id.into()),
+                    )?;
+
+                    // If this is the first meta target, set it as meta root
+                    tx.execute(
+                        sql!("INSERT OR IGNORE INTO root_inode (target_id) VALUES (?1)"),
+                        [target_id],
+                    )?;
                 }
 
                 (node, true)
