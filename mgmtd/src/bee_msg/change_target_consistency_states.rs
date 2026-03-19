@@ -1,5 +1,6 @@
 use super::*;
 use common::update_last_contact_times;
+use rusqlite::params;
 use shared::bee_msg::target::*;
 
 impl HandleWithResponse for ChangeTargetConsistencyStates {
@@ -14,9 +15,11 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
-        // self.old_states is currently completely ignored. If something reports a non-GOOD state, I
-        // see no apparent reason to that the old state matches before setting. We have the
-        // authority, whatever nodes think their old state was doesn't matter.
+        anyhow::ensure!(
+            self.target_ids.len() == self.new_states.len()
+                && self.target_ids.len() == self.old_states.len(),
+            "The lengths of the target_ids, new_states and old_states lists don't match up"
+        );
 
         let node_offline_timeout = app.static_info().user_config.node_offline_timeout;
         let target_ids = self.target_ids.clone();
@@ -32,26 +35,46 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
                 let reachabilities_changed =
                     update_last_contact_times(tx, &target_ids, node_type, node_offline_timeout)?;
 
-                // ... or if any consistency state changed.
+                // Check reported old_state
+                let mut check = tx.prepare_cached(sql!(
+                    "SELECT consistency FROM targets WHERE target_id = ?1 AND node_type = ?2"
+                ))?;
+                for (id, old) in target_ids.iter().zip(self.old_states.iter()) {
+                    let old_stored = check
+                        .query_row(params![id, node_type.sql_variant()], |row| {
+                            TargetConsistencyState::from_row(row, 0)
+                        })?;
+
+                    if &old_stored != old {
+                        log::debug!(
+                            "Old consistency state {old} reported from {node_type} target {id} \
+doesn't match stored state {old_stored}, no consistency state changes will be made"
+                        );
+                        return Ok((None, reachabilities_changed));
+                    }
+                }
+
+                // If all old states are matching, proceed with updating
                 let consistencies_changed = db::target::update_consistency_states(
                     tx,
                     target_ids.into_iter().zip(self.new_states.iter().copied()),
                     node_type,
                 )?;
 
-                Ok((consistencies_changed, reachabilities_changed))
+                Ok((Some(consistencies_changed), reachabilities_changed))
             })
             .await?;
 
         log::debug!(
-            "Updated target states for {:?} targets {:?}, {consistencies_changed} consistency states and {reachabilities_changed} reachability states changed",
+            "Updated target states for {:?} targets {:?}, {} consistency states and {reachabilities_changed} reachability states changed",
             self.node_type,
             self.target_ids,
+            consistencies_changed.unwrap_or(0)
         );
 
         // To avoid spamming, we only send out the refresh notification if there is any actual
         // change
-        if consistencies_changed > 0 || reachabilities_changed > 0 {
+        if consistencies_changed.unwrap_or(0) > 0 || reachabilities_changed > 0 {
             app.send_notifications(
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 &RefreshTargetStates { ack_id: "".into() },
@@ -60,7 +83,10 @@ impl HandleWithResponse for ChangeTargetConsistencyStates {
         }
 
         Ok(ChangeTargetConsistencyStatesResp {
-            result: OpsErr::SUCCESS,
+            result: match consistencies_changed {
+                Some(_) => OpsErr::SUCCESS,
+                None => OpsErr::AGAIN,
+            },
         })
     }
 }
@@ -91,7 +117,7 @@ mod test {
         let msg = ChangeTargetConsistencyStates {
             node_type: NodeType::Storage,
             target_ids: vec![1, 5],
-            old_states: vec![],
+            old_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
             new_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
             ack_id: "".into(),
         };
@@ -111,7 +137,7 @@ mod test {
         let msg = ChangeTargetConsistencyStates {
             node_type: NodeType::Storage,
             target_ids: vec![1, 5],
-            old_states: vec![],
+            old_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
             new_states: vec![
                 TargetConsistencyState::NeedsResync,
                 TargetConsistencyState::Bad,
@@ -142,6 +168,29 @@ mod test {
             "SELECT COUNT(*) FROM storage_nodes WHERE last_contact > UNIXEPOCH('now') - 30",
             [],
             2
+        );
+    }
+
+    #[tokio::test]
+    async fn change_target_consistency_states_old_states() {
+        let app = TestApp::new().await;
+        let mut req = TestRequest::new(ChangeTargetConsistencyStates::ID);
+
+        // Mismatch of reported old state should not change the consistency states
+        let msg = ChangeTargetConsistencyStates {
+            node_type: NodeType::Storage,
+            target_ids: vec![1],
+            old_states: vec![TargetConsistencyState::NeedsResync],
+            new_states: vec![TargetConsistencyState::Bad],
+            ack_id: "".into(),
+        };
+        msg.handle(&app, &mut req).await.unwrap();
+
+        assert_eq_db!(
+            app,
+            "SELECT COUNT(*) FROM storage_targets WHERE consistency = ?1",
+            [TargetConsistencyState::Bad.sql_variant()],
+            0
         );
     }
 }

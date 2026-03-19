@@ -101,9 +101,7 @@ pub(crate) fn update_consistency_states(
 ) -> Result<usize> {
     let mut update = tx.prepare_cached(sql!(
         "UPDATE targets SET consistency = ?3
-        WHERE consistency != ?3 AND target_uid = (
-            SELECT target_uid FROM targets WHERE target_id = ?1 AND node_type = ?2
-        )"
+        WHERE consistency != ?3 AND target_id = ?1 AND node_type = ?2"
     ))?;
 
     let mut updated = 0;
