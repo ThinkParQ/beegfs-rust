@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 
 const DUMMY_KEY: [u8; 32] = *b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\0";
 const AES_TAG_LEN: usize = 16;
-const ENCRYPT: bool = false;
+const ENCRYPT: bool = true;
 pub type AesIv = [u8; 12];
 
 pub fn aes256_encrypt(buf: &mut [u8]) -> Result<AesIv> {
