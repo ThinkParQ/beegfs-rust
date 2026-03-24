@@ -33,38 +33,6 @@ pub(crate) fn validate_ids(
     }
 }
 
-/// Inserts a new meta target.
-///
-/// BeeGFS doesn't really support meta targets at the moment, so there always must be exactly one
-/// meta target per meta node with their IDs being the same.
-pub(crate) fn insert_meta(
-    tx: &Transaction,
-    target_id: TargetId,
-    reg_token: Option<&str>,
-) -> Result<()> {
-    let target_id = if target_id == 0 {
-        misc::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=0xFFFF)?
-    } else {
-        target_id
-    };
-
-    insert(
-        tx,
-        target_id,
-        reg_token,
-        NodeTypeServer::Meta,
-        Some(target_id.into()),
-    )?;
-
-    // If this is the first meta target, set it as meta root
-    tx.execute(
-        sql!("INSERT OR IGNORE INTO root_inode (target_id) VALUES (?1)"),
-        [target_id],
-    )?;
-
-    Ok(())
-}
-
 /// Inserts a new storage target which may not exist yet.
 ///
 /// Providing 0 for `target_id` chooses the ID automatically.
@@ -87,7 +55,7 @@ pub(crate) fn insert_storage(
     Ok(target_id)
 }
 
-fn insert(
+pub fn insert(
     tx: &Transaction,
     target_id: TargetId,
     reg_token: Option<&str>,
@@ -271,24 +239,6 @@ pub(crate) fn delete_storage(tx: &Transaction, target_id: TargetId) -> Result<()
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn set_get_meta() {
-        with_test_data(|tx| {
-            super::insert_meta(tx, 1, None).unwrap_err();
-            super::insert_meta(tx, 99, None).unwrap();
-            // existing id
-            super::insert_meta(tx, 99, None).unwrap_err();
-
-            let targets: i64 = tx
-                .query_row(sql!("SELECT COUNT(*) FROM meta_targets"), [], |row| {
-                    row.get(0)
-                })
-                .unwrap();
-
-            assert_eq!(5, targets);
-        })
-    }
 
     #[test]
     fn set_get_storage_and_map() {
