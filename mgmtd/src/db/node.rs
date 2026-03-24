@@ -164,8 +164,8 @@ pub(crate) fn update(
 ///   - They have a machine UUID registered.
 ///   - Their node type is either `NodeType::Meta` or `NodeType::Storage`.
 ///   - Their UUID is different from the one we are trying to register, because multiple services on
-///     the same machine only count once according to the EULA. For the same reason, only nodes with
-///     distinct UUIDs are counted.
+///     the same machine only count once according to the BeeGFS License Agreement. For the same
+///     reason, only nodes with distinct UUIDs are counted.
 ///   - Their node ID is different from the one optionally supplied as an argument, because nodes
 ///     should still be able to move between machines.
 ///   - They have been active within the last five minutes. This is to prevent stale and no longer
