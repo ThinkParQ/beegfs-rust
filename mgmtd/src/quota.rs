@@ -115,19 +115,31 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                 )
                 .await;
 
-            if resp_users.is_err() || resp_groups.is_err() {
-                log::error!(
-                    "Fetching quota info for storage target {target_id} from node with uid
-{node_uid} failed. Users: {resp_users:?}, Groups: {resp_groups:?}"
-                );
+            match (resp_users, resp_groups) {
+                (Ok(u), Ok(mut g)) => {
+                    let mut entries = u.quota_entry;
+                    entries.append(&mut g.quota_entry);
 
-                return (target_id, None);
+                    (target_id, Some(entries))
+                }
+                (u, g) => {
+                    let log_u = u
+                        .err()
+                        .map(|err| format!("\nUsers: {err:#}"))
+                        .unwrap_or_else(|| "".into());
+                    let log_g = g
+                        .err()
+                        .map(|err| format!("\nGroups: {err:#}"))
+                        .unwrap_or_else(|| "".into());
+
+                    log::error!(
+                        "Fetching quota info for storage target {target_id} from node with uid \
+{node_uid} failed.{log_u}{log_g}"
+                    );
+
+                    (target_id, None)
+                }
             }
-
-            let mut entries = resp_users.expect("impossible").quota_entry;
-            entries.append(&mut resp_groups.expect("impossible").quota_entry);
-
-            (target_id, Some(entries))
         }));
     }
 
