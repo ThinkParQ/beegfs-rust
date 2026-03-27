@@ -23,7 +23,7 @@ use tokio::net::UdpSocket;
 /// communication.
 #[derive(Debug)]
 pub struct Pool {
-    store: Store,
+    store: Store<Uid>,
     udp_socket: Arc<UdpSocket>,
     auth_secret: Option<AuthSecret>,
     use_ipv6: bool,
@@ -188,7 +188,7 @@ impl Pool {
     async fn write_and_read_stream(
         &self,
         buf: &mut [u8],
-        mut stream: StoredStream,
+        mut stream: StoredStream<Uid>,
         send_len: usize,
         expect_response: bool,
     ) -> Result<Header> {
