@@ -128,7 +128,7 @@ impl From<NodeTypeServer> for pb::NodeType {
 pub enum NicType {
     Rdma,
     #[default]
-    Ethernet,
+    Tcp,
 }
 
 impl FromStr for NicType {
@@ -136,24 +136,24 @@ impl FromStr for NicType {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "tcp" => Ok(Self::Ethernet),
+            "tcp" => Ok(Self::Tcp),
             "rdma" => Ok(Self::Rdma),
             s => Err(anyhow!("{s} is not a valid nic type")),
         }
     }
 }
 
-impl_enum_bee_msg_traits!(NicType, Ethernet => 0, Rdma => 2);
+impl_enum_bee_msg_traits!(NicType, Tcp => 0, Rdma => 2);
 
 impl_enum_user_str! {NicType,
-    NicType::Ethernet => "ethernet",
+    NicType::Tcp => "tcp",
     NicType::Rdma => "rdma",
 }
 
 #[cfg(feature = "grpc")]
 impl_enum_protobuf_traits! {NicType => pb::NicType,
     unspecified => pb::NicType::Unspecified,
-    NicType::Ethernet => pb::NicType::Ethernet,
+    NicType::Tcp => pb::NicType::Ethernet,
     NicType::Rdma => pb::NicType::Rdma,
 }
 
