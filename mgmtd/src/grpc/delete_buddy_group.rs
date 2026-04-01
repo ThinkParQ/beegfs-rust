@@ -45,8 +45,8 @@ pub(crate) async fn delete_buddy_group(
         force: 0,
     };
 
-    let p_res: RemoveBuddyGroupResp = app.request(p_node_uid, &remove_bee_msg).await?;
-    let s_res: RemoveBuddyGroupResp = app.request(s_node_uid, &remove_bee_msg).await?;
+    let p_res: RemoveBuddyGroupResp = app.request(&p_node_uid, &remove_bee_msg).await?;
+    let s_res: RemoveBuddyGroupResp = app.request(&s_node_uid, &remove_bee_msg).await?;
 
     if p_res.result != OpsErr::SUCCESS || s_res.result != OpsErr::SUCCESS {
         bail!(

@@ -151,7 +151,7 @@ mod test {
     fn meta_root() {
         with_test_data(|tx| {
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(MetaRoot::Normal(1, 101001i64), meta_root);
+            assert_eq!(MetaRoot::Normal(1, 101001i64.into()), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap();
 

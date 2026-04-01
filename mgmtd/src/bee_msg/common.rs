@@ -44,7 +44,7 @@ pub(super) async fn update_node(msg: RegisterNode, app: &impl App) -> Result<Nod
             };
 
             if let Some(machine_uuid) = machine_uuid
-                && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
+                && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid.clone()))?
                     >= licensed_machines
             {
                 bail!("Licensed machine limit reached. Node registration denied.");
@@ -54,7 +54,7 @@ pub(super) async fn update_node(msg: RegisterNode, app: &impl App) -> Result<Nod
 
             let (node, is_new) = if let Some(node) = node {
                 // Existing node, update data
-                db::node::update(tx, node.uid, msg.port, machine_uuid)?;
+                db::node::update(tx, &node.uid, msg.port, machine_uuid)?;
 
                 // If the updated node is a meta node, check if its corresponding target has a
                 // registration token
@@ -166,7 +166,7 @@ client version < 8.0)"
             // Update the corresponding nic lists
             db::node_nic::replace(
                 tx,
-                node.uid,
+                &node.uid,
                 msg.nics.iter().map(|e| ReplaceNic {
                     nic_type: e.nic_type,
                     addr: &e.addr,
@@ -186,7 +186,7 @@ client version < 8.0)"
         .await?;
 
     app.replace_node_addrs(
-        node.uid,
+        node.uid.clone(),
         nics.clone()
             .into_iter()
             .map(|e| SocketAddr::new(e.addr, msg.port))

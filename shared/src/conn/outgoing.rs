@@ -50,10 +50,10 @@ impl Pool {
     /// Sends a [Msg] to a node and receives the response.
     pub async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
-        node_uid: Uid,
+        node_uid: &Uid,
         msg: &M,
     ) -> Result<R> {
-        log::trace!("REQUEST to {node_uid:?}: {msg:?}");
+        log::trace!("REQUEST to {node_uid}: {msg:?}");
 
         let mut buf = self.store.pop_buf_or_create();
 
@@ -63,14 +63,14 @@ impl Pool {
 
         self.store.push_buf(buf);
 
-        log::trace!("RESPONSE RECEIVED from {node_uid:?}: {resp_msg:?}");
+        log::trace!("RESPONSE RECEIVED from {node_uid}: {resp_msg:?}");
 
         Ok(resp_msg)
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
-    pub async fn send<M: Msg + Serializable>(&self, node_uid: Uid, msg: &M) -> Result<()> {
-        log::trace!("SEND to {node_uid:?}: {msg:?}");
+    pub async fn send<M: Msg + Serializable>(&self, node_uid: &Uid, msg: &M) -> Result<()> {
+        log::trace!("SEND to {node_uid}: {msg:?}");
 
         let mut buf = self.store.pop_buf_or_create();
 
@@ -96,7 +96,7 @@ impl Pool {
     /// 3. Pop an open stream from the store, waiting until one gets available.
     async fn comm_stream(
         &self,
-        node_uid: Uid,
+        node_uid: &Uid,
         buf: &mut [u8],
         send_len: usize,
         expect_response: bool,
@@ -104,7 +104,7 @@ impl Pool {
         debug_assert_eq!(buf.len(), TCP_BUF_LEN);
 
         // 1. Pop open streams until communication succeeds or none are left
-        while let Some(stream) = self.store.try_pop_stream(node_uid) {
+        while let Some(stream) = self.store.try_pop_stream(node_uid.clone()) {
             match self
                 .write_and_read_stream(buf, stream, send_len, expect_response)
                 .await
@@ -112,20 +112,18 @@ impl Pool {
                 Ok(header) => return Ok(header),
                 Err(err) => {
                     // If the stream doesn't work anymore, just discard it and try the next one
-                    log::debug!(
-                        "Communication using existing stream to node with uid {node_uid} failed: {err}"
-                    )
+                    log::debug!("Communication using existing stream to {node_uid} failed: {err}")
                 }
             }
         }
 
         // 2. Obtain a permit and try to open a new stream on each available address
-        if let Some(permit) = self.store.try_acquire_permit(node_uid) {
+        if let Some(permit) = self.store.try_acquire_permit(node_uid.clone()) {
             let Some(addrs) = self.store.get_node_addrs(node_uid) else {
-                bail!("No available addresses for node with uid {node_uid}");
+                bail!("No available addresses for {node_uid}");
             };
 
-            log::debug!("Connecting new stream to node with uid {node_uid}");
+            log::debug!("Connecting new stream to {node_uid}");
 
             for addr in addrs.iter() {
                 if addr.is_ipv6() && !self.use_ipv6 {
@@ -136,11 +134,8 @@ impl Pool {
                     Ok(stream) => {
                         let mut stream = StoredStream::from_stream(stream, permit);
 
-                        let err_context = || {
-                            format!(
-                                "Connected to node with uid {node_uid}, but communication failed"
-                            )
-                        };
+                        let err_context =
+                            || format!("Connected to {node_uid}, but communication failed");
 
                         // Authenticate to the peer if required
                         if let Some(auth_secret) = self.auth_secret {
@@ -169,31 +164,26 @@ impl Pool {
                         return Ok(resp_header);
                     }
                     // If connecting failed, try the next address
-                    Err(err) => log::debug!(
-                        "Connecting to node with uid {node_uid} via {addr} failed: {err}"
-                    ),
+                    Err(err) => log::debug!("Connecting to {node_uid} via {addr} failed: {err}"),
                 }
             }
 
             // ... but if all failed, that's it
-            bail!(
-                "Connecting to node with uid {node_uid} failed for all known addresses: {addrs:?}"
-            )
+            bail!("Connecting to {node_uid} failed for all known addresses: {addrs:?}")
         }
 
         // 3. Wait for an already open stream becoming available
-        let stream = timeout(Duration::from_secs(2), self.store.pop_stream(node_uid))
-            .await
-            .map_err(|_| {
-                anyhow::anyhow!("Popping a stream for node with uid {node_uid:?} timed out")
-            })?;
+        let stream = timeout(
+            Duration::from_secs(2),
+            self.store.pop_stream(node_uid.clone()),
+        )
+        .await
+        .with_context(|| format!("Popping a stream connected to {node_uid} failed"))?;
 
         let resp_header = self
             .write_and_read_stream(buf, stream, send_len, expect_response)
             .await
-            .with_context(|| {
-                format!("Communication using existing stream to node with uid {node_uid} failed")
-            })?;
+            .with_context(|| format!("Communication using existing stream to {node_uid} failed"))?;
 
         Ok(resp_header)
     }
@@ -235,20 +225,18 @@ impl Pool {
     /// not that the messages reached their destinations.
     pub async fn broadcast_datagram<M: Msg + Serializable>(
         &self,
-        peers: impl IntoIterator<Item = Uid>,
+        node_uids: impl IntoIterator<Item = Uid>,
         msg: &M,
     ) -> Result<()> {
         let mut buf = self.store.pop_buf_or_create();
 
         let msg_len = serialize(msg, &mut buf)?;
 
-        for node_uid in peers {
-            let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
+        for uid in node_uids {
+            let addrs = self.store.get_node_addrs(&uid).unwrap_or_default();
 
             if addrs.is_empty() {
-                log::error!(
-                    "Failed to send datagram to node with uid {node_uid}: No known addresses"
-                );
+                log::error!("Failed to send datagram to {uid}: No known addresses");
                 continue;
             }
 
@@ -259,17 +247,13 @@ impl Pool {
                 }
 
                 if let Err(err) = self.udp_socket.send_to(&buf[0..msg_len], addr).await {
-                    log::debug!(
-                        "Sending datagram to node with uid {node_uid} using {addr} failed: {err}"
-                    );
+                    log::debug!("Sending datagram to {uid} using {addr} failed: {err}");
                     errs.push((addr, err));
                 }
             }
 
             if errs.len() == addrs.len() {
-                log::error!(
-                    "Failed to send datagram to node with uid {node_uid} on all known addresses: {errs:?}"
-                );
+                log::error!("Failed to send datagram to {uid} on all known addresses: {errs:?}");
             }
         }
 

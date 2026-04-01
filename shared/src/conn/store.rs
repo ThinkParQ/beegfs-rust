@@ -78,7 +78,7 @@ impl<T: Debug + Display + Clone + Default + PartialEq + Eq + Hash> Store<T> {
             let mut streams = self.streams.lock().unwrap();
 
             let (queue, _) = streams
-                .entry(key.clone())
+                .entry(key)
                 .or_insert_with(|| self.new_streams_entry());
 
             queue.clone()
@@ -116,8 +116,8 @@ impl<T: Debug + Display + Clone + Default + PartialEq + Eq + Hash> Store<T> {
     }
 
     /// Get a list of known addresses for the given node UID
-    pub fn get_node_addrs(&self, key: T) -> Option<Arc<[SocketAddr]>> {
-        self.addrs.read().unwrap().get(&key).cloned()
+    pub fn get_node_addrs(&self, key: &T) -> Option<Arc<[SocketAddr]>> {
+        self.addrs.read().unwrap().get(key).cloned()
     }
 
     /// Replace **all** addresses for the given node UID

@@ -58,7 +58,7 @@ pub(crate) fn insert(tx: &Transaction, entity_type: EntityType, alias: &Alias) -
 
     check_affected_rows(affected, [1])?;
 
-    Ok(tx.last_insert_rowid())
+    Ok(tx.last_insert_rowid().into())
 }
 
 #[cfg(test)]

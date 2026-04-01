@@ -140,7 +140,7 @@ pub(crate) fn insert(
 /// This function is meant to be called whenever a node registers or sends a heartbeat.
 pub(crate) fn update(
     tx: &Transaction,
-    node_uid: Uid,
+    node_uid: &Uid,
     new_port: Port,
     new_machine_uuid: Option<&str>,
 ) -> Result<()> {
@@ -195,7 +195,7 @@ pub(crate) fn count_machines(
 }
 
 /// Delete a node from the database.
-pub(crate) fn delete(tx: &Transaction, node_uid: Uid) -> Result<()> {
+pub(crate) fn delete(tx: &Transaction, node_uid: &Uid) -> Result<()> {
     let affected = tx.execute_cached(sql!("DELETE FROM nodes WHERE node_uid = ?1"), [node_uid])?;
 
     check_affected_rows(affected, [1])
@@ -235,8 +235,8 @@ mod test {
             .unwrap_err();
             assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
 
-            delete(tx, node.uid).unwrap();
-            delete(tx, node.uid).unwrap_err();
+            delete(tx, &node.uid).unwrap();
+            delete(tx, &node.uid).unwrap_err();
             assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
         });
     }

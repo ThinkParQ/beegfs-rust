@@ -11,7 +11,7 @@ impl HandleWithResponse for HeartbeatRequest {
                 Ok((
                     db::entity::get_alias(tx, MGMTD_UID)?
                         .ok_or_else(|| TypedError::value_not_found("management uid", MGMTD_UID))?,
-                    db::node_nic::get_with_node(tx, MGMTD_UID)?,
+                    db::node_nic::get_with_node(tx, &MGMTD_UID)?,
                 ))
             })
             .await

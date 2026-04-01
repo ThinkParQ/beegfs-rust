@@ -54,7 +54,7 @@ pub(crate) async fn delete_node(
             } else {
                 let assigned_targets: usize = tx.query_row_cached(
                     sql!("SELECT COUNT(*) FROM targets_ext WHERE node_uid = ?1"),
-                    [node.uid],
+                    [&node.uid],
                     |row| row.get(0),
                 )?;
 
@@ -63,7 +63,7 @@ pub(crate) async fn delete_node(
                 }
             }
 
-            db::node::delete(&tx, node.uid)?;
+            db::node::delete(&tx, &node.uid)?;
 
             if execute {
                 tx.commit()?;

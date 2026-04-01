@@ -18,9 +18,9 @@ pub(crate) async fn set_target_state(
         .write_tx(move |tx| {
             let target = target.resolve(tx, EntityType::Target)?;
 
-            let node: i64 = tx.query_row_cached(
+            let node: Uid = tx.query_row_cached(
                 sql!("SELECT node_uid FROM targets_ext WHERE target_uid = ?1"),
-                [target.uid],
+                [&target.uid],
                 |row| row.get(0),
             )?;
 
@@ -36,7 +36,7 @@ pub(crate) async fn set_target_state(
 
     let resp: SetTargetConsistencyStatesResp = app
         .request(
-            node_uid,
+            &node_uid,
             &SetTargetConsistencyStates {
                 node_type: target.node_type(),
                 target_ids: vec![target.num_id().try_into().unwrap()],

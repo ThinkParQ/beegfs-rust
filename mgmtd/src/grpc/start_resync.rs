@@ -35,7 +35,7 @@ pub(crate) async fn start_resync(
                             ON src_t.target_id = g.p_target_id AND src_t.node_type = g.node_type
                         WHERE group_uid = ?1"
                     ),
-                    [group.uid],
+                    [&group.uid],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )?;
 
@@ -65,7 +65,7 @@ not supported."
 
             let resp: GetMetaResyncStatsResp = app
                 .request(
-                    src_node_uid,
+                    &src_node_uid,
                     &GetMetaResyncStats {
                         target_id: src_target_id,
                     },
@@ -80,7 +80,7 @@ not supported."
             if !restart {
                 let resp: GetStorageResyncStatsResp = app
                     .request(
-                        src_node_uid,
+                        &src_node_uid,
                         &GetStorageResyncStats {
                             target_id: src_target_id,
                         },
@@ -92,7 +92,7 @@ not supported."
                 }
 
                 if timestamp > -1 {
-                    override_last_buddy_comm(app, src_node_uid, src_target_id, &group, timestamp)
+                    override_last_buddy_comm(app, &src_node_uid, src_target_id, &group, timestamp)
                         .await?;
                 }
             } else {
@@ -100,7 +100,7 @@ not supported."
                     bail!("Resync for storage targets can only be restarted with timestamp.");
                 }
 
-                override_last_buddy_comm(app, src_node_uid, src_target_id, &group, timestamp)
+                override_last_buddy_comm(app, &src_node_uid, src_target_id, &group, timestamp)
                     .await?;
 
                 log::info!("Waiting for the already running resync operations to abort.");
@@ -115,7 +115,7 @@ not supported."
                 loop {
                     let resp: GetStorageResyncStatsResp = app
                         .request(
-                            src_node_uid,
+                            &src_node_uid,
                             &GetStorageResyncStats {
                                 target_id: src_target_id,
                             },
@@ -167,7 +167,7 @@ not supported."
     /// Note that this might be overwritten again on the storage server between
     async fn override_last_buddy_comm(
         app: &impl App,
-        src_node_uid: Uid,
+        src_node_uid: &Uid,
         src_target_id: TargetId,
         group: &EntityIdSet,
         timestamp: i64,

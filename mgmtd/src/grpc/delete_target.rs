@@ -27,7 +27,7 @@ pub(crate) async fn delete_target(
                     "SELECT COUNT(*) FROM buddy_groups_ext
                     WHERE p_target_uid = ?1 OR s_target_uid = ?1"
                 ),
-                [target.uid],
+                [&target.uid],
                 |row| row.get(0),
             )?;
 

@@ -22,7 +22,7 @@ use std::path::Path;
 pub fn import_v7(tx: &rusqlite::Transaction, base_path: &Path) -> Result<()> {
     // Check DB is new
     let max_uid: Uid = tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
-    if max_uid > 2 {
+    if max_uid > 2.into() {
         bail!("Database is not new");
     }
 

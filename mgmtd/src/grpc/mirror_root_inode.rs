@@ -76,7 +76,7 @@ communicated during the last {offline_timeout}s."
         })
         .await?;
 
-    let resp: SetMetadataMirroringResp = app.request(meta_root, &SetMetadataMirroring {}).await?;
+    let resp: SetMetadataMirroringResp = app.request(&meta_root, &SetMetadataMirroring {}).await?;
 
     match resp.result {
         OpsErr::SUCCESS => app.write_tx(db::misc::enable_metadata_mirroring).await?,

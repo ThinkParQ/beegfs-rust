@@ -99,12 +99,12 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
 
     db.write_tx(|tx| {
         // Update management node entry in db
-        db::node::update(tx, MGMTD_UID, info.user_config.beemsg_port, None)?;
+        db::node::update(tx, &MGMTD_UID, info.user_config.beemsg_port, None)?;
 
         // Update management nics entry in db
         db::node_nic::replace(
             tx,
-            MGMTD_UID,
+            &MGMTD_UID,
             info.network_addrs.iter().map(|e| ReplaceNic {
                 nic_type: NicType::Tcp,
                 addr: &e.address,

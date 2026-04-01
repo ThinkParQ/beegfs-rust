@@ -146,7 +146,7 @@ impl TryFrom<pb::EntityIdSet> for EntityId {
 
     fn try_from(value: pb::EntityIdSet) -> Result<Self, Self::Error> {
         let variant = if let Some(uid) = value.uid {
-            Self::Uid(uid)
+            Self::Uid(uid.into())
         } else if let Some(alias) = value.alias {
             Self::Alias(alias.try_into()?)
         } else if let Some(id) = value.legacy_id {
@@ -172,7 +172,7 @@ impl From<EntityId> for pb::EntityIdSet {
                 ..Default::default()
             },
             EntityId::Uid(uid) => pb::EntityIdSet {
-                uid: Some(uid),
+                uid: Some(uid.into()),
                 ..Default::default()
             },
         }
@@ -206,7 +206,7 @@ impl Display for EntityIdSet {
 impl From<EntityIdSet> for pb::EntityIdSet {
     fn from(value: EntityIdSet) -> Self {
         Self {
-            uid: Some(value.uid),
+            uid: Some(value.uid.into()),
             alias: Some(value.alias.into()),
             legacy_id: Some(value.legacy_id.into()),
         }

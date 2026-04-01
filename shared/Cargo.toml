@@ -18,8 +18,9 @@ protobuf = { workspace = true, optional = true }
 regex = { workspace = true }
 # This is currently used to generate sha256 hashes, but only because tonic->rustls already depends
 # on it. Since this is annoying to have with its weird license, if tonic doesn't need this anymore
-# at some point, we should think about removing it.
+# at some point, we should think about rsqliteemoving it.
 ring = { workspace = true}
+rusqlite = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -33,6 +34,7 @@ tonic = { workspace = true, optional = true }
 
 [features]
 grpc = ["dep:protobuf", "dep:tonic", "dep:tokio-stream"]
+sqlite = ["dep:rusqlite"]
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"

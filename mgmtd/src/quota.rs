@@ -19,18 +19,31 @@ use std::path::Path;
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
 pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     // Fetch quota data from storage daemons
+    struct Target {
+        id: TargetId,
+        alias: String, // this is only used for logging, so we don't need Alias type here
+        pool_id: PoolId,
+        node_uid: Uid,
+    }
 
-    let targets: Vec<(TargetId, PoolId, Uid)> = app
+    let targets: Vec<Target> = app
         .read_tx(move |tx| {
             tx.query_map_collect(
                 sql!(
-                    "SELECT target_id, pool_id, node_uid
-                    FROM storage_targets
-                    INNER JOIN nodes USING(node_type, node_id)
-                    WHERE node_id IS NOT NULL"
+                    "SELECT target_id, t.alias, pool_id, n.node_uid, n.alias
+                    FROM targets_ext AS t
+                    INNER JOIN nodes_ext AS n USING(node_type, node_id)
+                    WHERE node_id IS NOT NULL AND node_type = ?1"
                 ),
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                [NodeType::Storage.sql_variant()],
+                |row| {
+                    Ok(Target {
+                        id: row.get(0)?,
+                        alias: row.get::<_, String>(1)?,
+                        pool_id: row.get(2)?,
+                        node_uid: Uid::with_info(row.get(3)?, row.get::<_, String>(4)?),
+                    })
+                },
             )
             .map_err(Into::into)
         })
@@ -95,7 +108,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
     let mut tasks = vec![];
     // Sends one request per target to the respective owner node
     // Requesting is done concurrently.
-    for (target_id, pool_id, node_uid) in targets {
+    for target in targets {
         let app2 = app.clone();
         let user_ids2 = user_ids.clone();
         let group_ids2 = group_ids.clone();
@@ -103,15 +116,15 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
         tasks.push(tokio::spawn(async move {
             let resp_users: Result<GetQuotaInfoResp> = app2
                 .request(
-                    node_uid,
-                    &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
+                    &target.node_uid,
+                    &GetQuotaInfo::with_user_ids(user_ids2, target.id, target.pool_id),
                 )
                 .await;
 
             let resp_groups: Result<GetQuotaInfoResp> = app2
                 .request(
-                    node_uid,
-                    &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
+                    &target.node_uid,
+                    &GetQuotaInfo::with_group_ids(group_ids2, target.id, target.pool_id),
                 )
                 .await;
 
@@ -120,7 +133,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                     let mut entries = u.quota_entry;
                     entries.append(&mut g.quota_entry);
 
-                    (target_id, Some(entries))
+                    (target, Some(entries))
                 }
                 (u, g) => {
                     let log_u = u
@@ -133,11 +146,11 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                         .unwrap_or_else(|| "".into());
 
                     log::error!(
-                        "Fetching quota info for storage target {target_id} from node with uid \
-{node_uid} failed.{log_u}{log_g}"
+                        "Fetching quota info for {} failed. {log_u}{log_g}",
+                        target.alias
                     );
 
-                    (target_id, None)
+                    (target, None)
                 }
             }
         }));
@@ -145,7 +158,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
 
     // Await all the responses
     for t in tasks {
-        let (target_id, entries) = t.await?;
+        let (target, entries) = t.await?;
 
         // Only process that target if there were not errors when fetching for this target
         if let Some(entries) = entries {
@@ -155,7 +168,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                 // storages and we only update if there was no fetch error.
                 tx.execute_cached(
                     sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
-                    [target_id],
+                    [target.id],
                 )?;
 
                 let mut insert_stmt = tx.prepare_cached(sql!(
@@ -164,8 +177,9 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                 ))?;
 
                 log::debug!(
-                    "Setting {} quota usage entries for target {target_id}",
-                    entries.len()
+                    "Setting {} quota usage entries for target {}",
+                    entries.len(),
+                    target.alias
                 );
 
                 for e in entries {
@@ -174,7 +188,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                             e.id,
                             e.id_type.sql_variant(),
                             QuotaType::Space.sql_variant(),
-                            target_id,
+                            target.id,
                             e.space
                         ])?;
                     }
@@ -184,7 +198,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                             e.id,
                             e.id_type.sql_variant(),
                             QuotaType::Inode.sql_variant(),
-                            target_id,
+                            target.id,
                             e.inodes
                         ])?;
                     }
@@ -253,13 +267,13 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
             }
 
             // Get all node uids to send the messages to
-            let nodes: Vec<Uid> = tx.query_map_collect(
-                sql!("SELECT node_uid FROM nodes WHERE node_type IN (?1,?2)"),
+            let nodes: Vec<_> = tx.query_map_collect(
+                sql!("SELECT node_uid, alias FROM nodes_ext WHERE node_type IN (?1,?2)"),
                 [
                     NodeType::Meta.sql_variant(),
                     NodeType::Storage.sql_variant(),
                 ],
-                |row| row.get(0),
+                |row| Ok(Uid::with_info(row.get(0)?, row.get::<_, String>(1)?)),
             )?;
 
             Ok((msges, nodes))
@@ -275,11 +289,8 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
         let mut request_fails = 0;
         let mut non_success_count = 0;
 
-        for node_uid in &nodes {
-            match app
-                .request::<_, SetExceededQuotaResp>(*node_uid, &msg)
-                .await
-            {
+        for node in &nodes {
+            match app.request::<_, SetExceededQuotaResp>(node, &msg).await {
                 Ok(resp) => {
                     if resp.result != OpsErr::SUCCESS {
                         non_success_count += 1;

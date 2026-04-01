@@ -53,7 +53,7 @@ pub(crate) async fn set_alias(
                 let entity = update_alias_fn(tx, &new_alias)?;
 
                 let node = db::node::get_by_alias(tx, new_alias.as_ref())?;
-                let nic_list = db::node_nic::get_with_node(tx, entity.uid)?;
+                let nic_list = db::node_nic::get_with_node(tx, &entity.uid)?;
 
                 Ok((entity, node, nic_list))
             })
@@ -100,7 +100,7 @@ mod test {
         super::set_alias(
             &app,
             pm::SetAliasRequest {
-                entity_id: Some(EntityId::Uid(99999999).into()),
+                entity_id: Some(EntityId::Uid(99999999.into()).into()),
                 entity_type: pb::EntityType::Node.into(),
                 new_alias: "new_alias".to_string(),
             },
@@ -112,7 +112,7 @@ mod test {
         super::set_alias(
             &app,
             pm::SetAliasRequest {
-                entity_id: Some(EntityId::Uid(101001).into()),
+                entity_id: Some(EntityId::Uid(101001.into()).into()),
                 entity_type: pb::EntityType::Target.into(),
                 new_alias: "new_alias".to_string(),
             },
@@ -154,7 +154,7 @@ mod test {
         super::set_alias(
             &app,
             pm::SetAliasRequest {
-                entity_id: Some(EntityId::Uid(101001).into()),
+                entity_id: Some(EntityId::Uid(101001.into()).into()),
                 entity_type: pb::EntityType::Node.into(),
                 new_alias: "new_alias".to_string(),
             },

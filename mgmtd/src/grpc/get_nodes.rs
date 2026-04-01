@@ -139,7 +139,7 @@ pub(crate) async fn get_nodes(
         for node in &mut nodes {
             node.nics = nics
                 .iter()
-                .filter(|(uid, _)| node.id.as_ref().is_some_and(|e| e.uid == Some(*uid)))
+                .filter(|(uid, _)| node.id.as_ref().is_some_and(|e| e.uid == Some(uid.raw())))
                 .cloned()
                 .map(|(_, mut nic)| {
                     nic.addr = SocketAddr::new(
