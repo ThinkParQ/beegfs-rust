@@ -82,7 +82,7 @@ not supported."
                     .request(
                         &src_node_uid,
                         &GetStorageResyncStats {
-                            target_id: src_target_id,
+                            target_id: src_target_id.clone(),
                         },
                     )
                     .await?;
@@ -100,8 +100,14 @@ not supported."
                     bail!("Resync for storage targets can only be restarted with timestamp.");
                 }
 
-                override_last_buddy_comm(app, &src_node_uid, src_target_id, &group, timestamp)
-                    .await?;
+                override_last_buddy_comm(
+                    app,
+                    &src_node_uid,
+                    src_target_id.clone(),
+                    &group,
+                    timestamp,
+                )
+                .await?;
 
                 log::info!("Waiting for the already running resync operations to abort.");
 
@@ -117,7 +123,7 @@ not supported."
                         .request(
                             &src_node_uid,
                             &GetStorageResyncStats {
-                                target_id: src_target_id,
+                                target_id: src_target_id.clone(),
                             },
                         )
                         .await?;

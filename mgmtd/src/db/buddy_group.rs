@@ -65,7 +65,7 @@ pub(crate) fn insert(
     };
 
     // Check targets exist
-    target::validate_ids(tx, &[p_target_id, s_target_id], node_type)?;
+    target::validate_ids(tx, &[p_target_id.clone(), s_target_id.clone()], node_type)?;
 
     // Check that both given target IDs are not assigned to any buddy group
     if tx.query_row(
@@ -74,7 +74,7 @@ pub(crate) fn insert(
              WHERE node_type = ?1
              AND (p_target_id IN (?2, ?3) OR s_target_id IN (?2, ?3))"
         ),
-        params![node_type.sql_variant(), p_target_id, s_target_id],
+        params![node_type.sql_variant(), &p_target_id, &s_target_id],
         |row| row.get::<_, i64>(0),
     )? > 0
     {
@@ -90,8 +90,8 @@ pub(crate) fn insert(
             "SELECT pool_id FROM storage_targets WHERE target_id = ?1"
         ))?;
 
-        let p_pool_id: PoolId = check.query_row([p_target_id], |row| row.get(0))?;
-        let s_pool_id: PoolId = check.query_row([s_target_id], |row| row.get(0))?;
+        let p_pool_id: PoolId = check.query_row([&p_target_id], |row| row.get(0))?;
+        let s_pool_id: PoolId = check.query_row([&s_target_id], |row| row.get(0))?;
 
         if p_pool_id != s_pool_id {
             bail!("Primary and secondary target are not assigned to the same storage pool");
@@ -121,7 +121,7 @@ pub(crate) fn insert(
     let pool_id: Option<PoolId> = if matches!(node_type, NodeTypeServer::Storage) {
         tx.query_row(
             sql!("SELECT pool_id FROM storage_targets WHERE target_id = ?1"),
-            [p_target_id],
+            [&p_target_id],
             |row| row.get(0),
         )?
     } else {
@@ -139,8 +139,8 @@ pub(crate) fn insert(
             new_uid,
             node_type.sql_variant(),
             group_id,
-            p_target_id,
-            s_target_id,
+            &p_target_id,
+            &s_target_id,
             pool_id
         ],
     )?;
@@ -296,8 +296,8 @@ mod test {
                 1234,
                 Some("g1".try_into().unwrap()),
                 NodeTypeServer::Meta,
-                3,
-                4,
+                3.into(),
+                4.into(),
             )
             .unwrap();
             super::insert(
@@ -305,8 +305,8 @@ mod test {
                 1,
                 Some("g2".try_into().unwrap()),
                 NodeTypeServer::Storage,
-                3,
-                7,
+                3.into(),
+                7.into(),
             )
             .unwrap_err();
 
@@ -337,10 +337,10 @@ mod test {
         let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
         let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-        assert_eq!(2, meta_groups[0].1);
-        assert_eq!(1, meta_groups[0].2);
-        assert_eq!(5, storage_groups[0].1);
-        assert_eq!(1, storage_groups[0].2);
+        assert_eq!(2, meta_groups[0].1.raw());
+        assert_eq!(1, meta_groups[0].2.raw());
+        assert_eq!(5, storage_groups[0].1.raw());
+        assert_eq!(1, storage_groups[0].2.raw());
     }
 
     /// Makes sure targets of buddy groups 1 (meta and storage) have not been swapped
@@ -348,10 +348,10 @@ mod test {
         let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
         let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-        assert_eq!(1, meta_groups[0].1);
-        assert_eq!(2, meta_groups[0].2);
-        assert_eq!(1, storage_groups[0].1);
-        assert_eq!(5, storage_groups[0].2);
+        assert_eq!(1, meta_groups[0].1.raw());
+        assert_eq!(2, meta_groups[0].2.raw());
+        assert_eq!(1, storage_groups[0].1.raw());
+        assert_eq!(5, storage_groups[0].2.raw());
     }
 
     /// Test swapping primary and secondary member (switchover) when primary runs into timeout
@@ -410,8 +410,8 @@ mod test {
             target::update_consistency_states(
                 tx,
                 [
-                    (1, TargetConsistencyState::NeedsResync),
-                    (2, TargetConsistencyState::NeedsResync),
+                    (1.into(), TargetConsistencyState::NeedsResync),
+                    (2.into(), TargetConsistencyState::NeedsResync),
                 ],
                 NodeTypeServer::Meta,
             )
@@ -420,8 +420,8 @@ mod test {
             target::update_consistency_states(
                 tx,
                 [
-                    (1, TargetConsistencyState::NeedsResync),
-                    (5, TargetConsistencyState::NeedsResync),
+                    (1.into(), TargetConsistencyState::NeedsResync),
+                    (5.into(), TargetConsistencyState::NeedsResync),
                 ],
                 NodeTypeServer::Storage,
             )

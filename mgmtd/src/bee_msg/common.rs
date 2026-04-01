@@ -132,7 +132,7 @@ client version < 8.0)"
                             "target_id",
                             NodeType::Meta,
                             1..=0xFFFF,
-                        )?,
+                        )?.try_into()?,
                         n => TargetId::try_from(n).map_err(|_| anyhow!("{n} is not a valid numeric meta node id (must be between 1 and 65535)"))?,
                     };
 
@@ -147,10 +147,10 @@ client version < 8.0)"
 
                     db::target::insert(
                         tx,
-                        target_id,
+                        &target_id,
                         tk,
                         NodeTypeServer::Meta,
-                        Some(target_id.into()),
+                        Some(target_id.raw().into()),
                     )?;
 
                     // If this is the first meta target, set it as meta root
@@ -294,7 +294,7 @@ pub(super) fn update_last_contact_times(
     node_type: NodeTypeServer,
     offline_timeout: Duration,
 ) -> Result<usize> {
-    let target_ids_param = sqlite::rarray_param(target_ids.iter().copied());
+    let target_ids_param = sqlite::rarray_param(target_ids.iter().cloned());
 
     tx.execute_cached(
         sql!(

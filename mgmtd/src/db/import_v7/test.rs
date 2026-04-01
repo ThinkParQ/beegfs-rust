@@ -100,16 +100,16 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (NodeType::Meta, 1, 1, None),
-            (NodeType::Meta, 2, 2, None),
-            (NodeType::Meta, 3, 3, None),
-            (NodeType::Meta, 4, 4, None),
-            (NodeType::Storage, 1, 1, Some(1)),
-            (NodeType::Storage, 2, 1, Some(2)),
-            (NodeType::Storage, 3, 1, Some(2)),
-            (NodeType::Storage, 4, 2, Some(1)),
-            (NodeType::Storage, 5, 2, Some(1)),
-            (NodeType::Storage, 6, 2, Some(2)),
+            (NodeType::Meta, 1.into(), 1, None),
+            (NodeType::Meta, 2.into(), 2, None),
+            (NodeType::Meta, 3.into(), 3, None),
+            (NodeType::Meta, 4.into(), 4, None),
+            (NodeType::Storage, 1.into(), 1, Some(1)),
+            (NodeType::Storage, 2.into(), 1, Some(2)),
+            (NodeType::Storage, 3.into(), 1, Some(2)),
+            (NodeType::Storage, 4.into(), 2, Some(1)),
+            (NodeType::Storage, 5.into(), 2, Some(1)),
+            (NodeType::Storage, 6.into(), 2, Some(2)),
         ]
     );
 
@@ -136,9 +136,9 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (NodeType::Meta, 1, 1, 2, None),
-            (NodeType::Storage, 1, 1, 4, Some(1)),
-            (NodeType::Storage, 2, 3, 6, Some(2)),
+            (NodeType::Meta, 1, 1.into(), 2.into(), None),
+            (NodeType::Storage, 1, 1.into(), 4.into(), Some(1)),
+            (NodeType::Storage, 2, 3.into(), 6.into(), Some(2)),
         ]
     );
 

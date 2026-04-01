@@ -146,10 +146,10 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
 
         target::insert(
             tx,
-            target_id,
+            &target_id,
             None,
             NodeTypeServer::Meta,
-            Some(target_id.into()),
+            Some(target_id.raw().into()),
         )?;
     }
 
@@ -253,8 +253,8 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             g,
             None,
             nt,
-            BuddyGroupId::from_str_radix(p_id.trim(), 16)?,
-            BuddyGroupId::from_str_radix(s_id.trim(), 16)?,
+            u16::from_str_radix(p_id.trim(), 16)?.into(),
+            u16::from_str_radix(s_id.trim(), 16)?.into(),
         )?;
     }
 
@@ -272,9 +272,9 @@ fn storage_targets(tx: &Transaction, targets_path: &Path) -> Result<()> {
             .ok_or_else(|| anyhow!("invalid line '{}'", l))?;
 
         let node_id = NodeId::from_str_radix(node.trim(), 16)?;
-        let target_id = TargetId::from_str_radix(target.trim(), 16)?;
+        let target_id: TargetId = u16::from_str_radix(target.trim(), 16)?.into();
 
-        target::insert_storage(tx, target_id, None)?;
+        target::insert_storage(tx, target_id.clone(), None)?;
         target::update_storage_node_mappings(tx, &[target_id], node_id)?;
     }
 

@@ -117,14 +117,14 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
             let resp_users: Result<GetQuotaInfoResp> = app2
                 .request(
                     &target.node_uid,
-                    &GetQuotaInfo::with_user_ids(user_ids2, target.id, target.pool_id),
+                    &GetQuotaInfo::with_user_ids(user_ids2, target.id.clone(), target.pool_id),
                 )
                 .await;
 
             let resp_groups: Result<GetQuotaInfoResp> = app2
                 .request(
                     &target.node_uid,
-                    &GetQuotaInfo::with_group_ids(group_ids2, target.id, target.pool_id),
+                    &GetQuotaInfo::with_group_ids(group_ids2, target.id.clone(), target.pool_id),
                 )
                 .await;
 
@@ -168,7 +168,7 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
                 // storages and we only update if there was no fetch error.
                 tx.execute_cached(
                     sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
-                    [target.id],
+                    [&target.id],
                 )?;
 
                 let mut insert_stmt = tx.prepare_cached(sql!(
@@ -354,7 +354,7 @@ mod test {
             let mut quota_entry = vec![];
 
             // Provide dummy quota values for target 1 depending on the id and type
-            if r.target_id == 1 {
+            if r.target_id.raw() == 1 {
                 for id in r.id_list.iter().copied() {
                     quota_entry.push(QuotaEntry {
                         space: id as u64 * 1000 + r.id_type.sql_variant() as u64,
@@ -364,7 +364,7 @@ mod test {
                         valid: 1,
                     });
                 }
-            } else if r.target_id == 2 && r.id_type == QuotaIdType::User {
+            } else if r.target_id.raw() == 2 && r.id_type == QuotaIdType::User {
                 quota_entry.push(QuotaEntry {
                     space: 999,
                     inodes: 999,
@@ -426,7 +426,7 @@ mod test {
             let r = req.downcast_ref::<GetQuotaInfo>().unwrap();
 
             // Fail request for target 1 user quota (only)
-            if r.target_id == 1 && r.id_type == QuotaIdType::User {
+            if r.target_id.raw() == 1 && r.id_type == QuotaIdType::User {
                 return Err(anyhow::anyhow!("target 1 fail"));
             }
 
@@ -460,7 +460,7 @@ mod test {
 
             let mut quota_entry = vec![];
 
-            if r.target_id == 1 {
+            if r.target_id.raw() == 1 {
                 quota_entry.push(QuotaEntry {
                     space: 999,
                     inodes: 999,

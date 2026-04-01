@@ -133,11 +133,11 @@ impl HandleWithResponse for GetStoragePools {
                         .cap_pool(target.free_space(), target.free_inodes())
                         .bee_msg_vec_index();
 
-                    let target_id: TargetId = target.id;
+                    let target_id: TargetId = target.id.into();
                     let node_id = target.node_id.expect("targets have a node id");
 
-                    target_map.insert(target_id, node_id);
-                    target_cap_pools[cp].push(target.id);
+                    target_map.insert(target_id.clone(), node_id);
+                    target_cap_pools[cp].push(target.id.into());
 
                     if let Some(node_group) = grouped_target_cap_pools[cp].get_mut(&node_id) {
                         node_group.push(target_id);

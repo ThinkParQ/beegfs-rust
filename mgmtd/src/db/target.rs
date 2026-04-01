@@ -13,7 +13,7 @@ pub(crate) fn validate_ids(
     let count: usize = tx.query_row_cached(
         sql!("SELECT COUNT(*) FROM targets WHERE target_id IN rarray(?1) AND node_type = ?2"),
         params![
-            &rarray_param(target_ids.iter().copied()),
+            &rarray_param(target_ids.iter().cloned()),
             node_type.sql_variant(),
         ],
         |row| row.get(0),
@@ -44,28 +44,28 @@ pub(crate) fn insert_storage(
     target_id: TargetId,
     reg_token: Option<&str>,
 ) -> Result<TargetId> {
-    let target_id = if target_id == 0 {
-        misc::find_new_id(tx, "targets", "target_id", NodeType::Storage, 1..=0xFFFF)?
+    let target_id = if target_id.is_zero() {
+        misc::find_new_id(tx, "targets", "target_id", NodeType::Storage, 1..=0xFFFF)?.try_into()?
     } else {
         target_id
     };
 
-    insert(tx, target_id, reg_token, NodeTypeServer::Storage, None)?;
+    insert(tx, &target_id, reg_token, NodeTypeServer::Storage, None)?;
 
     Ok(target_id)
 }
 
 pub fn insert(
     tx: &Transaction,
-    target_id: TargetId,
+    target_id: &TargetId,
     reg_token: Option<&str>,
     node_type: NodeTypeServer,
     // This is optional because storage targets come "unmapped"
     node_id: Option<NodeId>,
 ) -> Result<()> {
-    anyhow::ensure!(target_id > 0, "A target id must be > 0");
+    anyhow::ensure!(target_id.raw() > 0, "A target id must be > 0");
 
-    let alias = format!("target_{}_{target_id}", node_type.user_str()).try_into()?;
+    let alias = format!("target_{}_{}", node_type.user_str(), target_id.raw()).try_into()?;
     let new_uid = entity::insert(tx, EntityType::Target, &alias)?;
 
     tx.execute(
@@ -126,7 +126,7 @@ pub(crate) fn update_storage_pools(
         sql!("UPDATE targets SET pool_id = ?1 WHERE target_id IN rarray(?2) AND node_type = ?3"),
         params![
             new_pool_id,
-            &rarray_param(target_ids.iter().copied()),
+            &rarray_param(target_ids.iter().cloned()),
             NodeType::Storage.sql_variant()
         ],
     )?;
@@ -200,7 +200,7 @@ pub(crate) fn get_and_update_capacities(
         old_values.push(
             select.query_row(params![i.0, node_type.sql_variant()], |row| {
                 Ok((
-                    i.0,
+                    i.0.clone(),
                     TargetCapacities {
                         total_space: row.get(0)?,
                         total_inodes: row.get(1)?,
@@ -241,17 +241,19 @@ mod test {
     #[test]
     fn set_get_storage_and_map() {
         with_test_data(|tx| {
-            let new_target_id = super::insert_storage(tx, 0, Some("new_storage_target")).unwrap();
-            super::insert_storage(tx, 1000, Some("new_storage_target_2")).unwrap();
+            let new_target_id =
+                super::insert_storage(tx, 0.into(), Some("new_storage_target")).unwrap();
+            super::insert_storage(tx, 1000.into(), Some("new_storage_target_2")).unwrap();
 
             // existing id
-            super::insert_storage(tx, 1000, Some("new_storage_target")).unwrap_err();
+            super::insert_storage(tx, 1000.into(), Some("new_storage_target")).unwrap_err();
 
-            super::update_storage_node_mappings(tx, &[new_target_id, 1000], 1).unwrap();
+            super::update_storage_node_mappings(tx, &[new_target_id.clone(), 1000.into()], 1)
+                .unwrap();
 
             assert_eq!(
                 1,
-                super::update_storage_node_mappings(tx, &[9999, 1], 1).unwrap()
+                super::update_storage_node_mappings(tx, &[9999.into(), 1.into()], 1).unwrap()
             );
 
             let targets: Vec<TargetId> = tx
@@ -263,7 +265,7 @@ mod test {
             assert_eq!(19, targets.len());
 
             assert!(targets.contains(&new_target_id));
-            assert!(targets.contains(&1000));
+            assert!(targets.contains(&1000.into()));
         })
     }
 }
