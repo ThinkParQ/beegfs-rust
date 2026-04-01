@@ -4,7 +4,6 @@ use crate::App;
 use crate::app::RuntimeApp;
 use crate::db::{self};
 use crate::license::LicensedFeature;
-use crate::quota::update_and_distribute;
 use crate::types::SqliteEnumExt;
 use rusqlite::params;
 use shared::bee_msg::target::RefreshTargetStates;
@@ -16,11 +15,8 @@ use tokio::time::{MissedTickBehavior, sleep};
 
 /// Starts the timed tasks.
 pub(crate) fn start_tasks(app: RuntimeApp, run_state: RunStateHandle) {
-    // TODO send out timer based RefreshTargetStates notification if a reachability
-    // state changed ?
-
     tokio::spawn(delete_stale_clients_loop(app.clone(), run_state.clone()));
-    tokio::spawn(switchover(app.clone(), run_state.clone()));
+    tokio::spawn(check_switchover_loop(app.clone(), run_state.clone()));
 
     if app.info.user_config.quota_enable {
         if let Err(err) = app.license.verify_licensed_feature(LicensedFeature::Quota) {
@@ -28,7 +24,7 @@ pub(crate) fn start_tasks(app: RuntimeApp, run_state: RunStateHandle) {
                 "Quota is enabled in the config, but the feature could not be verified. Continuing without quota support: {err}"
             );
         } else {
-            tokio::spawn(update_quota(app, run_state));
+            tokio::spawn(update_quota_loop(app, run_state));
         }
     }
 }
@@ -72,17 +68,19 @@ async fn delete_stale_clients(app: &impl App, timeout: Duration) {
 }
 
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
-async fn update_quota(app: RuntimeApp, mut run_state: RunStateHandle) {
+async fn update_quota_loop(app: impl App, mut run_state: RunStateHandle) {
+    let interval = app.static_info().user_config.quota_update_interval;
+
     loop {
         log::debug!("Running quota update");
 
-        match update_and_distribute(&app).await {
+        match crate::quota::update_and_distribute(&app).await {
             Ok(_) => {}
             Err(err) => log::error!("Updating quota failed: {err:#}"),
         }
 
         tokio::select! {
-            _ = sleep(app.info.user_config.quota_update_interval) => {}
+            _ = sleep(interval) => {}
             _ = run_state.wait_for_pre_shutdown() => { break; }
         }
     }
@@ -91,7 +89,7 @@ async fn update_quota(app: RuntimeApp, mut run_state: RunStateHandle) {
 }
 
 /// Finds buddy groups with switchover condition, swaps them and notifies nodes.
-async fn switchover(app: RuntimeApp, mut run_state: RunStateHandle) {
+async fn check_switchover_loop(app: impl App, mut run_state: RunStateHandle) {
     // On the other nodes / old management, the interval in which the switchover checks are done
     // is determined by "1/6 sysTargetOfflineTimeoutSecs".
     // This is also the interval the target states are being pushed to management. To avoid an
@@ -99,7 +97,9 @@ async fn switchover(app: RuntimeApp, mut run_state: RunStateHandle) {
     // up-and-running primary doesn't because of their timing, this value should be the same as on
     // the nodes. If we delay the initial check by that time, then a running primary has enough time
     // to report in and update the last contact time before the check happens.
-    let interval = app.info.user_config.node_offline_timeout / 6;
+    let offline_timeout = app.static_info().user_config.node_offline_timeout;
+    let interval = offline_timeout / 6;
+
     let mut timer = tokio::time::interval(interval);
     timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -108,37 +108,36 @@ async fn switchover(app: RuntimeApp, mut run_state: RunStateHandle) {
 
     loop {
         tokio::select! {
-            _ = timer.tick() => {}
+            _ = timer.tick() => { check_switchover(&app, offline_timeout).await }
             _ = run_state.wait_for_pre_shutdown() => { break; }
-        }
-
-        log::debug!("Running switchover check");
-
-        let timeout = app.info.user_config.node_offline_timeout;
-
-        match app
-            .db
-            .write_tx(move |tx| db::buddy_group::check_and_swap_buddies(tx, timeout))
-            .await
-        {
-            Ok(swapped) => {
-                if !swapped.is_empty() {
-                    log::warn!(
-                        "A switchover was triggered for the following buddy groups: {swapped:?}"
-                    );
-
-                    app.send_notifications(
-                        &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                        &RefreshTargetStates { ack_id: "".into() },
-                    )
-                    .await;
-                }
-            }
-            Err(err) => log::error!("Switchover check failed: {err:#}"),
         }
     }
 
     log::debug!("Timed task check_for_switchover exited");
+}
+
+async fn check_switchover(app: &impl App, offline_timeout: Duration) {
+    log::debug!("Running switchover check");
+
+    match app
+        .write_tx(move |tx| db::buddy_group::check_and_swap_buddies(tx, offline_timeout))
+        .await
+    {
+        Ok(switched) => {
+            if !switched.is_empty() {
+                log::warn!(
+                    "A switchover was triggered for the following buddy groups: {switched:?}"
+                );
+
+                app.send_notifications(
+                    &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                    &RefreshTargetStates { ack_id: "".into() },
+                )
+                .await;
+            }
+        }
+        Err(err) => log::error!("Switchover check failed: {err:#}"),
+    }
 }
 
 #[cfg(test)]
