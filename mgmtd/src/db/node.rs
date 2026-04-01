@@ -1,72 +1,6 @@
 //! Functions for node management
 
 use super::*;
-use std::time::Duration;
-
-/// Represents a node entry.
-#[derive(Clone, Debug)]
-pub(crate) struct Node {
-    pub uid: Uid,
-    pub id: NodeId,
-    pub node_type: NodeType,
-    pub alias: String,
-    pub port: Port,
-}
-
-impl Node {
-    fn from_row(row: &Row) -> rusqlite::Result<Self> {
-        Ok(Node {
-            uid: row.get(0)?,
-            id: row.get(1)?,
-            node_type: NodeType::from_row(row, 2)?,
-            alias: row.get(3)?,
-            port: row.get(4)?,
-        })
-    }
-}
-
-/// Retrieve a list of nodes filtered by node type.
-pub(crate) fn get_with_type(tx: &Transaction, node_type: NodeType) -> Result<Vec<Node>> {
-    Ok(tx.query_map_collect(
-        sql!(
-            "SELECT node_uid, node_id, node_type, alias, port
-            FROM nodes_ext
-            WHERE node_type = ?1"
-        ),
-        [node_type.sql_variant()],
-        Node::from_row,
-    )?)
-}
-
-/// Retrieve a node by its alias.
-pub(crate) fn get_by_alias(tx: &Transaction, alias: &str) -> Result<Node> {
-    Ok(tx.query_row(
-        sql!(
-            "SELECT node_uid, node_id, node_type, alias, port
-            FROM nodes_ext
-            WHERE alias = ?1"
-        ),
-        [alias],
-        Node::from_row,
-    )?)
-}
-
-/// Delete client nodes with a last contact time bigger than `timeout`.
-///
-/// # Return value
-/// Returns the number of deleted clients.
-pub(crate) fn delete_stale_clients(tx: &Transaction, timeout: Duration) -> Result<usize> {
-    let affected = {
-        let mut stmt = tx.prepare_cached(sql!(
-            "DELETE FROM nodes
-            WHERE DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
-            AND node_type = ?2"
-        ))?;
-        stmt.execute(params![timeout.as_secs(), NodeType::Client.sql_variant()])?
-    };
-
-    Ok(affected)
-}
 
 /// Inserts a node into the database. If node_id is 0, a new ID is chosen automatically.
 pub(crate) fn insert(
@@ -208,7 +142,14 @@ mod test {
     #[test]
     fn insert_get_delete() {
         with_test_data(|tx| {
-            assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
+            let meta_count = || {
+                tx.query_one("SELECT COUNT(*) FROM meta_nodes", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap()
+            };
+
+            assert_eq!(meta_count(), 5);
             let node = insert(
                 tx,
                 1234,
@@ -233,58 +174,11 @@ mod test {
                 10000,
             )
             .unwrap_err();
-            assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
+            assert_eq!(meta_count(), 6);
 
             delete(tx, &node.uid).unwrap();
             delete(tx, &node.uid).unwrap_err();
-            assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
+            assert_eq!(meta_count(), 5);
         });
-    }
-
-    #[test]
-    fn query_by_alias() {
-        with_test_data(|tx| {
-            insert(
-                tx,
-                11,
-                Some("node_1".try_into().unwrap()),
-                NodeType::Meta,
-                10000,
-            )
-            .unwrap();
-            insert(
-                tx,
-                12,
-                Some("node_2".try_into().unwrap()),
-                NodeType::Storage,
-                10000,
-            )
-            .unwrap();
-            assert_eq!(11, get_by_alias(tx, "node_1").unwrap().id);
-        })
-    }
-
-    #[test]
-    fn delete_stale_clients() {
-        with_test_data(|tx| {
-            let deleted = super::delete_stale_clients(tx, Duration::from_secs(99999)).unwrap();
-            assert_eq!(0, deleted);
-
-            tx.execute(
-                r#"
-                UPDATE nodes
-                SET last_contact = DATETIME("now", "-1 hour")
-                WHERE node_uid IN (103001, 103002)
-                "#,
-                [],
-            )
-            .unwrap();
-
-            let deleted = super::delete_stale_clients(tx, Duration::from_secs(100)).unwrap();
-            assert_eq!(2, deleted);
-
-            let clients = node::get_with_type(tx, NodeType::Client).unwrap();
-            assert_eq!(2, clients.len());
-        })
     }
 }

@@ -5,9 +5,13 @@ use crate::app::RuntimeApp;
 use crate::db::{self};
 use crate::license::LicensedFeature;
 use crate::quota::update_and_distribute;
+use crate::types::SqliteEnumExt;
+use rusqlite::params;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::run_state::RunStateHandle;
 use shared::types::NodeType;
+use sqlite_check::sql;
+use std::time::Duration;
 use tokio::time::{MissedTickBehavior, sleep};
 
 /// Starts the timed tasks.
@@ -15,7 +19,7 @@ pub(crate) fn start_tasks(app: RuntimeApp, run_state: RunStateHandle) {
     // TODO send out timer based RefreshTargetStates notification if a reachability
     // state changed ?
 
-    tokio::spawn(delete_stale_clients(app.clone(), run_state.clone()));
+    tokio::spawn(delete_stale_clients_loop(app.clone(), run_state.clone()));
     tokio::spawn(switchover(app.clone(), run_state.clone()));
 
     if app.info.user_config.quota_enable {
@@ -30,32 +34,41 @@ pub(crate) fn start_tasks(app: RuntimeApp, run_state: RunStateHandle) {
 }
 
 /// Deletes client nodes from the database which haven't responded for the configured time.
-async fn delete_stale_clients(app: RuntimeApp, mut run_state: RunStateHandle) {
-    let timeout = app.info.user_config.client_auto_remove_timeout;
+async fn delete_stale_clients_loop(app: impl App, mut run_state: RunStateHandle) {
+    let timeout = app.static_info().user_config.client_auto_remove_timeout;
 
     loop {
         tokio::select! {
-            _ = sleep(timeout) => {}
+            _ = sleep(timeout) => { delete_stale_clients(&app, timeout).await }
             _ = run_state.wait_for_pre_shutdown() => { break; }
-        }
-
-        log::debug!("Running stale client deleter");
-
-        match app
-            .db
-            .write_tx(move |tx| db::node::delete_stale_clients(tx, timeout))
-            .await
-        {
-            Ok(affected) => {
-                if affected > 0 {
-                    log::info!("Deleted {affected} stale clients");
-                }
-            }
-            Err(err) => log::error!("Deleting stale clients failed: {err:#}"),
         }
     }
 
     log::debug!("Timed task delete_stale_clients exited");
+}
+
+async fn delete_stale_clients(app: &impl App, timeout: Duration) {
+    log::debug!("Running stale client deleter");
+
+    match app
+        .write_tx(move |tx| {
+            let mut stmt = tx.prepare_cached(sql!(
+                "DELETE FROM nodes
+                WHERE DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
+                AND node_type = ?2"
+            ))?;
+            stmt.execute(params![timeout.as_secs(), NodeType::Client.sql_variant()])
+                .map_err(|err| err.into())
+        })
+        .await
+    {
+        Ok(affected) => {
+            if affected > 0 {
+                log::info!("Deleted {affected} stale clients");
+            }
+        }
+        Err(err) => log::error!("Deleting stale clients failed: {err:#}"),
+    }
 }
 
 /// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
@@ -126,4 +139,36 @@ async fn switchover(app: RuntimeApp, mut run_state: RunStateHandle) {
     }
 
     log::debug!("Timed task check_for_switchover exited");
+}
+
+#[cfg(test)]
+mod test {
+    use crate::App;
+    use crate::app::test::*;
+    use crate::types::SqliteEnumExt;
+    use shared::types::NodeType;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn delete_stale_clients() {
+        let app = TestApp::new().await;
+
+        super::delete_stale_clients(&app, Duration::from_secs(10)).await;
+        assert_eq_db!(app, "SELECT COUNT(*) FROM client_nodes", [], 4);
+
+        app.write_tx(|tx| {
+            tx.execute(
+                "UPDATE nodes SET last_contact = DATETIME('now', '-' || 2 || ' seconds')
+                WHERE node_type = ?1",
+                [NodeType::Client.sql_variant()],
+            )
+            .unwrap();
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        super::delete_stale_clients(&app, Duration::from_secs(1)).await;
+        assert_eq_db!(app, "SELECT COUNT(*) FROM client_nodes", [], 0);
+    }
 }

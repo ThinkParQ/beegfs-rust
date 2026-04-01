@@ -48,33 +48,37 @@ pub(crate) async fn set_alias(
 
     // If the entity is a node, notify all nodes about the changed alias
     if entity_type == EntityType::Node {
-        let (entity, node, nic_list) = app
+        let heartbeat_msg = app
             .write_tx(move |tx| {
                 let entity = update_alias_fn(tx, &new_alias)?;
 
-                let node = db::node::get_by_alias(tx, new_alias.as_ref())?;
+                let port = tx.query_one(
+                    sql!("SELECT port FROM nodes WHERE node_uid = ?1"),
+                    params![entity.uid],
+                    |row| row.get(0),
+                )?;
                 let nic_list = db::node_nic::get_with_node(tx, &entity.uid)?;
 
-                Ok((entity, node, nic_list))
+                Ok(Heartbeat {
+                    instance_version: 0,
+                    nic_list_version: 0,
+                    node_type: entity.node_type(),
+                    node_alias: new_alias.to_string().into_bytes(),
+                    ack_id: "".into(),
+                    node_num_id: entity.num_id(),
+                    root_num_id: 0,
+                    is_root_mirrored: 0,
+                    port,
+                    port_tcp_unused: port,
+                    nic_list: map_bee_msg_nics(nic_list).collect(),
+                    machine_uuid: vec![],
+                })
             })
             .await?;
 
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-            &Heartbeat {
-                instance_version: 0,
-                nic_list_version: 0,
-                node_type: entity.node_type(),
-                node_alias: node.alias.into_bytes(),
-                ack_id: "".into(),
-                node_num_id: entity.num_id(),
-                root_num_id: 0,
-                is_root_mirrored: 0,
-                port: node.port,
-                port_tcp_unused: node.port,
-                nic_list: map_bee_msg_nics(nic_list).collect(),
-                machine_uuid: vec![],
-            },
+            &heartbeat_msg,
         )
         .await;
 
