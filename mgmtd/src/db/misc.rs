@@ -156,7 +156,7 @@ mod test {
             super::enable_metadata_mirroring(tx).unwrap();
 
             let meta_root = super::get_meta_root(tx).unwrap();
-            assert_eq!(MetaRoot::Mirrored(1), meta_root);
+            assert_eq!(MetaRoot::Mirrored(1.into()), meta_root);
 
             super::enable_metadata_mirroring(tx).unwrap_err();
         })

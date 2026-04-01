@@ -219,7 +219,7 @@ client version < 8.0)"
             root_num_id: match meta_root {
                 MetaRoot::Unknown => 0,
                 MetaRoot::Normal(node_id, _) => node_id,
-                MetaRoot::Mirrored(group_id) => group_id.into(),
+                MetaRoot::Mirrored(ref group_id) => group_id.raw().into(),
             },
             is_root_mirrored: match meta_root {
                 MetaRoot::Unknown | MetaRoot::Normal(_, _) => 0,

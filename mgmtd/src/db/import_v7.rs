@@ -242,7 +242,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             .split_once('=')
             .ok_or_else(|| anyhow!("invalid line '{l}'"))?;
 
-        let g = BuddyGroupId::from_str_radix(g.trim(), 16)?;
+        let g = u16::from_str_radix(g.trim(), 16)?.into();
         let (p_id, s_id) = ts
             .trim()
             .split_once(',')

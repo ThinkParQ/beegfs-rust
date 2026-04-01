@@ -148,12 +148,12 @@ impl HandleWithResponse for GetStoragePools {
 
                 // Only collect buddy groups belonging to the current pool
                 for group in f_buddy_groups {
-                    buddy_group_vec.push(group.id);
+                    buddy_group_vec.push(group.id.into());
 
                     let cp = cp_buddy_groups_calc
                         .cap_pool(group.free_space(), group.free_inodes())
                         .bee_msg_vec_index();
-                    buddy_group_cap_pools[cp].push(group.id);
+                    buddy_group_cap_pools[cp].push(group.id.into());
                 }
 
                 Ok(StoragePool {

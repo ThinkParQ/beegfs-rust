@@ -15,6 +15,8 @@ mod uid;
 pub use uid::*;
 mod target_id;
 pub use target_id::*;
+mod buddy_group_id;
+pub use buddy_group_id::*;
 
 // Type aliases for convenience. Used by BeeGFS messaging and the management.
 //
@@ -22,7 +24,6 @@ pub use target_id::*;
 // do not. It still has to be checked for each BeeGFS message individually which exact type is
 // needed for serialization.
 
-pub type BuddyGroupId = u16;
 pub type Port = u16;
 pub type NodeId = u32;
 pub type PoolId = u16;

@@ -16,7 +16,7 @@ pub(crate) fn validate_ids(
         sql!("SELECT COUNT(*) FROM buddy_groups WHERE node_type = ?1 AND group_id IN rarray(?2)"),
         params![
             node_type.sql_variant(),
-            &rarray_param(group_ids.iter().copied()),
+            &rarray_param(group_ids.iter().cloned()),
         ],
         |row| row.get(0),
     )?;
@@ -49,13 +49,14 @@ pub(crate) fn insert(
     p_target_id: TargetId,
     s_target_id: TargetId,
 ) -> Result<(Uid, BuddyGroupId)> {
-    let group_id = if group_id == 0 {
+    let group_id = if group_id.is_zero() {
         misc::find_new_id(tx, "buddy_groups", "group_id", node_type.into(), 1..=0xFFFF)?
+            .try_into()?
     } else if try_resolve_num_id(
         tx,
         EntityType::BuddyGroup,
         node_type.into(),
-        group_id.into(),
+        group_id.raw().into(),
     )?
     .is_some()
     {
@@ -112,7 +113,7 @@ pub(crate) fn insert(
     let alias = if let Some(alias) = alias {
         alias
     } else {
-        format!("buddy_group_{}_{}", node_type.user_str(), group_id).try_into()?
+        format!("buddy_group_{}_{}", node_type.user_str(), group_id.raw()).try_into()?
     };
 
     // Insert entity
@@ -164,7 +165,7 @@ pub(crate) fn update_storage_pools(
         ),
         params![
             new_pool_id,
-            rarray_param(group_ids.iter().copied()),
+            rarray_param(group_ids.iter().cloned()),
             NodeType::Storage.sql_variant()
         ],
     )?;
@@ -231,7 +232,7 @@ pub(crate) fn check_and_swap_buddies(
 /// # Return value
 /// Returns the UIDs of the primary and the secondary node which own the primary and secondary
 /// target of the given group.
-pub(crate) fn prepare_storage_deletion(tx: &Transaction, id: BuddyGroupId) -> Result<(Uid, Uid)> {
+pub(crate) fn prepare_storage_deletion(tx: &Transaction, id: &BuddyGroupId) -> Result<(Uid, Uid)> {
     if tx.query_row(sql!("SELECT COUNT(*) FROM client_nodes"), [], |row| {
         row.get::<_, i64>(0)
     })? > 0
@@ -260,7 +261,7 @@ pub(crate) fn prepare_storage_deletion(tx: &Transaction, id: BuddyGroupId) -> Re
 ///
 /// This expects that the nodes owning the affected targets have already been notified and the
 /// groups deleted.
-pub(crate) fn delete_storage(tx: &Transaction, group_id: BuddyGroupId) -> Result<()> {
+pub(crate) fn delete_storage(tx: &Transaction, group_id: &BuddyGroupId) -> Result<()> {
     let affected = tx.execute(
         sql!("DELETE FROM buddy_groups WHERE group_id = ?1 AND node_type = ?2"),
         params![group_id, NodeType::Storage.sql_variant()],
@@ -293,7 +294,7 @@ mod test {
         with_test_data(|tx| {
             super::insert(
                 tx,
-                1234,
+                1234.into(),
                 Some("g1".try_into().unwrap()),
                 NodeTypeServer::Meta,
                 3.into(),
@@ -302,7 +303,7 @@ mod test {
             .unwrap();
             super::insert(
                 tx,
-                1,
+                1.into(),
                 Some("g2".try_into().unwrap()),
                 NodeTypeServer::Storage,
                 3.into(),
@@ -315,7 +316,7 @@ mod test {
 
             assert_eq!(2, meta_groups.len());
             assert_eq!(2, storage_groups.len());
-            assert!(meta_groups.iter().any(|e| e.0 == 1234));
+            assert!(meta_groups.iter().any(|e| e.0.raw() == 1234));
         })
     }
 
@@ -323,12 +324,15 @@ mod test {
     #[test]
     fn update_storage_pool() {
         with_test_data(|tx| {
-            super::update_storage_pools(tx, 2, &[1]).unwrap();
-            super::update_storage_pools(tx, 99, &[1]).unwrap_err();
+            super::update_storage_pools(tx, 2, &[1.into()]).unwrap();
+            super::update_storage_pools(tx, 99, &[1.into()]).unwrap_err();
 
             let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-            assert_eq!(Some(2), storage_groups.iter().find(|e| e.0 == 1).unwrap().3);
+            assert_eq!(
+                Some(2),
+                storage_groups.iter().find(|e| e.0.raw() == 1).unwrap().3
+            );
         })
     }
 
@@ -372,12 +376,12 @@ mod test {
             assert!(
                 swaps
                     .iter()
-                    .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Meta)
+                    .any(|e| e.0.raw() == 1 && e.1 == NodeTypeServer::Meta)
             );
             assert!(
                 swaps
                     .iter()
-                    .any(|e| e.0 == 1 && e.1 == NodeTypeServer::Storage)
+                    .any(|e| e.0.raw() == 1 && e.1 == NodeTypeServer::Storage)
             );
 
             ensure_swapped_buddies(tx);
@@ -436,7 +440,7 @@ mod test {
     #[test]
     fn mounted_clients_fail_prepare_storage_deletion() {
         with_test_data(|tx| {
-            super::prepare_storage_deletion(tx, 1).unwrap_err();
+            super::prepare_storage_deletion(tx, &1.into()).unwrap_err();
         })
     }
 
@@ -449,7 +453,7 @@ mod test {
             )
             .unwrap();
 
-            let res = super::prepare_storage_deletion(tx, 1).unwrap();
+            let res = super::prepare_storage_deletion(tx, &1.into()).unwrap();
 
             assert_eq!((Uid::from(102001i64), Uid::from(102002i64)), res);
         })
@@ -458,7 +462,7 @@ mod test {
     #[test]
     fn delete_storage() {
         with_test_data(|tx| {
-            super::delete_storage(tx, 1).unwrap();
+            super::delete_storage(tx, &1.into()).unwrap();
 
             let groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
             assert_eq!(1, groups.len());

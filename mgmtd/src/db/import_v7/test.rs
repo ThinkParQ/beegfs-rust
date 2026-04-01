@@ -136,9 +136,9 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (NodeType::Meta, 1, 1.into(), 2.into(), None),
-            (NodeType::Storage, 1, 1.into(), 4.into(), Some(1)),
-            (NodeType::Storage, 2, 3.into(), 6.into(), Some(2)),
+            (NodeType::Meta, 1.into(), 1.into(), 2.into(), None),
+            (NodeType::Storage, 1.into(), 1.into(), 4.into(), Some(1)),
+            (NodeType::Storage, 2.into(), 3.into(), 6.into(), Some(2)),
         ]
     );
 
@@ -151,7 +151,7 @@ fn import_v7_inner(base_path: &Path) {
         )
         .unwrap();
 
-    assert_eq!(res, (None, Some(1)));
+    assert_eq!(res, (None, Some(1.into())));
 
     // Check storage pools
     let res: Vec<(PoolId, String)> = tx

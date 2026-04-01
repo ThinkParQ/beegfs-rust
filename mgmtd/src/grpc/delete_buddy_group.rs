@@ -27,7 +27,7 @@ pub(crate) async fn delete_buddy_group(
             }
 
             let (p_node_uid, s_node_uid) =
-                db::buddy_group::prepare_storage_deletion(&tx, group.num_id().try_into()?)?;
+                db::buddy_group::prepare_storage_deletion(&tx, &group.num_id().try_into()?)?;
 
             if execute {
                 tx.commit()?;
@@ -40,7 +40,7 @@ pub(crate) async fn delete_buddy_group(
     let group_id: BuddyGroupId = group.num_id().try_into()?;
     let remove_bee_msg = RemoveBuddyGroup {
         node_type: NodeType::Storage,
-        group_id,
+        group_id: group_id.clone(),
         check_only: if execute { 0 } else { 1 },
         force: 0,
     };
@@ -61,7 +61,7 @@ Primary result: {:?}, Secondary result: {:?}",
     app.db_conn(move |conn| {
         let tx = conn.transaction()?;
 
-        db::buddy_group::delete_storage(&tx, group_id)?;
+        db::buddy_group::delete_storage(&tx, &group_id)?;
 
         if execute {
             tx.commit()?;
