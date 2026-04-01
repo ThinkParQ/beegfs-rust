@@ -115,10 +115,15 @@ pub(crate) fn update_consistency_states(
 /// Change the storage pool of the given targets IDs to a new one.
 pub(crate) fn update_storage_pools(
     tx: &Transaction,
-    new_pool_id: PoolId,
+    new_pool_id: &PoolId,
     target_ids: &[TargetId],
 ) -> Result<()> {
-    let _ = resolve_num_id(tx, EntityType::Pool, NodeType::Storage, new_pool_id.into())?;
+    let _ = resolve_num_id(
+        tx,
+        EntityType::Pool,
+        NodeType::Storage,
+        new_pool_id.raw().into(),
+    )?;
 
     validate_ids(tx, target_ids, NodeTypeServer::Storage)?;
 

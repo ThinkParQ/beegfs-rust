@@ -323,10 +323,10 @@ fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
                 [alias.as_ref()],
             )?;
         } else {
-            storage_pool::insert(tx, pool.id, &alias)?;
+            storage_pool::insert(tx, pool.id.clone(), &alias)?;
         }
 
-        target::update_storage_pools(tx, pool.id, &pool.targets)?;
+        target::update_storage_pools(tx, &pool.id, &pool.targets)?;
         buddy_group::update_storage_pools(tx, pool.id, &pool.buddy_groups)?;
 
         used_aliases.push(alias);
@@ -368,10 +368,11 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
             .file_name()
             .into_string()
             .map_err(|s| anyhow!("{s:?} is not a valid storage pool directory"))?
-            .parse()
-            .map_err(|_| anyhow!("{:?} is not a valid storage pool directory", e.file_name()))?;
+            .parse::<u16>()
+            .map_err(|_| anyhow!("{:?} is not a valid storage pool directory", e.file_name()))?
+            .into();
 
-        quota_default_limits(tx, &e.path().join("quotaDefaultLimits.store"), pool_id)
+        quota_default_limits(tx, &e.path().join("quotaDefaultLimits.store"), &pool_id)
             .with_context(|| {
                 format!("quota default limits ({pool_id}/quotaDefaultLimits.store)")
             })?;
@@ -379,7 +380,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
         quota_limits(
             tx,
             &e.path().join("quotaUserLimits.store"),
-            pool_id,
+            &pool_id,
             QuotaIdType::User,
         )
         .with_context(|| format!("quota user limits ({pool_id}/quotaUserLimits.store)"))?;
@@ -387,7 +388,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
         quota_limits(
             tx,
             &e.path().join("quotaGroupLimits.store"),
-            pool_id,
+            &pool_id,
             QuotaIdType::Group,
         )
         .with_context(|| format!("quota group limits ({pool_id}/quotaGroupLimits.store)"))?;
@@ -400,7 +401,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
 }
 
 /// Imports the default quota limits
-fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<()> {
+fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: &PoolId) -> Result<()> {
     // If the file is missing, skip it
     let s = match std::fs::read(f) {
         Ok(s) => s,
@@ -487,7 +488,7 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
 fn quota_limits(
     tx: &Transaction,
     f: &Path,
-    pool_id: PoolId,
+    pool_id: &PoolId,
     quota_id_type: QuotaIdType,
 ) -> Result<()> {
     // If the file is missing, skip it

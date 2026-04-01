@@ -18,7 +18,7 @@ pub(crate) async fn set_default_quota_limits(
     fn update(
         tx: &Transaction,
         limit: i64,
-        pool_id: PoolId,
+        pool_id: &PoolId,
         id_type: QuotaIdType,
         quota_type: QuotaType,
     ) -> Result<()> {
@@ -57,16 +57,16 @@ pub(crate) async fn set_default_quota_limits(
         let pool_id: PoolId = pool.num_id().try_into()?;
 
         if let Some(l) = req.user_space_limit {
-            update(tx, l, pool_id, QuotaIdType::User, QuotaType::Space)?;
+            update(tx, l, &pool_id, QuotaIdType::User, QuotaType::Space)?;
         }
         if let Some(l) = req.user_inode_limit {
-            update(tx, l, pool_id, QuotaIdType::User, QuotaType::Inode)?;
+            update(tx, l, &pool_id, QuotaIdType::User, QuotaType::Inode)?;
         }
         if let Some(l) = req.group_space_limit {
-            update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Space)?;
+            update(tx, l, &pool_id, QuotaIdType::Group, QuotaType::Space)?;
         }
         if let Some(l) = req.group_inode_limit {
-            update(tx, l, pool_id, QuotaIdType::Group, QuotaType::Inode)?;
+            update(tx, l, &pool_id, QuotaIdType::Group, QuotaType::Inode)?;
         }
 
         Ok(())

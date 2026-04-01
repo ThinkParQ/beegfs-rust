@@ -14,7 +14,12 @@ pub(crate) async fn assign_pool(
     let pool = app
         .write_tx(move |tx| {
             let pool = pool.resolve(tx, EntityType::Pool)?;
-            do_assign(tx, pool.num_id().try_into()?, req.targets, req.buddy_groups)?;
+            do_assign(
+                tx,
+                &pool.num_id().try_into()?,
+                req.targets,
+                req.buddy_groups,
+            )?;
             Ok(pool)
         })
         .await?;
@@ -35,7 +40,7 @@ pub(crate) async fn assign_pool(
 /// Do the actual assign work
 pub(super) fn do_assign(
     tx: &Transaction,
-    pool_id: PoolId,
+    pool_id: &PoolId,
     targets: Vec<pb::EntityIdSet>,
     groups: Vec<pb::EntityIdSet>,
 ) -> Result<()> {

@@ -155,7 +155,12 @@ pub(crate) fn update_storage_pools(
     new_pool_id: PoolId,
     group_ids: &[BuddyGroupId],
 ) -> Result<()> {
-    let _ = resolve_num_id(tx, EntityType::Pool, NodeType::Storage, new_pool_id.into())?;
+    let _ = resolve_num_id(
+        tx,
+        EntityType::Pool,
+        NodeType::Storage,
+        new_pool_id.raw().into(),
+    )?;
 
     validate_ids(tx, group_ids, NodeTypeServer::Storage)?;
 
@@ -324,13 +329,13 @@ mod test {
     #[test]
     fn update_storage_pool() {
         with_test_data(|tx| {
-            super::update_storage_pools(tx, 2, &[1.into()]).unwrap();
-            super::update_storage_pools(tx, 99, &[1.into()]).unwrap_err();
+            super::update_storage_pools(tx, 2.into(), &[1.into()]).unwrap();
+            super::update_storage_pools(tx, 99.into(), &[1.into()]).unwrap_err();
 
             let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
             assert_eq!(
-                Some(2),
+                Some(2.into()),
                 storage_groups.iter().find(|e| e.0.raw() == 1).unwrap().3
             );
         })

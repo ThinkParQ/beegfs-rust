@@ -4,9 +4,15 @@ use super::*;
 
 /// Inserts a storage pool entry and assigns the given targets and buddy groups to the new pool.
 pub(crate) fn insert(tx: &Transaction, pool_id: PoolId, alias: &Alias) -> Result<(Uid, PoolId)> {
-    let pool_id = if pool_id == 0 {
-        misc::find_new_id(tx, "pools", "pool_id", NodeType::Storage, 1..=0xFFFF)?
-    } else if try_resolve_num_id(tx, EntityType::Pool, NodeType::Storage, pool_id.into())?.is_some()
+    let pool_id = if pool_id.is_zero() {
+        misc::find_new_id(tx, "pools", "pool_id", NodeType::Storage, 1..=0xFFFF)?.try_into()?
+    } else if try_resolve_num_id(
+        tx,
+        EntityType::Pool,
+        NodeType::Storage,
+        pool_id.raw().into(),
+    )?
+    .is_some()
     {
         bail!(TypedError::value_exists("numeric pool id", pool_id));
     } else {

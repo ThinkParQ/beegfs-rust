@@ -117,14 +117,22 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
             let resp_users: Result<GetQuotaInfoResp> = app2
                 .request(
                     &target.node_uid,
-                    &GetQuotaInfo::with_user_ids(user_ids2, target.id.clone(), target.pool_id),
+                    &GetQuotaInfo::with_user_ids(
+                        user_ids2,
+                        target.id.clone(),
+                        target.pool_id.clone(),
+                    ),
                 )
                 .await;
 
             let resp_groups: Result<GetQuotaInfoResp> = app2
                 .request(
                     &target.node_uid,
-                    &GetQuotaInfo::with_group_ids(group_ids2, target.id.clone(), target.pool_id),
+                    &GetQuotaInfo::with_group_ids(
+                        group_ids2,
+                        target.id.clone(),
+                        target.pool_id.clone(),
+                    ),
                 )
                 .await;
 
@@ -223,7 +231,7 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
 
     let (msges, nodes) = app
         .read_tx(|tx| {
-            let pools: Vec<_> =
+            let pools: Vec<PoolId> =
                 tx.query_map_collect(sql!("SELECT pool_id FROM pools"), [], |row| row.get(0))?;
 
             // Prepare empty messages. It is important to always send a message for each (PoolId,
@@ -234,7 +242,7 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
                 for id_type in [QuotaIdType::User, QuotaIdType::Group] {
                     for quota_type in [QuotaType::Space, QuotaType::Inode] {
                         msges.push(SetExceededQuota {
-                            pool_id,
+                            pool_id: pool_id.clone(),
                             id_type,
                             quota_type,
                             exceeded_quota_ids: vec![],
@@ -506,7 +514,7 @@ mod test {
         app.set_request_handler(move |req| {
             let r = req.downcast_ref::<SetExceededQuota>().unwrap();
 
-            match (r.pool_id, r.id_type, r.quota_type) {
+            match (r.pool_id.raw(), r.id_type, r.quota_type) {
                 (1, QuotaIdType::User, QuotaType::Space) => {
                     assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10])
                 }

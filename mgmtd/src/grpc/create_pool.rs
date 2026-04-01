@@ -20,7 +20,7 @@ pub(crate) async fn create_pool(
     let (pool_uid, alias, pool_id) = app
         .write_tx(move |tx| {
             let (pool_uid, pool_id) = db::storage_pool::insert(tx, num_id, &alias)?;
-            do_assign(tx, pool_id, req.targets, req.buddy_groups)?;
+            do_assign(tx, &pool_id, req.targets, req.buddy_groups)?;
             Ok((pool_uid, alias, pool_id))
         })
         .await?;
@@ -30,7 +30,7 @@ pub(crate) async fn create_pool(
         alias,
         legacy_id: LegacyId {
             node_type: NodeType::Storage,
-            num_id: pool_id.into(),
+            num_id: pool_id.raw().into(),
         },
     };
 
