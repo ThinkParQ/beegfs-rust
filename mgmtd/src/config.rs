@@ -71,7 +71,7 @@ macro_rules! generate_structs {
         /// be set by using a config file (mainly quota and capacity poool related).
         #[derive(Debug, Default, Parser, Deserialize)]
         #[command(
-            version = version_str(),
+            version = crate::version_str(),
             rename_all = "kebab-case",
         )]
         #[serde(default, rename_all = "kebab-case", deny_unknown_fields)]
@@ -537,14 +537,6 @@ pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
     }
 
     Ok((config, info_log))
-}
-
-/// Constructs a version str from the `VERSION` environment variable at compile time
-const fn version_str() -> &'static str {
-    match option_env!("VERSION") {
-        Some(version) => version,
-        None => "undefined",
-    }
 }
 
 // Custom types for user input

@@ -59,6 +59,8 @@ fn inner_main() -> Result<()> {
     }
     .expect("Logger initialization failed");
 
+    log::info!("BeeGFS version: {}", mgmtd::version_str());
+
     // late log info from load_and_parse
     for l in info_log {
         log::info!(target: "mgmtd::config", "{l}");

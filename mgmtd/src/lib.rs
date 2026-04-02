@@ -308,3 +308,11 @@ impl RunControl {
         }
     }
 }
+
+/// Constructs a version str from the `VERSION` environment variable at compile time
+pub const fn version_str() -> &'static str {
+    match option_env!("VERSION") {
+        Some(version) => version,
+        None => "undefined",
+    }
+}
