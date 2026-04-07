@@ -100,16 +100,16 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (NodeType::Meta, 1, 1, None),
-            (NodeType::Meta, 2, 2, None),
-            (NodeType::Meta, 3, 3, None),
-            (NodeType::Meta, 4, 4, None),
-            (NodeType::Storage, 1, 1, Some(1)),
-            (NodeType::Storage, 2, 1, Some(2)),
-            (NodeType::Storage, 3, 1, Some(2)),
-            (NodeType::Storage, 4, 2, Some(1)),
-            (NodeType::Storage, 5, 2, Some(1)),
-            (NodeType::Storage, 6, 2, Some(2)),
+            (NodeType::Meta, 1.into(), 1, None),
+            (NodeType::Meta, 2.into(), 2, None),
+            (NodeType::Meta, 3.into(), 3, None),
+            (NodeType::Meta, 4.into(), 4, None),
+            (NodeType::Storage, 1.into(), 1, Some(1.into())),
+            (NodeType::Storage, 2.into(), 1, Some(2.into())),
+            (NodeType::Storage, 3.into(), 1, Some(2.into())),
+            (NodeType::Storage, 4.into(), 2, Some(1.into())),
+            (NodeType::Storage, 5.into(), 2, Some(1.into())),
+            (NodeType::Storage, 6.into(), 2, Some(2.into())),
         ]
     );
 
@@ -136,9 +136,21 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (NodeType::Meta, 1, 1, 2, None),
-            (NodeType::Storage, 1, 1, 4, Some(1)),
-            (NodeType::Storage, 2, 3, 6, Some(2)),
+            (NodeType::Meta, 1.into(), 1.into(), 2.into(), None),
+            (
+                NodeType::Storage,
+                1.into(),
+                1.into(),
+                4.into(),
+                Some(1.into())
+            ),
+            (
+                NodeType::Storage,
+                2.into(),
+                3.into(),
+                6.into(),
+                Some(2.into())
+            ),
         ]
     );
 
@@ -151,7 +163,7 @@ fn import_v7_inner(base_path: &Path) {
         )
         .unwrap();
 
-    assert_eq!(res, (None, Some(1)));
+    assert_eq!(res, (None, Some(1.into())));
 
     // Check storage pools
     let res: Vec<(PoolId, String)> = tx
@@ -162,7 +174,13 @@ fn import_v7_inner(base_path: &Path) {
         )
         .unwrap();
 
-    assert_eq!(res, &[(1, "Default".to_string()), (2, "pool2".to_string())]);
+    assert_eq!(
+        res,
+        &[
+            (1.into(), "Default".to_string()),
+            (2.into(), "pool2".to_string())
+        ]
+    );
 
     // Check quota default limits
     let res: Vec<(QuotaType, QuotaIdType, PoolId, u64)> = tx
@@ -186,14 +204,14 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (QuotaType::Space, QuotaIdType::User, 1, 1000),
-            (QuotaType::Space, QuotaIdType::User, 2, 2000),
-            (QuotaType::Space, QuotaIdType::Group, 1, 0),
-            (QuotaType::Space, QuotaIdType::Group, 2, 0),
-            (QuotaType::Inode, QuotaIdType::User, 1, 100),
-            (QuotaType::Inode, QuotaIdType::User, 2, 200),
-            (QuotaType::Inode, QuotaIdType::Group, 1, 0),
-            (QuotaType::Inode, QuotaIdType::Group, 2, 0),
+            (QuotaType::Space, QuotaIdType::User, 1.into(), 1000),
+            (QuotaType::Space, QuotaIdType::User, 2.into(), 2000),
+            (QuotaType::Space, QuotaIdType::Group, 1.into(), 0),
+            (QuotaType::Space, QuotaIdType::Group, 2.into(), 0),
+            (QuotaType::Inode, QuotaIdType::User, 1.into(), 100),
+            (QuotaType::Inode, QuotaIdType::User, 2.into(), 200),
+            (QuotaType::Inode, QuotaIdType::Group, 1.into(), 0),
+            (QuotaType::Inode, QuotaIdType::Group, 2.into(), 0),
         ]
     );
 
@@ -220,12 +238,12 @@ fn import_v7_inner(base_path: &Path) {
     assert_eq!(
         res,
         &[
-            (QuotaType::Space, QuotaIdType::User, 0, 1, 1000),
-            (QuotaType::Space, QuotaIdType::User, 0, 2, 2000),
-            (QuotaType::Space, QuotaIdType::User, 5000, 1, 5000),
-            (QuotaType::Inode, QuotaIdType::User, 0, 1, 100),
-            (QuotaType::Inode, QuotaIdType::User, 0, 2, 200),
-            (QuotaType::Inode, QuotaIdType::User, 5000, 1, 500),
+            (QuotaType::Space, QuotaIdType::User, 0, 1.into(), 1000),
+            (QuotaType::Space, QuotaIdType::User, 0, 2.into(), 2000),
+            (QuotaType::Space, QuotaIdType::User, 5000, 1.into(), 5000),
+            (QuotaType::Inode, QuotaIdType::User, 0, 1.into(), 100),
+            (QuotaType::Inode, QuotaIdType::User, 0, 2.into(), 200),
+            (QuotaType::Inode, QuotaIdType::User, 5000, 1.into(), 500),
         ]
     );
 

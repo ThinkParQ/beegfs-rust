@@ -11,6 +11,14 @@ use std::str::FromStr;
 
 mod entity;
 pub use entity::*;
+mod uid;
+pub use uid::*;
+mod target_id;
+pub use target_id::*;
+mod buddy_group_id;
+pub use buddy_group_id::*;
+mod pool_id;
+pub use pool_id::*;
 
 // Type aliases for convenience. Used by BeeGFS messaging and the management.
 //
@@ -18,17 +26,11 @@ pub use entity::*;
 // do not. It still has to be checked for each BeeGFS message individually which exact type is
 // needed for serialization.
 
-pub type Uid = i64;
-pub type TargetId = u16;
-pub type BuddyGroupId = u16;
 pub type Port = u16;
 pub type NodeId = u32;
-pub type PoolId = u16;
 pub type QuotaId = u32;
 
 pub const MGMTD_ID: NodeId = 1;
-pub const MGMTD_UID: Uid = 1;
-pub const DEFAULT_STORAGE_POOL: PoolId = 1;
 
 /// The BeeGFS node type
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]

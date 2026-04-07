@@ -129,7 +129,7 @@ impl App for TestApp {
 
     async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
-        _node_uid: Uid,
+        _node_uid: &Uid,
         msg: &M,
     ) -> Result<R> {
         let mut d = self.data.lock().unwrap();

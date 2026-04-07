@@ -2,13 +2,15 @@ use super::*;
 use crate::ClientPulledStateNotification;
 use crate::bee_msg::dispatch_request;
 use crate::license::LicenseVerifier;
+use crate::types::SqliteEnumExt;
 use anyhow::Result;
 use protobuf::license::GetCertDataResult;
 use rusqlite::{Connection, Transaction};
 use shared::conn::msg_dispatch::{DispatchRequest, Request};
 use shared::conn::outgoing::Pool;
 use shared::run_state::WeakRunStateHandle;
-use sqlite::Connections;
+use sqlite::{Connections, TransactionExt, rarray_param};
+use sqlite_check::sql;
 use std::fmt::Debug;
 use std::ops::Deref;
 use tokio::sync::mpsc;
@@ -113,7 +115,7 @@ impl App for RuntimeApp {
 
     async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
-        node_uid: Uid,
+        node_uid: &Uid,
         msg: &M,
     ) -> Result<R> {
         Pool::request(&self.conn, node_uid, msg).await
@@ -126,22 +128,24 @@ impl App for RuntimeApp {
     ) {
         log::trace!("NOTIFICATION to {node_types:?}: {msg:?}");
 
-        for t in node_types {
-            if let Err(err) = async {
-                let nodes = self
-                    .read_tx(move |tx| crate::db::node::get_with_type(tx, *t))
-                    .await?;
+        if let Err(err) = async {
+            let nodes: Vec<_> = self
+                .read_tx(move |tx| {
+                    Ok(tx.query_map_collect(
+                        sql!("SELECT node_uid, alias FROM nodes_ext WHERE node_type IN rarray(?1)"),
+                        [&rarray_param(node_types.iter().map(|t| t.sql_variant()))],
+                        |row| Ok(Uid::with_info(row.get(0)?, row.get::<_, String>(1)?)),
+                    )?)
+                })
+                .await?;
 
-                self.conn
-                    .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)
-                    .await?;
+            self.conn.broadcast_datagram(nodes, msg).await?;
 
-                Ok(()) as Result<_>
-            }
-            .await
-            {
-                log::error!("Notification could not be sent to all {t} nodes: {err:#}");
-            }
+            Ok(()) as Result<_>
+        }
+        .await
+        {
+            log::error!("Notification could not be sent to all {node_types:?} nodes: {err:#}");
         }
     }
 

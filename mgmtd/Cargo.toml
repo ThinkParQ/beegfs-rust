@@ -18,7 +18,7 @@ path = "src/main.rs"
 sqlite = { path = "../sqlite" }
 
 [dependencies]
-shared = { path = "../shared", features = ["grpc"] }
+shared = { path = "../shared", features = ["grpc", "sqlite"] }
 protobuf = { workspace = true }
 sqlite = { path = "../sqlite" }
 sqlite_check = { path = "../sqlite_check" }

@@ -7,46 +7,52 @@ impl HandleWithResponse for GetNodes {
     type Response = GetNodesResp;
 
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
-        let res = app
+        let (nodes, meta_root) = app
             .read_tx(move |tx| {
                 let node_type = self.node_type;
-                let res = (
-                    db::node::get_with_type(tx, node_type)?,
-                    db::node_nic::get_with_type(tx, node_type)?,
+                let nics = db::node_nic::get_with_type(tx, node_type)?;
+
+                let nodes: Vec<_> = tx.query_map_collect(
+                    sql!(
+                        "SELECT node_uid, port, alias, node_id FROM nodes_ext
+                        WHERE node_type = ?1 ORDER BY node_id ASC"
+                    ),
+                    [node_type.sql_variant()],
+                    |row| {
+                        let uid = row.get(0)?;
+                        let port = row.get(1)?;
+                        Ok(Node {
+                            alias: row.get::<_, String>(2)?.into_bytes(),
+                            nic_list: map_bee_msg_nics(
+                                nics.iter().filter(|e| e.node_uid == uid).cloned(),
+                            )
+                            .collect(),
+                            num_id: row.get(3)?,
+                            port,
+                            _unused_tcp_port: port,
+                            node_type,
+                        })
+                    },
+                )?;
+
+                Ok((
+                    nodes,
                     match self.node_type {
                         shared::types::NodeType::Meta => db::misc::get_meta_root(tx)?,
                         _ => MetaRoot::Unknown,
                     },
-                );
-
-                Ok(res)
+                ))
             })
             .await?;
 
-        let mut nodes: Vec<Node> = res
-            .0
-            .into_iter()
-            .map(|n| Node {
-                alias: n.alias.into_bytes(),
-                num_id: n.id,
-                nic_list: map_bee_msg_nics(res.1.iter().filter(|e| e.node_uid == n.uid).cloned())
-                    .collect(),
-                port: n.port,
-                _unused_tcp_port: n.port,
-                node_type: n.node_type,
-            })
-            .collect();
-
-        nodes.sort_by(|a, b| a.num_id.cmp(&b.num_id));
-
         let resp = GetNodesResp {
             nodes,
-            root_num_id: match res.2 {
+            root_num_id: match meta_root {
                 MetaRoot::Unknown => 0,
                 MetaRoot::Normal(node_id, _) => node_id,
-                MetaRoot::Mirrored(group_id) => group_id.into(),
+                MetaRoot::Mirrored(ref group_id) => group_id.raw().into(),
             },
-            is_root_mirrored: match res.2 {
+            is_root_mirrored: match meta_root {
                 MetaRoot::Unknown => 0,
                 MetaRoot::Normal(_, _) => 0,
                 MetaRoot::Mirrored(_) => 1,

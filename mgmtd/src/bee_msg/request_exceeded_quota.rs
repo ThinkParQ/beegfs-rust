@@ -17,8 +17,8 @@ impl HandleWithResponse for RequestExceededQuota {
             .read_tx(move |tx| {
                 // Quota is calculated per pool, so if a target ID is given, use its assigned pools
                 // ID.
-                let pool_id = if self.pool_id != 0 {
-                    self.pool_id
+                let pool_id = if self.pool_id.raw() != 0 {
+                    self.pool_id.clone()
                 } else {
                     tx.query_row_cached(
                         sql!("SELECT pool_id FROM storage_targets WHERE target_id = ?1"),
@@ -77,8 +77,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Space,
-                    pool_id: 1,
-                    target_id: 0,
+                    pool_id: 1.into(),
+                    target_id: 0.into(),
                 },
                 &[2, 4, 10],
             ),
@@ -86,8 +86,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::Group,
                     quota_type: QuotaType::Space,
-                    pool_id: 1,
-                    target_id: 0,
+                    pool_id: 1.into(),
+                    target_id: 0.into(),
                 },
                 &[2, 4, 11],
             ),
@@ -95,8 +95,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Inode,
-                    pool_id: 1,
-                    target_id: 0,
+                    pool_id: 1.into(),
+                    target_id: 0.into(),
                 },
                 &[2, 4, 12],
             ),
@@ -104,8 +104,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::Group,
                     quota_type: QuotaType::Inode,
-                    pool_id: 1,
-                    target_id: 0,
+                    pool_id: 1.into(),
+                    target_id: 0.into(),
                 },
                 &[2, 4, 13],
             ),
@@ -113,8 +113,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Space,
-                    pool_id: 2,
-                    target_id: 0,
+                    pool_id: 2.into(),
+                    target_id: 0.into(),
                 },
                 &[20],
             ),
@@ -122,8 +122,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::Group,
                     quota_type: QuotaType::Space,
-                    pool_id: 2,
-                    target_id: 0,
+                    pool_id: 2.into(),
+                    target_id: 0.into(),
                 },
                 &[],
             ),
@@ -131,8 +131,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Inode,
-                    pool_id: 2,
-                    target_id: 0,
+                    pool_id: 2.into(),
+                    target_id: 0.into(),
                 },
                 &[],
             ),
@@ -140,8 +140,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::Group,
                     quota_type: QuotaType::Inode,
-                    pool_id: 2,
-                    target_id: 0,
+                    pool_id: 2.into(),
+                    target_id: 0.into(),
                 },
                 &[],
             ),
@@ -149,8 +149,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Space,
-                    pool_id: 0,
-                    target_id: 2,
+                    pool_id: 0.into(),
+                    target_id: 2.into(),
                 },
                 &[20],
             ),
@@ -158,8 +158,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Space,
-                    pool_id: 4,
-                    target_id: 0,
+                    pool_id: 4.into(),
+                    target_id: 0.into(),
                 },
                 &[],
             ),
@@ -167,8 +167,8 @@ mod test {
                 RequestExceededQuota {
                     id_type: QuotaIdType::User,
                     quota_type: QuotaType::Space,
-                    pool_id: 0,
-                    target_id: 12, // Pool 4
+                    pool_id: 0.into(),
+                    target_id: 12.into(), // Pool 4
                 },
                 &[],
             ),

@@ -69,7 +69,7 @@ pub(crate) async fn get_targets(
                 node,
                 storage_pool: if let Some(uid) = row.get::<_, Option<Uid>>(7)? {
                     Some(pb::EntityIdSet {
-                        uid: Some(uid),
+                        uid: Some(uid.into()),
                         legacy_id: Some(pb::LegacyId {
                             num_id: row.get(9)?,
                             node_type,
@@ -148,14 +148,14 @@ pub(crate) async fn get_targets(
             targets.iter().filter(|t| {
                 t.storage_pool
                     .as_ref()
-                    .is_some_and(|e| e.uid == Some(sp_uid))
+                    .is_some_and(|e| e.uid == Some(sp_uid.raw()))
             }),
         )?;
 
         for t in targets.iter_mut().filter(|t| {
             t.storage_pool
                 .as_ref()
-                .is_some_and(|e| e.uid == Some(sp_uid))
+                .is_some_and(|e| e.uid == Some(sp_uid.raw()))
         }) {
             if let Some(fs) = t.free_space_bytes
                 && let Some(fi) = t.free_inodes

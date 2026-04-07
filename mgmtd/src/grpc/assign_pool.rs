@@ -14,7 +14,12 @@ pub(crate) async fn assign_pool(
     let pool = app
         .write_tx(move |tx| {
             let pool = pool.resolve(tx, EntityType::Pool)?;
-            do_assign(tx, pool.num_id().try_into()?, req.targets, req.buddy_groups)?;
+            do_assign(
+                tx,
+                &pool.num_id().try_into()?,
+                req.targets,
+                req.buddy_groups,
+            )?;
             Ok(pool)
         })
         .await?;
@@ -35,7 +40,7 @@ pub(crate) async fn assign_pool(
 /// Do the actual assign work
 pub(super) fn do_assign(
     tx: &Transaction,
-    pool_id: PoolId,
+    pool_id: &PoolId,
     targets: Vec<pb::EntityIdSet>,
     groups: Vec<pb::EntityIdSet>,
 ) -> Result<()> {
@@ -57,11 +62,11 @@ pub(super) fn do_assign(
     for t in targets {
         let eid = EntityId::try_from(t)?;
         let target = eid.resolve(tx, EntityType::Target)?;
-        if check_group_membership.query_row([target.uid], |row| row.get::<_, i64>(0))? > 0 {
+        if check_group_membership.query_row([&target.uid], |row| row.get::<_, i64>(0))? > 0 {
             bail!("Target {eid} can't be assigned directly as it's part of a buddy group");
         }
 
-        assign_target.execute(params![pool_id, target.uid])?;
+        assign_target.execute(params![pool_id, &target.uid])?;
     }
 
     let mut assign_group = tx.prepare_cached(sql!(

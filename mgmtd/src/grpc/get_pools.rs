@@ -117,13 +117,13 @@ pub(crate) async fn get_pools(
     // Merge pool, target and buddy group lists together
     for p in &mut pools {
         for t in &targets {
-            if p.id.as_ref().is_some_and(|e| e.uid == Some(t.0)) {
+            if p.id.as_ref().is_some_and(|e| e.uid == Some(t.0.raw())) {
                 p.targets.push(t.1.clone());
             }
         }
 
         for t in &buddy_groups {
-            if p.id.as_ref().is_some_and(|e| e.uid == Some(t.0)) {
+            if p.id.as_ref().is_some_and(|e| e.uid == Some(t.0.raw())) {
                 p.buddy_groups.push(t.1.clone());
             }
         }

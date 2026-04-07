@@ -35,7 +35,7 @@ pub(crate) async fn create_buddy_group(
                     alias,
                     legacy_id: LegacyId {
                         node_type: node_type.into(),
-                        num_id: group_id.into(),
+                        num_id: group_id.raw().into(),
                     },
                 },
                 p_target,

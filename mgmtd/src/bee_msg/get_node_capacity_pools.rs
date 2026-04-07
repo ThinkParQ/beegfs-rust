@@ -103,7 +103,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     res[cp].push(t.id);
                 }
 
-                [(0, res)].into()
+                [(0.into(), res)].into()
             }
 
             CapacityPoolQueryType::Storage => {
@@ -122,8 +122,8 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     .await?;
 
                 let mut res: HashMap<PoolId, Vec<Vec<u16>>> = HashMap::new();
-                for sp in pools {
-                    let f_targets = targets.iter().filter(|e| e.pool_id == Some(sp));
+                for sp in &pools {
+                    let f_targets = targets.iter().filter(|e| e.pool_id.as_ref() == Some(sp));
 
                     let cp_calc = CapPoolCalculator::new(
                         app.static_info()
@@ -137,12 +137,12 @@ impl HandleWithResponse for GetNodeCapacityPools {
                         f_targets.clone(),
                     )?;
 
-                    res.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
+                    res.insert(sp.clone(), vec![Vec::<u16>::new(), vec![], vec![]]);
                     for t in f_targets {
                         let cp = cp_calc
                             .cap_pool(t.free_space(), t.free_inodes())
                             .bee_msg_vec_index();
-                        res.get_mut(&sp).unwrap()[cp].push(t.id);
+                        res.get_mut(sp).unwrap()[cp].push(t.id);
                     }
                 }
 
@@ -172,7 +172,7 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     res[cp].push(e.id);
                 }
 
-                [(0, res)].into()
+                [(0.into(), res)].into()
             }
 
             CapacityPoolQueryType::StorageMirrored => {
@@ -191,8 +191,8 @@ impl HandleWithResponse for GetNodeCapacityPools {
                     .await?;
 
                 let mut cap_pools: HashMap<PoolId, Vec<Vec<u16>>> = HashMap::new();
-                for sp in pools {
-                    let f_groups = groups.iter().filter(|e| e.pool_id == Some(sp));
+                for sp in &pools {
+                    let f_groups = groups.iter().filter(|e| e.pool_id.as_ref() == Some(sp));
 
                     let cp_calc = CapPoolCalculator::new(
                         app.static_info()
@@ -206,12 +206,12 @@ impl HandleWithResponse for GetNodeCapacityPools {
                         f_groups.clone(),
                     )?;
 
-                    cap_pools.insert(sp, vec![Vec::<u16>::new(), vec![], vec![]]);
+                    cap_pools.insert(sp.clone(), vec![Vec::<u16>::new(), vec![], vec![]]);
                     for t in f_groups {
                         let cp = cp_calc
                             .cap_pool(t.free_space(), t.free_inodes())
                             .bee_msg_vec_index();
-                        cap_pools.get_mut(&sp).unwrap()[cp].push(t.id);
+                        cap_pools.get_mut(sp).unwrap()[cp].push(t.id);
                     }
                 }
 

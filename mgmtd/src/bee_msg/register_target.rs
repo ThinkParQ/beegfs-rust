@@ -17,7 +17,7 @@ impl HandleWithResponse for RegisterTarget {
                     tx,
                     EntityType::Target,
                     NodeType::Storage,
-                    self.target_id.into(),
+                    self.target_id.raw().into(),
                 )? {
                     // If the target already exists, check if the registration tokens match
                     let stored_reg_token: Option<String> = tx.query_row(

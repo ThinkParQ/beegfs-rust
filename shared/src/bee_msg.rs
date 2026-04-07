@@ -99,7 +99,7 @@ impl Default for Header {
             msg_flags: 0,
             msg_prefix: Self::MSG_PREFIX,
             msg_id: 0,
-            msg_target_id: 0,
+            msg_target_id: 0.into(),
             msg_user_id: 0,
             msg_seq: 0,
             msg_seq_done: 0,

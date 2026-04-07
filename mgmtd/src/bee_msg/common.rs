@@ -44,7 +44,7 @@ pub(super) async fn update_node(msg: RegisterNode, app: &impl App) -> Result<Nod
             };
 
             if let Some(machine_uuid) = machine_uuid
-                && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid))?
+                && db::node::count_machines(tx, machine_uuid, node.as_ref().map(|n| n.uid.clone()))?
                     >= licensed_machines
             {
                 bail!("Licensed machine limit reached. Node registration denied.");
@@ -54,7 +54,7 @@ pub(super) async fn update_node(msg: RegisterNode, app: &impl App) -> Result<Nod
 
             let (node, is_new) = if let Some(node) = node {
                 // Existing node, update data
-                db::node::update(tx, node.uid, msg.port, machine_uuid)?;
+                db::node::update(tx, &node.uid, msg.port, machine_uuid)?;
 
                 // If the updated node is a meta node, check if its corresponding target has a
                 // registration token
@@ -132,7 +132,7 @@ client version < 8.0)"
                             "target_id",
                             NodeType::Meta,
                             1..=0xFFFF,
-                        )?,
+                        )?.try_into()?,
                         n => TargetId::try_from(n).map_err(|_| anyhow!("{n} is not a valid numeric meta node id (must be between 1 and 65535)"))?,
                     };
 
@@ -147,10 +147,10 @@ client version < 8.0)"
 
                     db::target::insert(
                         tx,
-                        target_id,
+                        &target_id,
                         tk,
                         NodeTypeServer::Meta,
-                        Some(target_id.into()),
+                        Some(target_id.raw().into()),
                     )?;
 
                     // If this is the first meta target, set it as meta root
@@ -166,7 +166,7 @@ client version < 8.0)"
             // Update the corresponding nic lists
             db::node_nic::replace(
                 tx,
-                node.uid,
+                &node.uid,
                 msg.nics.iter().map(|e| ReplaceNic {
                     nic_type: e.nic_type,
                     addr: &e.addr,
@@ -186,7 +186,7 @@ client version < 8.0)"
         .await?;
 
     app.replace_node_addrs(
-        node.uid,
+        node.uid.clone(),
         nics.clone()
             .into_iter()
             .map(|e| SocketAddr::new(e.addr, msg.port))
@@ -219,7 +219,7 @@ client version < 8.0)"
             root_num_id: match meta_root {
                 MetaRoot::Unknown => 0,
                 MetaRoot::Normal(node_id, _) => node_id,
-                MetaRoot::Mirrored(group_id) => group_id.into(),
+                MetaRoot::Mirrored(ref group_id) => group_id.raw().into(),
             },
             is_root_mirrored: match meta_root {
                 MetaRoot::Unknown | MetaRoot::Normal(_, _) => 0,
@@ -294,7 +294,7 @@ pub(super) fn update_last_contact_times(
     node_type: NodeTypeServer,
     offline_timeout: Duration,
 ) -> Result<usize> {
-    let target_ids_param = sqlite::rarray_param(target_ids.iter().copied());
+    let target_ids_param = sqlite::rarray_param(target_ids.iter().cloned());
 
     tx.execute_cached(
         sql!(

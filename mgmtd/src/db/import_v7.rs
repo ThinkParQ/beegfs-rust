@@ -22,7 +22,7 @@ use std::path::Path;
 pub fn import_v7(tx: &rusqlite::Transaction, base_path: &Path) -> Result<()> {
     // Check DB is new
     let max_uid: Uid = tx.query_row(sql!("SELECT MAX(uid) FROM entities"), [], |row| row.get(0))?;
-    if max_uid > 2 {
+    if max_uid > 2.into() {
         bail!("Database is not new");
     }
 
@@ -146,10 +146,10 @@ fn meta_nodes(tx: &Transaction, f: &Path) -> Result<(NodeId, bool)> {
 
         target::insert(
             tx,
-            target_id,
+            &target_id,
             None,
             NodeTypeServer::Meta,
-            Some(target_id.into()),
+            Some(target_id.raw().into()),
         )?;
     }
 
@@ -242,7 +242,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             .split_once('=')
             .ok_or_else(|| anyhow!("invalid line '{l}'"))?;
 
-        let g = BuddyGroupId::from_str_radix(g.trim(), 16)?;
+        let g = u16::from_str_radix(g.trim(), 16)?.into();
         let (p_id, s_id) = ts
             .trim()
             .split_once(',')
@@ -253,8 +253,8 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             g,
             None,
             nt,
-            BuddyGroupId::from_str_radix(p_id.trim(), 16)?,
-            BuddyGroupId::from_str_radix(s_id.trim(), 16)?,
+            u16::from_str_radix(p_id.trim(), 16)?.into(),
+            u16::from_str_radix(s_id.trim(), 16)?.into(),
         )?;
     }
 
@@ -272,9 +272,9 @@ fn storage_targets(tx: &Transaction, targets_path: &Path) -> Result<()> {
             .ok_or_else(|| anyhow!("invalid line '{}'", l))?;
 
         let node_id = NodeId::from_str_radix(node.trim(), 16)?;
-        let target_id = TargetId::from_str_radix(target.trim(), 16)?;
+        let target_id: TargetId = u16::from_str_radix(target.trim(), 16)?.into();
 
-        target::insert_storage(tx, target_id, None)?;
+        target::insert_storage(tx, target_id.clone(), None)?;
         target::update_storage_node_mappings(tx, &[target_id], node_id)?;
     }
 
@@ -323,10 +323,10 @@ fn storage_pools(tx: &Transaction, f: &Path) -> Result<()> {
                 [alias.as_ref()],
             )?;
         } else {
-            storage_pool::insert(tx, pool.id, &alias)?;
+            storage_pool::insert(tx, pool.id.clone(), &alias)?;
         }
 
-        target::update_storage_pools(tx, pool.id, &pool.targets)?;
+        target::update_storage_pools(tx, &pool.id, &pool.targets)?;
         buddy_group::update_storage_pools(tx, pool.id, &pool.buddy_groups)?;
 
         used_aliases.push(alias);
@@ -368,10 +368,11 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
             .file_name()
             .into_string()
             .map_err(|s| anyhow!("{s:?} is not a valid storage pool directory"))?
-            .parse()
-            .map_err(|_| anyhow!("{:?} is not a valid storage pool directory", e.file_name()))?;
+            .parse::<u16>()
+            .map_err(|_| anyhow!("{:?} is not a valid storage pool directory", e.file_name()))?
+            .into();
 
-        quota_default_limits(tx, &e.path().join("quotaDefaultLimits.store"), pool_id)
+        quota_default_limits(tx, &e.path().join("quotaDefaultLimits.store"), &pool_id)
             .with_context(|| {
                 format!("quota default limits ({pool_id}/quotaDefaultLimits.store)")
             })?;
@@ -379,7 +380,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
         quota_limits(
             tx,
             &e.path().join("quotaUserLimits.store"),
-            pool_id,
+            &pool_id,
             QuotaIdType::User,
         )
         .with_context(|| format!("quota user limits ({pool_id}/quotaUserLimits.store)"))?;
@@ -387,7 +388,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
         quota_limits(
             tx,
             &e.path().join("quotaGroupLimits.store"),
-            pool_id,
+            &pool_id,
             QuotaIdType::Group,
         )
         .with_context(|| format!("quota group limits ({pool_id}/quotaGroupLimits.store)"))?;
@@ -400,7 +401,7 @@ fn quota(tx: &Transaction, quota_path: &Path) -> Result<()> {
 }
 
 /// Imports the default quota limits
-fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<()> {
+fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: &PoolId) -> Result<()> {
     // If the file is missing, skip it
     let s = match std::fs::read(f) {
         Ok(s) => s,
@@ -487,7 +488,7 @@ fn quota_default_limits(tx: &Transaction, f: &Path, pool_id: PoolId) -> Result<(
 fn quota_limits(
     tx: &Transaction,
     f: &Path,
-    pool_id: PoolId,
+    pool_id: &PoolId,
     quota_id_type: QuotaIdType,
 ) -> Result<()> {
     // If the file is missing, skip it

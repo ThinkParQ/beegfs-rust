@@ -53,7 +53,7 @@ pub(crate) async fn get_buddy_groups(
                         }),
                         storage_pool: if let Some(uid) = row.get::<_, Option<Uid>>(10)? {
                             Some(pb::EntityIdSet {
-                                uid: Some(uid),
+                                uid: Some(uid.into()),
                                 legacy_id: Some(pb::LegacyId {
                                     num_id: row.get(11)?,
                                     node_type,

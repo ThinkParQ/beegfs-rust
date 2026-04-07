@@ -28,7 +28,7 @@ For server nodes, the grpc handler must be used."
                 }
                 .resolve(tx, EntityType::Node)?;
 
-                db::node::delete(tx, node.uid)?;
+                db::node::delete(tx, &node.uid)?;
 
                 Ok(node)
             })

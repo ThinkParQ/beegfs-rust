@@ -116,7 +116,7 @@ mod test {
         // No change of consistency states
         let msg = ChangeTargetConsistencyStates {
             node_type: NodeType::Storage,
-            target_ids: vec![1, 5],
+            target_ids: vec![1.into(), 5.into()],
             old_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
             new_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
             ack_id: "".into(),
@@ -136,7 +136,7 @@ mod test {
         // Change of consistency states
         let msg = ChangeTargetConsistencyStates {
             node_type: NodeType::Storage,
-            target_ids: vec![1, 5],
+            target_ids: vec![1.into(), 5.into()],
             old_states: vec![TargetConsistencyState::Good, TargetConsistencyState::Good],
             new_states: vec![
                 TargetConsistencyState::NeedsResync,
@@ -179,7 +179,7 @@ mod test {
         // Mismatch of reported old state should not change the consistency states
         let msg = ChangeTargetConsistencyStates {
             node_type: NodeType::Storage,
-            target_ids: vec![1],
+            target_ids: vec![1.into()],
             old_states: vec![TargetConsistencyState::NeedsResync],
             new_states: vec![TargetConsistencyState::Bad],
             ack_id: "".into(),

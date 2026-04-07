@@ -8,7 +8,7 @@ impl HandleWithResponse for MapTargets {
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
-        let target_ids = self.target_ids.keys().copied().collect::<Vec<_>>();
+        let target_ids = self.target_ids.keys().cloned().collect::<Vec<_>>();
 
         let updated = app
             .write_tx(move |tx| {

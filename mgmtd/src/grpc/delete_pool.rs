@@ -37,7 +37,8 @@ are still assigned to this pool"
                 )
             }
 
-            let affected = tx.execute(sql!("DELETE FROM pools WHERE pool_uid = ?1"), [pool.uid])?;
+            let affected =
+                tx.execute(sql!("DELETE FROM pools WHERE pool_uid = ?1"), [&pool.uid])?;
             check_affected_rows(affected, [1])?;
 
             if execute {

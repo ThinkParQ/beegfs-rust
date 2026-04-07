@@ -72,7 +72,7 @@ pub(crate) fn map_bee_msg_nics(
 }
 
 /// Retrieves all node nics for a specific node
-pub(crate) fn get_with_node(tx: &Transaction, node_uid: Uid) -> Result<Vec<NodeNic>> {
+pub(crate) fn get_with_node(tx: &Transaction, node_uid: &Uid) -> Result<Vec<NodeNic>> {
     tx.prepare_cached(sql!(
         "SELECT nn.node_uid, nn.addr, n.port, nn.nic_type, nn.name
             FROM node_nics AS nn
@@ -107,7 +107,7 @@ pub(crate) struct ReplaceNic<'a> {
 /// Replaces all node nics for the given node by UID.
 pub(crate) fn replace<'a>(
     tx: &Transaction,
-    node_uid: Uid,
+    node_uid: &Uid,
     nics: impl IntoIterator<Item = ReplaceNic<'a>>,
 ) -> Result<()> {
     tx.execute_cached(
@@ -149,10 +149,10 @@ mod test {
     #[test]
     fn get_with_node() {
         with_test_data(|tx| {
-            let addrs = super::get_with_node(tx, MGMTD_UID).unwrap();
+            let addrs = super::get_with_node(tx, &MGMTD_UID).unwrap();
             assert_eq!(0, addrs.len());
 
-            let addrs = super::get_with_node(tx, 102001).unwrap();
+            let addrs = super::get_with_node(tx, &102001.into()).unwrap();
             assert_eq!(4, addrs.len());
         })
     }
@@ -161,16 +161,22 @@ mod test {
     fn get_update() {
         with_test_data(|tx| {
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
-            assert_eq!(4, nics.iter().filter(|e| e.node_uid == 102001).count());
+            assert_eq!(
+                4,
+                nics.iter().filter(|e| e.node_uid == 102001.into()).count()
+            );
 
-            super::replace(tx, 102001i64, []).unwrap();
+            super::replace(tx, &102001.into(), []).unwrap();
 
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
-            assert_eq!(0, nics.iter().filter(|e| e.node_uid == 102001).count());
+            assert_eq!(
+                0,
+                nics.iter().filter(|e| e.node_uid == 102001.into()).count()
+            );
 
             super::replace(
                 tx,
-                102001i64,
+                &102001.into(),
                 [ReplaceNic {
                     addr: &Ipv4Addr::new(1, 2, 3, 4).into(),
                     name: "test".into(),
@@ -180,7 +186,10 @@ mod test {
             .unwrap();
 
             let nics = super::get_with_type(tx, NodeType::Storage).unwrap();
-            assert_eq!(1, nics.iter().filter(|e| e.node_uid == 102001).count());
+            assert_eq!(
+                1,
+                nics.iter().filter(|e| e.node_uid == 102001.into()).count()
+            );
         })
     }
 }

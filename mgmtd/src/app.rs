@@ -54,7 +54,7 @@ pub(crate) trait App: Debug + Clone + Send + 'static {
     /// Send a [Msg] to a node via TCP and receive the response
     fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
-        node_uid: Uid,
+        node_uid: &Uid,
         msg: &M,
     ) -> impl Future<Output = Result<R>> + Send;
 
