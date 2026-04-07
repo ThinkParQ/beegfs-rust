@@ -106,7 +106,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
             tx,
             MGMTD_UID,
             info.network_addrs.iter().map(|e| ReplaceNic {
-                nic_type: NicType::Ethernet,
+                nic_type: NicType::Tcp,
                 addr: &e.address,
                 name: e.name.as_str().into(),
             }),
@@ -306,5 +306,13 @@ impl RunControl {
         if !client_list.is_empty() {
             tokio::time::sleep_until(deadline).await;
         }
+    }
+}
+
+/// Constructs a version str from the `VERSION` environment variable at compile time
+pub const fn version_str() -> &'static str {
+    match option_env!("VERSION") {
+        Some(version) => version,
+        None => "undefined",
     }
 }

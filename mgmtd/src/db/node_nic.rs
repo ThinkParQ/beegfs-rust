@@ -174,7 +174,7 @@ mod test {
                 [ReplaceNic {
                     addr: &Ipv4Addr::new(1, 2, 3, 4).into(),
                     name: "test".into(),
-                    nic_type: NicType::Ethernet,
+                    nic_type: NicType::Tcp,
                 }],
             )
             .unwrap();
