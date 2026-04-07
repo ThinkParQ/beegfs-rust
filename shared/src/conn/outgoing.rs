@@ -11,7 +11,9 @@ use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::UdpSocket;
+use tokio::time::timeout;
 
 /// The connection pool.
 ///
@@ -171,7 +173,9 @@ impl Pool {
         }
 
         // 3. Wait for an already open stream becoming available
-        let stream = self.store.pop_stream(node_uid).await?;
+        let stream = timeout(Duration::from_secs(2), self.store.pop_stream(node_uid))
+            .await
+            .map_err(|_| anyhow::anyhow!("Popping a stream to {node_uid:?} timed out"))?;
 
         let resp_header = self
             .write_and_read_stream(buf, stream, send_len, expect_response)

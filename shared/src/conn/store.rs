@@ -6,17 +6,12 @@
 use super::TCP_BUF_LEN;
 use super::async_queue::AsyncQueue;
 use crate::conn::stream::Stream;
-use anyhow::{Result, anyhow};
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::time::timeout;
-
-const TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The Store structure
 #[derive(Debug, Default)]
@@ -77,9 +72,8 @@ impl<T: Debug + Display + Clone + Default + PartialEq + Eq + Hash> Store<T> {
 
     /// Acquire a stored stream, waiting for one to become available.
     ///
-    /// This is the last resort if the store is empty and no more permits are available. Times out
-    /// after a fixed time.
-    pub async fn pop_stream(&self, key: T) -> Result<StoredStream<T>> {
+    /// This is the last resort if the store is empty and no more permits are available.
+    pub async fn pop_stream(&self, key: T) -> StoredStream<T> {
         let queue = {
             let mut streams = self.streams.lock().unwrap();
 
@@ -90,9 +84,7 @@ impl<T: Debug + Display + Clone + Default + PartialEq + Eq + Hash> Store<T> {
             queue.clone()
         };
 
-        timeout(TIMEOUT, queue.pop())
-            .await
-            .map_err(|_| anyhow!("Popping a stream to {key} timed out"))
+        queue.pop().await
     }
 
     /// Push a used stream back into the store.
