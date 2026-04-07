@@ -112,7 +112,9 @@ impl Pool {
                 Ok(header) => return Ok(header),
                 Err(err) => {
                     // If the stream doesn't work anymore, just discard it and try the next one
-                    log::debug!("Communication using existing stream to {node_uid:?} failed: {err}")
+                    log::debug!(
+                        "Communication using existing stream to node with uid {node_uid} failed: {err}"
+                    )
                 }
             }
         }
@@ -120,10 +122,10 @@ impl Pool {
         // 2. Obtain a permit and try to open a new stream on each available address
         if let Some(permit) = self.store.try_acquire_permit(node_uid) {
             let Some(addrs) = self.store.get_node_addrs(node_uid) else {
-                bail!("No available addresses to {node_uid:?}");
+                bail!("No available addresses for node with uid {node_uid}");
             };
 
-            log::debug!("Connecting new stream to {node_uid:?}");
+            log::debug!("Connecting new stream to node with uid {node_uid}");
 
             for addr in addrs.iter() {
                 if addr.is_ipv6() && !self.use_ipv6 {
@@ -134,8 +136,11 @@ impl Pool {
                     Ok(stream) => {
                         let mut stream = StoredStream::from_stream(stream, permit);
 
-                        let err_context =
-                            || format!("Connected to {node_uid:?}, but communication failed");
+                        let err_context = || {
+                            format!(
+                                "Connected to node with uid {node_uid}, but communication failed"
+                            )
+                        };
 
                         // Authenticate to the peer if required
                         if let Some(auth_secret) = self.auth_secret {
@@ -164,24 +169,30 @@ impl Pool {
                         return Ok(resp_header);
                     }
                     // If connecting failed, try the next address
-                    Err(err) => log::debug!("Connecting to {node_uid:?} via {addr} failed: {err}"),
+                    Err(err) => log::debug!(
+                        "Connecting to node with uid {node_uid} via {addr} failed: {err}"
+                    ),
                 }
             }
 
             // ... but if all failed, that's it
-            bail!("Connecting to {node_uid:?} failed for all known addresses: {addrs:?}")
+            bail!(
+                "Connecting to node with uid {node_uid} failed for all known addresses: {addrs:?}"
+            )
         }
 
         // 3. Wait for an already open stream becoming available
         let stream = timeout(Duration::from_secs(2), self.store.pop_stream(node_uid))
             .await
-            .map_err(|_| anyhow::anyhow!("Popping a stream to {node_uid:?} timed out"))?;
+            .map_err(|_| {
+                anyhow::anyhow!("Popping a stream for node with uid {node_uid:?} timed out")
+            })?;
 
         let resp_header = self
             .write_and_read_stream(buf, stream, send_len, expect_response)
             .await
             .with_context(|| {
-                format!("Communication using existing stream to {node_uid:?} failed")
+                format!("Communication using existing stream to node with uid {node_uid} failed")
             })?;
 
         Ok(resp_header)
