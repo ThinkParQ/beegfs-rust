@@ -3,8 +3,7 @@
 use crate::App;
 use crate::app::RuntimeApp;
 use crate::db::{self};
-use crate::license::LicensedFeature;
-use crate::quota::update_and_distribute;
+use crate::quota::{fetch_and_update,distribute_exceeded};
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::run_state::RunStateHandle;
 use shared::types::NodeType;
@@ -19,13 +18,7 @@ pub(crate) fn start_tasks(app: RuntimeApp, run_state: RunStateHandle) {
     tokio::spawn(switchover(app.clone(), run_state.clone()));
 
     if app.info.user_config.quota_enable {
-        if let Err(err) = app.license.verify_licensed_feature(LicensedFeature::Quota) {
-            log::error!(
-                "Quota is enabled in the config, but the feature could not be verified. Continuing without quota support: {err}"
-            );
-        } else {
-            tokio::spawn(update_quota(app, run_state));
-        }
+        tokio::spawn(update_quota(app, run_state));
     }
 }
 
@@ -63,9 +56,13 @@ async fn update_quota(app: RuntimeApp, mut run_state: RunStateHandle) {
     loop {
         log::debug!("Running quota update");
 
-        match update_and_distribute(&app).await {
+        match fetch_and_update(&app).await {
             Ok(_) => {}
             Err(err) => log::error!("Updating quota failed: {err:#}"),
+        }
+        match distribute_exceeded(&app).await {
+            Ok(_) => {}
+            Err(err) => log::error!("Distributing exceeded quota failed: {err:#}"),
         }
 
         tokio::select! {
