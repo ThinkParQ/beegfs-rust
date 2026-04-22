@@ -154,7 +154,7 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
 
         // Mgmtds systemd unit is set to service type "notify". Here we send out the
         // notification that the service has completed startup and is ready for serving
-        let _ = sd_notify::notify(true, &[sd_notify::NotifyState::Ready]);
+        let _ = sd_notify::notify(&[sd_notify::NotifyState::Ready]);
 
         run.wait_for_shutdown(wait_for_shutdown_signal).await;
 
