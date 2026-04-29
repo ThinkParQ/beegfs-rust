@@ -351,6 +351,11 @@ generate_structs! {
     #[arg(value_name = "PATH")]
     quota_user_ids_file: Option<PathBuf> = None,
     /// Defines a range of user ids to be quota queried and enforced.
+    ///
+    /// IMPORTANT: This setting may only be used for reasonable small ranges (hundreds or
+    /// thousands). For dynamic ids in a large range, the file should be used instead to query
+    /// only the existing ids. The file can be regularly updated by a cronjob to collect ids from
+    /// external sources (e.g. active directory).
     #[arg(long)]
     #[arg(num_args = 1)]
     #[arg(value_name = "RANGE")]
@@ -375,6 +380,11 @@ generate_structs! {
     #[arg(value_name = "PATH")]
     quota_group_ids_file: Option<PathBuf> = None,
     /// Defines a range of group ids to be quota queried and enforced.
+    ///
+    /// IMPORTANT: This setting may only be used for reasonable small ranges (hundreds or
+    /// thousands). For dynamic ids in a large range, the file should be used instead to query
+    /// only the existing ids. The file can be regularly updated by a cronjob to collect ids from
+    /// external sources (e.g. active directory).
     #[arg(long)]
     #[arg(num_args = 1)]
     #[arg(value_name = "RANGE")]

@@ -123,7 +123,7 @@
 # Update interval of quota information.
 # Defines how often the management pulls the quota information from all storage nodes, calculates
 # the IDs that exceed the limits and reports them back to the server nodes.
-# quota-update-interval = 30
+# quota-update-interval = "30s"
 
 # The following options specify the User/Group IDs to be fetched from storage services for quota
 # checking and enforcement. They are disabled by default and least one needs to be enabled for
@@ -138,6 +138,10 @@
 # quota-user-ids-file = ""
 
 # Defines a range of user ids to be quota queried and enforced.
+# IMPORTANT: This setting may only be used for reasonable small ranges (hundreds or thousands).
+# For dynamic ids in a large range, the file should be used instead to query only the existing ids.
+# The file can be regularly updated by a cronjob to collect ids from external sources (e.g. active
+# directory).
 # quota-user-ids-range = "1000-1100"
 
 # Same as above, but for group IDs
