@@ -2,7 +2,6 @@ use anyhow::{Context, Result, anyhow};
 use log::LevelFilter;
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
-use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
 use shared::journald_logger;
 use shared::nic::check_ipv6;
@@ -115,31 +114,6 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
 
     // Run the tokio executor
     rt.block_on(async move {
-        // Load the licensing library
-        let license = if !user_config.license_disable {
-            // SAFETY:
-            // There is no way to verify that the user loaded dynamic library matches the
-            // requirements of LicenseVerifier. After all, users can load anything they
-            // want. Therefore, this is just not safe to do from the Rust compilers
-            // perspective and loading anything with non-matching fp signatures or not
-            // behaving as expected will lead to undefined behavior.
-            let license = unsafe { LicenseVerifier::with_lib(&user_config.license_lib_file) };
-
-            if let Err(err) = license
-                .load_and_verify_license_cert(&user_config.license_cert_file)
-                .await
-            {
-                log::warn!(
-                    "Initializing licensing library failed. \
-                    Licensed features will be unavailable: {err}"
-                );
-            }
-
-            license
-        } else {
-            LicenseVerifier::with_no_lib()
-        };
-
         // Start the actual daemon
         let run = start(
             StaticInfo {
@@ -148,7 +122,6 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
                 auth_secret,
                 network_addrs,
             },
-            license,
         )
         .await?;
 
