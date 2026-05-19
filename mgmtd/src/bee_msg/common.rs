@@ -28,17 +28,18 @@ pub(super) async fn update_node(msg: RegisterNode, app: &impl App, reject: bool)
             _ if r.result == VerifyResult::VerifyInvalid as i32 => None,
             _ => {
                 log::error!(
-                    "Unexpected error during license verification, limiting number of clients to {NUM_CLIENTS}: {0}", r.message
+                    "Unexpected error during license verification, limiting number of clients to {NUM_CLIENTS}: {0}",
+                    r.message
                 );
                 Some(NUM_CLIENTS)
-            },
+            }
         },
         Err(e) => {
             log::error!(
-                    "Unexpected error during license verification, limiting number of clients to {NUM_CLIENTS}: {e:#}",
-                );
-                Some(NUM_CLIENTS)
-        },
+                "Unexpected error during license verification, limiting number of clients to {NUM_CLIENTS}: {e:#}",
+            );
+            Some(NUM_CLIENTS)
+        }
     };
 
     let licensed_machines = match app.get_licensed_machines() {

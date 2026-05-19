@@ -3,7 +3,7 @@
 use crate::App;
 use crate::app::RuntimeApp;
 use crate::db::{self};
-use crate::quota::{fetch_and_update,distribute_exceeded};
+use crate::quota::{distribute_exceeded, fetch_and_update};
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::run_state::RunStateHandle;
 use shared::types::NodeType;

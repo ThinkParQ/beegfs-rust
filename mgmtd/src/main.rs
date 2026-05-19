@@ -115,14 +115,12 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
     // Run the tokio executor
     rt.block_on(async move {
         // Start the actual daemon
-        let run = start(
-            StaticInfo {
-                use_ipv6,
-                user_config,
-                auth_secret,
-                network_addrs,
-            },
-        )
+        let run = start(StaticInfo {
+            use_ipv6,
+            user_config,
+            auth_secret,
+            network_addrs,
+        })
         .await?;
 
         // Mgmtds systemd unit is set to service type "notify". Here we send out the

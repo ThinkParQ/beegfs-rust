@@ -1,6 +1,5 @@
-use crate::license::LicensedFeature;
-
 use super::*;
+use crate::license::LicensedFeature;
 use rusqlite::params;
 use shared::bee_msg::quota::*;
 

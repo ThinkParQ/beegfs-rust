@@ -116,10 +116,9 @@ pub async fn start(info: StaticInfo) -> Result<RunControl> {
     })
     .await?;
 
-    let prev_trial_serial: Option<String> = db.read_tx(|tx| {
-        db::config::get(tx, db::config::Config::TrialSerial)
-    })
-    .await?;
+    let prev_trial_serial: Option<String> = db
+        .read_tx(|tx| db::config::get(tx, db::config::Config::TrialSerial))
+        .await?;
 
     // Load the licensing library
     let license = if !info.user_config.license_disable {
@@ -136,12 +135,15 @@ pub async fn start(info: StaticInfo) -> Result<RunControl> {
             .await
         {
             Ok(serial) => {
-                if license.get_license_cert_data()?.data.is_some_and(
-                    |d| d.r#type == CertType::Trial.into())
+                if license
+                    .get_license_cert_data()?
+                    .data
+                    .is_some_and(|d| d.r#type == CertType::Trial.into())
                 {
-                    db.write_tx(|tx| db::config::set(tx, dbConfig::TrialSerial, serial)).await?;
+                    db.write_tx(|tx| db::config::set(tx, dbConfig::TrialSerial, serial))
+                        .await?;
                 }
-            },
+            }
             Err(err) => log::warn!(
                 "Initializing licensing library failed. \
                 Licensed features will be unavailable: {err}"
