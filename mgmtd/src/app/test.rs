@@ -160,7 +160,11 @@ impl App for TestApp {
 
     fn notify_client_pulled_state(&self, _node_type: NodeType, _node_id: NodeId) {}
 
-    async fn load_and_verify_license_cert(&self, _cert_path: &std::path::Path) -> Result<String> {
+    async fn load_and_verify_license_cert(
+        &self,
+        _cert_path: &std::path::Path,
+        _prev_trial_serial: Option<String>,
+    ) -> Result<String> {
         Ok("dummy cert".to_string())
     }
 

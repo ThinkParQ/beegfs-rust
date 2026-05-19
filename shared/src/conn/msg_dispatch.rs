@@ -26,6 +26,7 @@ pub trait Request: Send + Sync {
     fn authenticate_connection(&mut self);
     fn addr(&self) -> SocketAddr;
     fn msg_id(&self) -> MsgId;
+    fn msg_compat_feature_flags(&self) -> u8;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
 }
 
@@ -64,6 +65,10 @@ impl Request for StreamRequest<'_> {
     fn msg_id(&self) -> MsgId {
         self.header.msg_id()
     }
+
+    fn msg_compat_feature_flags(&self) -> u8 {
+        self.header.msg_compat_feature_flags
+    }
 }
 
 /// Represents a request made via a UDP datagram
@@ -98,6 +103,10 @@ impl Request for SocketRequest<'_> {
 
     fn msg_id(&self) -> MsgId {
         self.header.msg_id()
+    }
+
+    fn msg_compat_feature_flags(&self) -> u8 {
+        self.header.msg_compat_feature_flags
     }
 }
 
@@ -135,6 +144,10 @@ pub mod test {
 
         fn msg_id(&self) -> MsgId {
             self.msg_id
+        }
+
+        fn msg_compat_feature_flags(&self) -> u8 {
+            0
         }
 
         fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {

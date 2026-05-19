@@ -3,6 +3,7 @@
 mod system_id;
 
 use crate::app::*;
+use crate::license::LicensedFeature;
 use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
 use rusqlite::params;
@@ -16,10 +17,14 @@ use sqlite_check::sql;
 use std::collections::HashSet;
 use std::path::Path;
 
-/// Fetches quota information for all storage targets, calculates exceeded IDs and distributes them.
-pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
-    // Fetch quota data from storage daemons
+/// Fetches quota information for all storage targets and updates the quota usage database
+pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
+    if app.verify_licensed_feature(LicensedFeature::Quota).is_err() {
+        log::info!("Quota is enabled but feature not licensed. Skipping quota collection");
+        return Ok(());
+    }
 
+    // Fetch quota data from storage daemons
     let targets: Vec<(TargetId, PoolId, Uid)> = app
         .read_tx(move |tx| {
             tx.query_map_collect(
@@ -196,19 +201,20 @@ pub(crate) async fn update_and_distribute(app: &impl App) -> Result<()> {
         }
     }
 
-    if app.static_info().user_config.quota_enforce {
-        exceeded_quota(app).await?;
-    }
-
     Ok(())
 }
 
-/// Calculate and push exceeded quota info to the nodes
-async fn exceeded_quota(app: &impl App) -> Result<()> {
+/// Calculates and pushes exceeded quota info to the nodes
+pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
+    if !app.static_info().user_config.quota_enforce {
+        return Ok(());
+    }
     log::info!("Calculating and pushing exceeded quota");
 
+    let quota_licensed = app.verify_licensed_feature(LicensedFeature::Quota).is_ok();
+
     let (msges, nodes) = app
-        .read_tx(|tx| {
+        .read_tx(move |tx| {
             let pools: Vec<_> =
                 tx.query_map_collect(sql!("SELECT pool_id FROM pools"), [], |row| row.get(0))?;
 
@@ -229,28 +235,35 @@ async fn exceeded_quota(app: &impl App) -> Result<()> {
                 }
             }
 
-            // Fill the prepared messages with matching exceeded quota ids
-            let mut stmt = tx.prepare_cached(sql!(
-                "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
-                FROM quota_usage AS e
-                INNER JOIN targets AS st USING(node_type, target_id)
-                LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
-                LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
-                GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
-                HAVING SUM(e.value) > COALESCE(l.value, d.value)"
-            ))?;
-            let mut rows = stmt.query([])?;
-            while let Some(row) = rows.next()? {
-                for m in &mut msges {
-                    if row.get::<_, PoolId>(3)? == m.pool_id
-                        && QuotaIdType::from_row(row, 1)? == m.id_type
-                        && QuotaType::from_row(row, 2)? == m.quota_type
-                    {
-                        m.exceeded_quota_ids.push(row.get(0)?);
-                        break;
+            if quota_licensed {
+                // Fill the prepared messages with matching exceeded quota ids
+                let mut stmt = tx.prepare_cached(sql!(
+                    "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
+                    FROM quota_usage AS e
+                    INNER JOIN targets AS st USING(node_type, target_id)
+                    LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+                    LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+                    GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+                    HAVING SUM(e.value) > COALESCE(l.value, d.value)"
+                ))?;
+                let mut rows = stmt.query([])?;
+                while let Some(row) = rows.next()? {
+                    for m in &mut msges {
+                        if row.get::<_, PoolId>(3)? == m.pool_id
+                            && QuotaIdType::from_row(row, 1)? == m.id_type
+                            && QuotaType::from_row(row, 2)? == m.quota_type
+                        {
+                            m.exceeded_quota_ids.push(row.get(0)?);
+                            break;
+                        }
                     }
                 }
+            } else {
+                log::info!(
+                    "Quota enforcement enabled but feature not licensed. Removing quota limits from nodes"
+                );
             }
+
 
             // Get all node uids to send the messages to
             let nodes: Vec<Uid> = tx.query_map_collect(
@@ -369,7 +382,8 @@ mod test {
             }))
         });
 
-        super::update_and_distribute(&app).await.unwrap();
+        super::fetch_and_update(&app).await.unwrap();
+        super::distribute_exceeded(&app).await.unwrap();
 
         // Find the amount of target 1 entries which values match the schema they have been reported
         // with
@@ -425,7 +439,8 @@ mod test {
             }))
         });
 
-        super::update_and_distribute(&app).await.unwrap();
+        super::fetch_and_update(&app).await.unwrap();
+        super::distribute_exceeded(&app).await.unwrap();
 
         // Now target 2 quota should be empty, target 1 quota should be completely untouched due to
         // the error (even if it only failed for user quota request)
@@ -465,7 +480,8 @@ mod test {
             }))
         });
 
-        super::update_and_distribute(&app).await.unwrap();
+        super::fetch_and_update(&app).await.unwrap();
+        super::distribute_exceeded(&app).await.unwrap();
 
         // Target 1 should now only have the couple of entries resulting from above
         app.db
@@ -488,7 +504,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn exceeded_quota() {
+    async fn distribute_exceeded() {
         // This fn doesn't need special config
         let app = TestApp::new().await;
 
@@ -521,6 +537,6 @@ mod test {
             }))
         });
 
-        super::exceeded_quota(&app).await.unwrap();
+        super::distribute_exceeded(&app).await.unwrap();
     }
 }

@@ -24,6 +24,7 @@ impl HandleWithResponse for Heartbeat {
                 machine_uuid: self.machine_uuid,
             },
             app,
+            false,
         )
         .await?;
 

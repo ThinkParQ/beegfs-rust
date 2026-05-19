@@ -203,6 +203,7 @@ impl LicenseVerifier {
     pub async fn load_and_verify_license_cert(
         &self,
         cert_path: impl AsRef<Path>,
+        prev_trial_serial: Option<String>,
     ) -> Result<String> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded.");
@@ -223,10 +224,23 @@ impl LicenseVerifier {
         let message = res.message;
 
         match result {
-            VerifyResult::VerifyValid => {
-                log::info!("Successfully loaded license certificate: {serial}");
-                Ok(serial)
-            }
+            VerifyResult::VerifyValid => match self.get_license_cert_data() {
+                Ok(c) => {
+                    if c.data.is_some_and(|d| {
+                        d.r#type() == CertType::Trial
+                            && prev_trial_serial.is_some_and(|s| serial != s)
+                    }) {
+                        library.init_cert_store();
+                        Err(anyhow!(
+                            "System has previously used different trial license."
+                        ))
+                    } else {
+                        log::info!("Successfully loaded license certificate: {serial}");
+                        Ok(serial)
+                    }
+                }
+                Err(err) => Err(anyhow!("Error getting license data: {err}")),
+            },
             VerifyResult::VerifyInvalid => Err(anyhow!(message)),
             VerifyResult::VerifyError => Err(anyhow!(
                 "Internal error during certificate verification: {message}"
