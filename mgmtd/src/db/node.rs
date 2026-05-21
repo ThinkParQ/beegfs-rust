@@ -194,19 +194,6 @@ pub(crate) fn count_machines(
     .map_err(|e| anyhow!(e))
 }
 
-/// Counts the number of currently registered distinct clients.
-///
-/// # Return value
-/// Returns the number of currently registered distinct clients if successful.
-pub(crate) fn count_clients(tx: &Transaction) -> Result<u32> {
-    tx.query_row(
-        sql!("SELECT COUNT(DISTINCT node_uid) FROM nodes WHERE node_type = ?1"),
-        params![NodeType::Client.sql_variant()],
-        |row| row.get(0),
-    )
-    .map_err(|e| anyhow!(e))
-}
-
 /// Delete a node from the database.
 pub(crate) fn delete(tx: &Transaction, node_uid: Uid) -> Result<()> {
     let affected = tx.execute_cached(sql!("DELETE FROM nodes WHERE node_uid = ?1"), [node_uid])?;

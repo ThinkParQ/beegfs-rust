@@ -2,6 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use log::LevelFilter;
 use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
+use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
 use shared::journald_logger;
 use shared::nic::check_ipv6;
@@ -112,15 +113,28 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
         .max_blocking_threads(user_config.max_blocking_threads)
         .build()?;
 
+    // Load the licensing library
+    //
+    // SAFETY:
+    // There is no way to verify that the user loaded dynamic library matches the
+    // requirements of LicenseVerifier. After all, users can load anything they
+    // want. Therefore, this is just not safe to do from the Rust compilers
+    // perspective and loading anything with non-matching fp signatures or not
+    // behaving as expected will lead to undefined behavior.
+    let license = unsafe { LicenseVerifier::with_lib(&user_config.license_lib_file) };
+
     // Run the tokio executor
     rt.block_on(async move {
         // Start the actual daemon
-        let run = start(StaticInfo {
-            use_ipv6,
-            user_config,
-            auth_secret,
-            network_addrs,
-        })
+        let run = start(
+            StaticInfo {
+                use_ipv6,
+                user_config,
+                auth_secret,
+                network_addrs,
+            },
+            license,
+        )
         .await?;
 
         // Mgmtds systemd unit is set to service type "notify". Here we send out the

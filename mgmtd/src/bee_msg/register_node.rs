@@ -2,17 +2,15 @@ use super::*;
 use common::update_node;
 use shared::bee_msg::node::*;
 
-const REGISTERNODEMSG_COMPATFLAG_CLIENT_SUPPORTS_REGREJ: u8 = 1;
+const COMPATFLAG_CLIENT_SUPPORTS_REGREJ: u8 = 1;
 
 impl HandleWithResponse for RegisterNode {
     type Response = RegisterNodeResp;
 
-    async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+    async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
-        let reject = (_req.msg_compat_feature_flags()
-            & REGISTERNODEMSG_COMPATFLAG_CLIENT_SUPPORTS_REGREJ)
-            != 0;
+        let reject = (req.msg_compat_feature_flags() & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
 
         let node_id = update_node(self, app, reject).await?;
 

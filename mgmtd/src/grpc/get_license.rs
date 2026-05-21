@@ -23,7 +23,7 @@ pub(crate) async fn get_license(
         if app
             .get_license_cert_data()?
             .data
-            .is_some_and(|d| d.r#type == CertType::Trial.into())
+            .is_some_and(|d| d.r#type() == CertType::Trial)
         {
             app.write_tx(|tx| db::config::set(tx, Config::TrialSerial, serial))
                 .await?;

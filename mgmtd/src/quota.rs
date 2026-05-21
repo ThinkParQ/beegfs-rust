@@ -343,7 +343,6 @@ mod test {
     async fn update() {
         let app = TestApp::with_config(Config {
             quota_enable: true,
-            quota_enforce: false, // Exceeded calculation and push is tested separately
             quota_user_ids_range: Some(0..=9),
             quota_group_ids_range: Some(0..=9),
             ..Default::default()
@@ -383,7 +382,6 @@ mod test {
         });
 
         super::fetch_and_update(&app).await.unwrap();
-        super::distribute_exceeded(&app).await.unwrap();
 
         // Find the amount of target 1 entries which values match the schema they have been reported
         // with
@@ -440,7 +438,6 @@ mod test {
         });
 
         super::fetch_and_update(&app).await.unwrap();
-        super::distribute_exceeded(&app).await.unwrap();
 
         // Now target 2 quota should be empty, target 1 quota should be completely untouched due to
         // the error (even if it only failed for user quota request)
@@ -481,7 +478,6 @@ mod test {
         });
 
         super::fetch_and_update(&app).await.unwrap();
-        super::distribute_exceeded(&app).await.unwrap();
 
         // Target 1 should now only have the couple of entries resulting from above
         app.db

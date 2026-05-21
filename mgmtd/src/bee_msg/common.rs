@@ -2,7 +2,7 @@ use super::*;
 use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
 use protobuf::license::VerifyResult;
-use rusqlite::Transaction;
+use rusqlite::{Transaction, params};
 use shared::bee_msg::node::*;
 use shared::bee_msg::target::*;
 use shared::types::{NodeId, TargetId};
@@ -10,7 +10,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-const NUM_CLIENTS: u32 = 5;
+// Maximum number of clients that can register if license verification fails or license is invalid
+const MAX_NUM_CLIENTS: u32 = 5;
 
 /// Processes incoming node information. Registers new nodes if config allows it
 pub(super) async fn update_node(msg: RegisterNode, app: &impl App, reject: bool) -> Result<NodeId> {
@@ -18,28 +19,33 @@ pub(super) async fn update_node(msg: RegisterNode, app: &impl App, reject: bool)
     let requested_node_id = msg.node_id;
     let registration_disable = app.static_info().user_config.registration_disable;
 
-    let licensed_clients: Option<u32> = match app.get_license_cert_data() {
-        Ok(r) => match r.result {
-            // If license is valid, no limit to client count
-            _ if r.result == VerifyResult::VerifyValid as i32 => None,
-            // no license file loaded, limit number of clients to NUM_CLIENTS
-            _ if r.result == VerifyResult::VerifyError as i32 => Some(NUM_CLIENTS),
-            // license file was loaded and is outside validity period
-            _ if r.result == VerifyResult::VerifyInvalid as i32 => None,
-            _ => {
-                log::error!(
-                    "Unexpected error during license verification, limiting number of clients to {NUM_CLIENTS}: {0}",
-                    r.message
+    let licensed_clients: Option<u32> = if msg.node_type == NodeType::Client {
+        match app.get_license_cert_data() {
+            Ok(r) => match r.result() {
+                // If license is valid, no limit to client count
+                VerifyResult::VerifyValid => None,
+                // no license file loaded, limit number of clients to NUM_CLIENTS
+                VerifyResult::VerifyError => Some(MAX_NUM_CLIENTS),
+                // license file was loaded and is outside validity period
+                VerifyResult::VerifyInvalid => None,
+                _ => {
+                    log::debug!(
+                        "Unexpected error during license verification, limiting number of clients to {MAX_NUM_CLIENTS}: {0}",
+                        r.message
+                    );
+                    Some(MAX_NUM_CLIENTS)
+                }
+            },
+            Err(e) => {
+                log::debug!(
+                    "Error during license verification, limiting number of clients to {MAX_NUM_CLIENTS}: {e:#}",
                 );
-                Some(NUM_CLIENTS)
+                Some(MAX_NUM_CLIENTS)
             }
-        },
-        Err(e) => {
-            log::error!(
-                "Unexpected error during license verification, limiting number of clients to {NUM_CLIENTS}: {e:#}",
-            );
-            Some(NUM_CLIENTS)
         }
+    } else {
+        // not a client registration, so not going to be used anyway. But let's be defensive
+        Some(MAX_NUM_CLIENTS)
     };
 
     let licensed_machines = match app.get_licensed_machines() {
@@ -124,13 +130,19 @@ registration token ({new_alias_or_reg_token}) does not match the stored token ({
                     bail!("Registration of new nodes is not allowed");
                 }
 
+                let num_reg_clients: u32 = tx.query_row(
+                    sql!("SELECT COUNT(DISTINCT node_uid) FROM nodes WHERE node_type = ?1"),
+                    params![NodeType::Client.sql_variant()],
+                    |row| row.get(0),
+                )?;
+
                 if msg.node_type == NodeType::Client
                     && let Some(cs) = licensed_clients
-                    && db::node::count_clients(tx)? >= cs {
+                    && num_reg_clients >= cs {
                         if reject {
-                            bail!("Number of licensed clients ({NUM_CLIENTS}) exhausted. Client registration denied.");
+                            bail!("Number of licensed clients ({MAX_NUM_CLIENTS}) exhausted. Client registration denied.");
                         } else {
-                            log::warn!("Number of licensed clients ({NUM_CLIENTS}) exhausted but client doesn't support rejection.");
+                            log::warn!("Number of licensed clients ({MAX_NUM_CLIENTS}) exhausted but client doesn't support rejection.");
                         }
                     }
 

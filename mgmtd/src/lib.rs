@@ -56,7 +56,7 @@ pub struct StaticInfo {
 /// Returns after all setup work is done and all tasks are started. The caller is responsible for
 /// keeping the shutdown control handle and send a shutdown request when the program shall
 /// be terminated.
-pub async fn start(info: StaticInfo) -> Result<RunControl> {
+pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunControl> {
     // Initialization
 
     let (run_state, run_state_control) = run_state::new();
@@ -120,39 +120,25 @@ pub async fn start(info: StaticInfo) -> Result<RunControl> {
         .read_tx(|tx| db::config::get(tx, db::config::Config::TrialSerial))
         .await?;
 
-    // Load the licensing library
-    let license = if !info.user_config.license_disable {
-        // SAFETY:
-        // There is no way to verify that the user loaded dynamic library matches the
-        // requirements of LicenseVerifier. After all, users can load anything they
-        // want. Therefore, this is just not safe to do from the Rust compilers
-        // perspective and loading anything with non-matching fp signatures or not
-        // behaving as expected will lead to undefined behavior.
-        let license = unsafe { LicenseVerifier::with_lib(&info.user_config.license_lib_file) };
-
-        match license
-            .load_and_verify_license_cert(&info.user_config.license_cert_file, prev_trial_serial)
-            .await
-        {
-            Ok(serial) => {
-                if license
-                    .get_license_cert_data()?
-                    .data
-                    .is_some_and(|d| d.r#type == CertType::Trial.into())
-                {
-                    db.write_tx(|tx| db::config::set(tx, dbConfig::TrialSerial, serial))
-                        .await?;
-                }
+    // Load and verify license certificate
+    match license
+        .load_and_verify_license_cert(&info.user_config.license_cert_file, prev_trial_serial)
+        .await
+    {
+        Ok(serial) => {
+            if license
+                .get_license_cert_data()?
+                .data
+                .is_some_and(|d| d.r#type == CertType::Trial.into())
+            {
+                db.write_tx(|tx| db::config::set(tx, dbConfig::TrialSerial, serial))
+                    .await?;
             }
-            Err(err) => log::warn!(
-                "Initializing licensing library failed. \
-                Licensed features will be unavailable: {err}"
-            ),
         }
-
-        license
-    } else {
-        LicenseVerifier::with_no_lib()
+        Err(err) => log::warn!(
+            "Initializing licensing library failed. \
+                Licensed features will be unavailable: {err}"
+        ),
     };
 
     // Fill node addrs store from db
