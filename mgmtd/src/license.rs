@@ -242,9 +242,9 @@ impl LicenseVerifier {
                 Err(err) => Err(anyhow!("Error getting license data: {err}")),
             },
             VerifyResult::VerifyInvalid => Err(anyhow!(message)),
-            VerifyResult::VerifyError => Err(anyhow!(
-                "Internal error during certificate verification: {message}"
-            )),
+            VerifyResult::VerifyError => {
+                Err(anyhow!("Error during license verification: {message}"))
+            }
             VerifyResult::VerifyUnspecified => Err(anyhow!("Unspecified result.")),
         }
     }
@@ -302,9 +302,9 @@ impl LicenseVerifier {
         match result {
             VerifyResult::VerifyValid => Ok(()),
             VerifyResult::VerifyInvalid => Err(anyhow!(message)),
-            VerifyResult::VerifyError => Err(anyhow!(
-                "Internal error during feature verification: {message}"
-            )),
+            VerifyResult::VerifyError => {
+                Err(anyhow!("Error during feature verification: {message}"))
+            }
             VerifyResult::VerifyUnspecified => Err(anyhow!("Unspecified result.")),
         }
     }
