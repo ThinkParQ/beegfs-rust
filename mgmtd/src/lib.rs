@@ -136,7 +136,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
             }
         }
         Err(err) => log::warn!(
-            "Initializing licensing library failed. \
+            "Loading and verifying license certificate failed. \
                 Licensed features will be unavailable: {err}"
         ),
     };

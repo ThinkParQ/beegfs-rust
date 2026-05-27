@@ -92,14 +92,14 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
     macro_rules! dispatch_msg {
         ($({$msg_type:path => $r:tt, $ctx_str:literal})*) => {
             // Match on the message ID provided by the request
-            match req.msg_id() {
+            match req.header().msg_id() {
                 $(
                     <$msg_type>::ID => {
                         let des: $msg_type = req.deserialize_msg().with_context(|| {
                             format!(
                                 "{} ({}) from {:?}",
                                 stringify!($msg_type),
-                                req.msg_id(),
+                                req.header().msg_id(),
                                 req.addr()
                             )
                         })?;
@@ -186,7 +186,7 @@ async fn handle_unspecified_msg(req: impl Request) -> Result<()> {
     log::warn!(
         "Unhandled msg INCOMING from {:?} with ID {}",
         req.addr(),
-        req.msg_id()
+        req.header().msg_id()
     );
 
     // Signal to the caller that the msg is not handled. The generic response

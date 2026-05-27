@@ -10,7 +10,8 @@ impl HandleWithResponse for RegisterNode {
     async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
-        let reject = (req.msg_compat_feature_flags() & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
+        let reject =
+            (req.header().msg_compat_feature_flags & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
 
         let node_id = update_node(self, app, reject).await?;
 

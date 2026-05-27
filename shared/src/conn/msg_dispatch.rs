@@ -25,8 +25,7 @@ pub trait Request: Send + Sync {
     fn respond<M: Msg + Serializable>(self, msg: &M) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
     fn addr(&self) -> SocketAddr;
-    fn msg_id(&self) -> MsgId;
-    fn msg_compat_feature_flags(&self) -> u8;
+    fn header(&self) -> &Header;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
 }
 
@@ -62,12 +61,8 @@ impl Request for StreamRequest<'_> {
         deserialize_body(self.header, &self.buf[Header::LEN..])
     }
 
-    fn msg_id(&self) -> MsgId {
-        self.header.msg_id()
-    }
-
-    fn msg_compat_feature_flags(&self) -> u8 {
-        self.header.msg_compat_feature_flags
+    fn header(&self) -> &Header {
+        self.header
     }
 }
 
@@ -101,21 +96,19 @@ impl Request for SocketRequest<'_> {
         deserialize_body(self.header, &self.buf[Header::LEN..])
     }
 
-    fn msg_id(&self) -> MsgId {
-        self.header.msg_id()
-    }
-
-    fn msg_compat_feature_flags(&self) -> u8 {
-        self.header.msg_compat_feature_flags
+    fn header(&self) -> &Header {
+        self.header
     }
 }
 
 pub mod test {
     use super::*;
+    use crate::bee_msg::Header;
     use std::net::{Ipv4Addr, SocketAddrV4};
 
     pub struct TestRequest {
         pub msg_id: MsgId,
+        pub header: Header,
         pub authenticate_connection: bool,
     }
 
@@ -123,6 +116,7 @@ pub mod test {
         pub fn new(msg_id: MsgId) -> Self {
             Self {
                 msg_id,
+                header: Header::default(),
                 authenticate_connection: false,
             }
         }
@@ -142,12 +136,8 @@ pub mod test {
             SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0).into()
         }
 
-        fn msg_id(&self) -> MsgId {
-            self.msg_id
-        }
-
-        fn msg_compat_feature_flags(&self) -> u8 {
-            0
+        fn header(&self) -> &Header {
+            &self.header
         }
 
         fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {

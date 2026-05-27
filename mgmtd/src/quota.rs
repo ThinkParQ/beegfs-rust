@@ -20,7 +20,7 @@ use std::path::Path;
 /// Fetches quota information for all storage targets and updates the quota usage database
 pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
     if app.verify_licensed_feature(LicensedFeature::Quota).is_err() {
-        log::info!("Quota is enabled but feature not licensed. Skipping quota collection");
+        log::warn!("Quota is enabled but feature not licensed. Skipping quota collection");
         return Ok(());
     }
 

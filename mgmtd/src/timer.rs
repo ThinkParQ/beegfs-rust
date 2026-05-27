@@ -56,13 +56,11 @@ async fn update_quota(app: RuntimeApp, mut run_state: RunStateHandle) {
     loop {
         log::debug!("Running quota update");
 
-        match fetch_and_update(&app).await {
-            Ok(_) => {}
-            Err(err) => log::error!("Updating quota failed: {err:#}"),
+        if let Err(e) = fetch_and_update(&app).await {
+            log::error!("Updating quota failed: {e:#}");
         }
-        match distribute_exceeded(&app).await {
-            Ok(_) => {}
-            Err(err) => log::error!("Distributing exceeded quota failed: {err:#}"),
+        if let Err(e) = distribute_exceeded(&app).await {
+            log::error!("Distributing exceeded quota failed: {e:#}");
         }
 
         tokio::select! {

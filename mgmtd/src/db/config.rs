@@ -22,7 +22,7 @@ pub(crate) enum Config {
 
 // Config entries that should not be changed after initially set. Note that this only controls the
 // functions below, the database entries could still be changed by manual query
-const IMMUTABLE: &[Config] = &[Config::FsUuid, Config::FsInitDateSecs];
+const IMMUTABLE: &[Config] = &[Config::FsUuid, Config::FsInitDateSecs, Config::TrialSerial];
 
 impl Config {
     /// The string representation of the config key as it is written to the db
