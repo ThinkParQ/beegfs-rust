@@ -61,11 +61,12 @@ impl HandleWithResponse for GetNodes {
 mod test {
     use super::*;
     use crate::app::test::*;
+    use shared::bee_msg::Header;
 
     #[tokio::test]
     async fn get_nodes() {
         let app = TestApp::new().await;
-        let mut req = TestRequest::new(GetNodes::ID);
+        let mut req = TestRequest::new(Header::default());
 
         let resp = GetNodes {
             node_type: NodeType::Meta,

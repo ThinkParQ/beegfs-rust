@@ -1,7 +1,7 @@
 //! Facilities for dispatching TCP and UDP messages to their message handlers
 
 use super::stream::Stream;
-use crate::bee_msg::{Header, Msg, MsgId, deserialize_body, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
 use anyhow::Result;
 use std::fmt::Debug;
@@ -107,16 +107,14 @@ pub mod test {
     use std::net::{Ipv4Addr, SocketAddrV4};
 
     pub struct TestRequest {
-        pub msg_id: MsgId,
         pub header: Header,
         pub authenticate_connection: bool,
     }
 
     impl TestRequest {
-        pub fn new(msg_id: MsgId) -> Self {
+        pub fn new(header: Header) -> Self {
             Self {
-                msg_id,
-                header: Header::default(),
+                header,
                 authenticate_connection: false,
             }
         }

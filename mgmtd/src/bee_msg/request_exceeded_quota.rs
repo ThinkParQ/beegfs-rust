@@ -69,11 +69,12 @@ mod test {
     use super::*;
     use crate::app::test::*;
     use crate::bee_msg::HandleWithResponse;
+    use shared::bee_msg::Header;
 
     #[tokio::test]
     async fn request_exceeded_quota() {
         let app = TestApp::new().await;
-        let mut req = TestRequest::new(RequestExceededQuota::ID);
+        let mut req = TestRequest::new(Header::default());
 
         let tests: &[(_, &[u32])] = &[
             (
