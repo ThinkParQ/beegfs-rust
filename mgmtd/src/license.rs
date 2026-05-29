@@ -228,11 +228,12 @@ impl LicenseVerifier {
                 Ok(c) => {
                     if c.data.is_some_and(|d| {
                         d.r#type() == CertType::Trial
-                            && prev_trial_serial.is_some_and(|s| serial != s)
+                            && prev_trial_serial.clone().is_some_and(|s| serial != s)
                     }) {
                         library.init_cert_store();
                         Err(anyhow!(
-                            "System has previously used different trial license."
+                            "Unable to apply trial license {serial}, because system was previously used with trial license {}",
+                            prev_trial_serial.unwrap()
                         ))
                     } else {
                         log::info!("Successfully loaded license certificate: {serial}");

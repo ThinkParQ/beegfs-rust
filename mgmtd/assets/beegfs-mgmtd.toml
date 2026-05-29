@@ -90,9 +90,6 @@
 # Defines after which time without contact a client is considered gone and will be removed.
 # client-auto-remove-timeout = "30m"
 
-# Disables loading the license library. This disables all enterprise features.
-# license-disable = false
-
 # The BeeGFS license certificate file.
 # license-cert-file = "/etc/beegfs/license.pem"
 
@@ -151,7 +148,7 @@
 # quota-group-ids-range = "1000-1100"
 
 
-### Capacity pools ### 
+### Capacity pools ###
 
 # Sets the limits / boundaries of the meta capacity pools. If changed, the whole block must
 # be uncommented and set. These cannot be lower than the cap-pool-dynamic-meta-limits below.

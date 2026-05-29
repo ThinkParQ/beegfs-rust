@@ -122,14 +122,18 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
 
     // Load and verify license certificate
     match license
-        .load_and_verify_license_cert(&info.user_config.license_cert_file, prev_trial_serial)
+        .load_and_verify_license_cert(
+            &info.user_config.license_cert_file,
+            prev_trial_serial.clone(),
+        )
         .await
     {
         Ok(serial) => {
             if license
                 .get_license_cert_data()?
                 .data
-                .is_some_and(|d| d.r#type == CertType::Trial.into())
+                .is_some_and(|d| d.r#type() == CertType::Trial)
+                && prev_trial_serial.is_none()
             {
                 db.write_tx(|tx| db::config::set(tx, dbConfig::TrialSerial, serial))
                     .await?;
