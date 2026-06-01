@@ -124,7 +124,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     match license
         .load_and_verify_license_cert(
             &info.user_config.license_cert_file,
-            prev_trial_serial.clone(),
+            prev_trial_serial.as_deref(),
         )
         .await
     {

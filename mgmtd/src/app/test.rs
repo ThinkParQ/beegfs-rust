@@ -163,7 +163,7 @@ impl App for TestApp {
     async fn load_and_verify_license_cert(
         &self,
         _cert_path: &std::path::Path,
-        _prev_trial_serial: Option<String>,
+        _prev_trial_serial: Option<&str>,
     ) -> Result<String> {
         Ok("dummy cert".to_string())
     }

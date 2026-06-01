@@ -203,7 +203,7 @@ impl LicenseVerifier {
     pub async fn load_and_verify_license_cert(
         &self,
         cert_path: impl AsRef<Path>,
-        prev_trial_serial: Option<String>,
+        prev_trial_serial: Option<&str>,
     ) -> Result<String> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded.");
@@ -226,10 +226,11 @@ impl LicenseVerifier {
         match result {
             VerifyResult::VerifyValid => match self.get_license_cert_data() {
                 Ok(c) => {
-                    if c.data.is_some_and(|d| {
-                        d.r#type() == CertType::Trial
-                            && prev_trial_serial.clone().is_some_and(|s| serial != s)
-                    }) {
+                    if let Some(d) = c.data
+                        && d.r#type() == CertType::Trial
+                        && let Some(s) = prev_trial_serial
+                        && serial != s
+                    {
                         library.init_cert_store();
                         Err(anyhow!(
                             "Unable to apply trial license {serial}, because system was previously used with trial license {}",

@@ -81,7 +81,7 @@ pub(crate) trait App: Debug + Clone + Send + 'static {
     fn load_and_verify_license_cert(
         &self,
         cert_path: &Path,
-        prev_trial_serial: Option<String>,
+        prev_trial_serial: Option<&str>,
     ) -> impl Future<Output = Result<String>> + Send;
 
     /// Get license certificate data

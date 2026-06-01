@@ -16,15 +16,13 @@ pub(crate) async fn get_license(
         let serial = app
             .load_and_verify_license_cert(
                 &app.static_info().user_config.license_cert_file,
-                prev_trial_serial.clone(),
+                prev_trial_serial.as_deref(),
             )
             .await?;
 
-        if app
-            .get_license_cert_data()?
-            .data
-            .is_some_and(|d| d.r#type() == CertType::Trial)
-            && prev_trial_serial.is_none()
+        if let Some(d) = app.get_license_cert_data()?.data
+            && d.r#type() == CertType::Trial
+            && let None = prev_trial_serial
         {
             app.write_tx(|tx| db::config::set(tx, Config::TrialSerial, serial))
                 .await?;
