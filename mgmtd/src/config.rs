@@ -451,6 +451,10 @@ impl Config {
             bail!("Provided file system UUID is not a valid v4 UUID");
         }
 
+        if self.connection_limit < 1 {
+            bail!("Connection limit cannot be smaller than 1");
+        }
+
         if self.quota_enforce && !self.quota_enable {
             bail!("Quota enforcement requires quota being enabled");
         }

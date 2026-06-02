@@ -14,9 +14,11 @@ use shared::bee_msg::quota::{
 use shared::types::{NodeType, PoolId, QuotaId, QuotaIdType, QuotaType, TargetId, Uid};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
@@ -184,6 +186,10 @@ async fn create_and_send_requests(
 
     let mut tasks = vec![];
 
+    // These bound the concurrent requests going on to one node so these potentially long-running
+    // requests don't block all available connections
+    let mut semaphores = HashMap::new();
+
     // Sends one request per (target, id_type, list|range|all) to the respective owner node
     // Requesting is done concurrently for multiple targets but serialized for the different fetch
     // modes.
@@ -193,9 +199,26 @@ async fn create_and_send_requests(
         let group_list = group_list.clone();
         let user_range = config.quota_user_ids_range.clone();
         let group_range = config.quota_group_ids_range.clone();
+        let semaphore = semaphores
+            .entry(t.node_uid)
+            .or_insert_with(|| Arc::new(Semaphore::new((config.connection_limit / 2).max(1))))
+            .clone();
 
         tasks.push(tokio::spawn(async move {
             let mut responses = vec![];
+
+            let _permit = match semaphore.acquire().await {
+                Ok(p) => p,
+                Err(err) => {
+                    log::error!(
+                        "Acquiring permit for fetching quota info for storage target {} from node \
+                        with uid {} failed: {err:#}",
+                        t.target_id, t.node_uid
+                    );
+
+                    return (t, None);
+                }
+            };
 
             if user_use_all {
                 // Request all entries if no specific ids are configured

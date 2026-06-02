@@ -135,6 +135,9 @@ pub struct GetQuotaInfoResp {
 
 impl Msg for GetQuotaInfoResp {
     const ID: MsgId = 2098;
+    // Generously increase the response timeout since querying the maximum of ~167k quota entries
+    // can take some seconds on slow systems.
+    const RESPONSE_TIME_LIMIT: Duration = Duration::from_mins(1);
 }
 
 /// Sets exceeded quota information on server nodes.
