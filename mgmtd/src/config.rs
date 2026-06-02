@@ -279,9 +279,11 @@ generate_structs! {
 
     /// Disables loading the license library.
     ///
-    /// This disables all enterprise features.
+    /// Deprecated. Loading a license is now mandatory.
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
+    #[arg(hide = true)]
+    #[serde(skip)]
     license_disable: bool = false,
 
     /// The BeeGFS license certificate file. [default: /etc/beegfs/license.pem]

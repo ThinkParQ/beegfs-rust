@@ -27,11 +27,12 @@ impl HandleNoResponse for AuthenticateChannel {
 mod test {
     use super::*;
     use crate::app::test::*;
+    use shared::bee_msg::Header;
 
     #[tokio::test]
     async fn authenticate_channel() {
         let app = TestApp::new().await;
-        let mut req = TestRequest::new(AuthenticateChannel::ID);
+        let mut req = TestRequest::new(Header::default());
 
         AuthenticateChannel {
             auth_secret: AuthSecret::hash_from_bytes("secret"),

@@ -95,11 +95,12 @@ doesn't match stored state {old_stored}, no consistency state changes will be ma
 mod test {
     use super::*;
     use crate::app::test::*;
+    use shared::bee_msg::Header;
 
     #[tokio::test]
     async fn change_target_consistency_states() {
         let app = TestApp::new().await;
-        let mut req = TestRequest::new(ChangeTargetConsistencyStates::ID);
+        let mut req = TestRequest::new(Header::default());
 
         // Prepare times
         app.db
@@ -174,7 +175,7 @@ mod test {
     #[tokio::test]
     async fn change_target_consistency_states_old_states() {
         let app = TestApp::new().await;
-        let mut req = TestRequest::new(ChangeTargetConsistencyStates::ID);
+        let mut req = TestRequest::new(Header::default());
 
         // Mismatch of reported old state should not change the consistency states
         let msg = ChangeTargetConsistencyStates {

@@ -17,11 +17,12 @@ pub(crate) enum Config {
     #[allow(unused)]
     FsName,
     CounterLastClientID,
+    TrialSerial,
 }
 
 // Config entries that should not be changed after initially set. Note that this only controls the
 // functions below, the database entries could still be changed by manual query
-const IMMUTABLE: &[Config] = &[Config::FsUuid, Config::FsInitDateSecs];
+const IMMUTABLE: &[Config] = &[Config::FsUuid, Config::FsInitDateSecs, Config::TrialSerial];
 
 impl Config {
     /// The string representation of the config key as it is written to the db
@@ -31,6 +32,7 @@ impl Config {
             Config::FsInitDateSecs => "fs_init_date_secs",
             Config::FsName => "fs_name",
             Config::CounterLastClientID => "counter_last_client_id",
+            Config::TrialSerial => "trial_serial",
         }
     }
 }

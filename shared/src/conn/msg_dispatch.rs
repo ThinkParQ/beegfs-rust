@@ -1,7 +1,7 @@
 //! Facilities for dispatching TCP and UDP messages to their message handlers
 
 use super::stream::Stream;
-use crate::bee_msg::{Header, Msg, MsgId, deserialize_body, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
 use anyhow::Result;
 use std::fmt::Debug;
@@ -25,7 +25,7 @@ pub trait Request: Send + Sync {
     fn respond<M: Msg + Serializable>(self, msg: &M) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
     fn addr(&self) -> SocketAddr;
-    fn msg_id(&self) -> MsgId;
+    fn header(&self) -> &Header;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
 }
 
@@ -61,8 +61,8 @@ impl Request for StreamRequest<'_> {
         deserialize_body(self.header, &self.buf[Header::LEN..])
     }
 
-    fn msg_id(&self) -> MsgId {
-        self.header.msg_id()
+    fn header(&self) -> &Header {
+        self.header
     }
 }
 
@@ -96,24 +96,25 @@ impl Request for SocketRequest<'_> {
         deserialize_body(self.header, &self.buf[Header::LEN..])
     }
 
-    fn msg_id(&self) -> MsgId {
-        self.header.msg_id()
+    fn header(&self) -> &Header {
+        self.header
     }
 }
 
 pub mod test {
     use super::*;
+    use crate::bee_msg::Header;
     use std::net::{Ipv4Addr, SocketAddrV4};
 
     pub struct TestRequest {
-        pub msg_id: MsgId,
+        pub header: Header,
         pub authenticate_connection: bool,
     }
 
     impl TestRequest {
-        pub fn new(msg_id: MsgId) -> Self {
+        pub fn new(header: Header) -> Self {
             Self {
-                msg_id,
+                header,
                 authenticate_connection: false,
             }
         }
@@ -133,8 +134,8 @@ pub mod test {
             SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0).into()
         }
 
-        fn msg_id(&self) -> MsgId {
-            self.msg_id
+        fn header(&self) -> &Header {
+            &self.header
         }
 
         fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {

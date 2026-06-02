@@ -203,6 +203,7 @@ impl LicenseVerifier {
     pub async fn load_and_verify_license_cert(
         &self,
         cert_path: impl AsRef<Path>,
+        prev_trial_serial: Option<&str>,
     ) -> Result<String> {
         let Some(ref library) = self.0 else {
             bail!("License verification library not loaded.");
@@ -223,14 +224,29 @@ impl LicenseVerifier {
         let message = res.message;
 
         match result {
-            VerifyResult::VerifyValid => {
-                log::info!("Successfully loaded license certificate: {serial}");
-                Ok(serial)
-            }
+            VerifyResult::VerifyValid => match self.get_license_cert_data() {
+                Ok(c) => {
+                    if let Some(d) = c.data
+                        && d.r#type() == CertType::Trial
+                        && let Some(s) = prev_trial_serial
+                        && serial != s
+                    {
+                        library.init_cert_store();
+                        Err(anyhow!(
+                            "Unable to apply trial license {serial}, because system was previously used with trial license {}",
+                            prev_trial_serial.unwrap()
+                        ))
+                    } else {
+                        log::info!("Successfully loaded license certificate: {serial}");
+                        Ok(serial)
+                    }
+                }
+                Err(err) => Err(anyhow!("Error getting license data: {err}")),
+            },
             VerifyResult::VerifyInvalid => Err(anyhow!(message)),
-            VerifyResult::VerifyError => Err(anyhow!(
-                "Internal error during certificate verification: {message}"
-            )),
+            VerifyResult::VerifyError => {
+                Err(anyhow!("Error during license verification: {message}"))
+            }
             VerifyResult::VerifyUnspecified => Err(anyhow!("Unspecified result.")),
         }
     }
@@ -288,9 +304,9 @@ impl LicenseVerifier {
         match result {
             VerifyResult::VerifyValid => Ok(()),
             VerifyResult::VerifyInvalid => Err(anyhow!(message)),
-            VerifyResult::VerifyError => Err(anyhow!(
-                "Internal error during feature verification: {message}"
-            )),
+            VerifyResult::VerifyError => {
+                Err(anyhow!("Error during feature verification: {message}"))
+            }
             VerifyResult::VerifyUnspecified => Err(anyhow!("Unspecified result.")),
         }
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::license::LicensedFeature;
 use rusqlite::params;
 use shared::bee_msg::quota::*;
 
@@ -13,6 +14,8 @@ impl HandleWithResponse for RequestExceededQuota {
     }
 
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
+        app.verify_licensed_feature(LicensedFeature::Quota)?;
+
         let inner = app
             .read_tx(move |tx| {
                 // Quota is calculated per pool, so if a target ID is given, use its assigned pools
@@ -66,11 +69,12 @@ mod test {
     use super::*;
     use crate::app::test::*;
     use crate::bee_msg::HandleWithResponse;
+    use shared::bee_msg::Header;
 
     #[tokio::test]
     async fn request_exceeded_quota() {
         let app = TestApp::new().await;
-        let mut req = TestRequest::new(RequestExceededQuota::ID);
+        let mut req = TestRequest::new(Header::default());
 
         let tests: &[(_, &[u32])] = &[
             (

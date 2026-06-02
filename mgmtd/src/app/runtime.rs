@@ -164,8 +164,13 @@ impl App for RuntimeApp {
         }
     }
 
-    async fn load_and_verify_license_cert(&self, cert_path: &Path) -> Result<String> {
-        LicenseVerifier::load_and_verify_license_cert(&self.license, cert_path).await
+    async fn load_and_verify_license_cert(
+        &self,
+        cert_path: &Path,
+        prev_trial_serial: Option<&str>,
+    ) -> Result<String> {
+        LicenseVerifier::load_and_verify_license_cert(&self.license, cert_path, prev_trial_serial)
+            .await
     }
 
     fn get_license_cert_data(&self) -> Result<GetCertDataResult> {

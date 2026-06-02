@@ -16,8 +16,10 @@ use crate::app::RuntimeApp;
 use crate::config::Config;
 use anyhow::{Context, Result};
 use app::App;
+use db::config::Config as dbConfig;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
+use protobuf::license::CertType;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::conn::incoming;
 use shared::conn::outgoing::Pool;
@@ -113,6 +115,35 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         )
     })
     .await?;
+
+    let prev_trial_serial: Option<String> = db
+        .read_tx(|tx| db::config::get(tx, db::config::Config::TrialSerial))
+        .await?;
+
+    // Load and verify license certificate
+    match license
+        .load_and_verify_license_cert(
+            &info.user_config.license_cert_file,
+            prev_trial_serial.as_deref(),
+        )
+        .await
+    {
+        Ok(serial) => {
+            if license
+                .get_license_cert_data()?
+                .data
+                .is_some_and(|d| d.r#type() == CertType::Trial)
+                && prev_trial_serial.is_none()
+            {
+                db.write_tx(|tx| db::config::set(tx, dbConfig::TrialSerial, serial))
+                    .await?;
+            }
+        }
+        Err(err) => log::warn!(
+            "Loading and verifying license certificate failed. \
+                Licensed features will be unavailable: {err}"
+        ),
+    };
 
     // Fill node addrs store from db
     db.read_tx(db::node_nic::get_all_addrs)
