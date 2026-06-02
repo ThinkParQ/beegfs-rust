@@ -139,7 +139,9 @@ async fn read_stream(
     stream_authentication_required: bool,
 ) -> Result<()> {
     // Read header
-    stream.read_exact(&mut buf[0..Header::LEN]).await?;
+    stream
+        .read_exact(&mut buf[0..Header::LEN], DEFAULT_TIME_LIMIT)
+        .await?;
 
     let header = deserialize_header(&buf[0..Header::LEN])?;
 
@@ -156,7 +158,7 @@ async fn read_stream(
 
     // Read body
     stream
-        .read_exact(&mut buf[Header::LEN..header.msg_len()])
+        .read_exact(&mut buf[Header::LEN..header.msg_len()], DEFAULT_TIME_LIMIT)
         .await?;
 
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to

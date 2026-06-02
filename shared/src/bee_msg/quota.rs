@@ -119,6 +119,10 @@ pub struct GetQuotaInfoResp {
 
 impl Msg for GetQuotaInfoResp {
     const ID: MsgId = 2098;
+    /// This value is large enough to fix timeout issues for a customer whose storage servers
+    /// took >30m to process the requests. For anyone else, this should also be more than enough,
+    /// as on a typical system this isn't supposed to be taking that long by far.
+    const RESPONSE_TIME_LIMIT: Duration = Duration::from_mins(40);
 }
 
 /// Sets exceeded quota information on server nodes.

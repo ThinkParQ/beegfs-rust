@@ -3,6 +3,7 @@
 use super::stream::Stream;
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
+use crate::conn::DEFAULT_TIME_LIMIT;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;
@@ -40,7 +41,9 @@ pub struct StreamRequest<'a> {
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         let msg_len = serialize(msg, self.buf)?;
-        self.stream.write_all(&self.buf[0..msg_len]).await
+        self.stream
+            .write_all(&self.buf[0..msg_len], DEFAULT_TIME_LIMIT)
+            .await
     }
 
     fn authenticate_connection(&mut self) {
