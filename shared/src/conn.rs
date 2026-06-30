@@ -1,5 +1,7 @@
 //! Connection to other BeeGFS nodes
 
+use std::time::Duration;
+
 mod async_queue;
 pub mod incoming;
 pub mod msg_dispatch;
@@ -16,3 +18,6 @@ const TCP_BUF_LEN: usize = 4 * 1024 * 1024;
 /// Must match the `DGRAMMR_(RECV|SEND)BUF_SIZE` value in `DatagramListener.*` in the C/C++
 /// codebase. Must be smaller than TCP_BUF_LEN;
 const UDP_BUF_LEN: usize = 65536;
+
+/// Reasonable time limit for most write and read operations
+const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(2);

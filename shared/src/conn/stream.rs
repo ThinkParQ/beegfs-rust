@@ -9,8 +9,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-const TIMEOUT: Duration = Duration::from_secs(2);
-
 /// A connected generic stream.
 ///
 /// Provides functionality to communicate with the connected peer. Can support multiple
@@ -39,9 +37,9 @@ impl From<TcpStream> for Stream {
 impl Stream {
     /// Connect to peer using TCP and obtain a [Stream] object.
     ///
-    /// Times out after [TIMEOUT].
-    pub async fn connect_tcp(addr: &SocketAddr) -> Result<Self> {
-        let stream = match timeout(TIMEOUT, TcpStream::connect(addr)).await {
+    /// Times out after [time_limit].
+    pub async fn connect_tcp(addr: &SocketAddr, time_limit: Duration) -> Result<Self> {
+        let stream = match timeout(time_limit, TcpStream::connect(addr)).await {
             Ok(res) => res?,
             Err(_) => bail!("Connecting a TCP stream to {addr} timed out"),
         };
@@ -74,13 +72,12 @@ impl Stream {
     /// Reads from the stream into the provided buffer.
     ///
     /// The buffer will be filled completely before the future completes. Times out after
-    /// [TIMEOUT].
+    /// [time_limit].
     ///
     /// **Important**: Not cancel safe. If a timeout occurs, the stream may not be reused.
     // Clippy: Suppress false positive
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
-        match timeout(TIMEOUT, async {
+    pub async fn read_exact(&mut self, buf: &mut [u8], time_limit: Duration) -> Result<()> {
+        match timeout(time_limit, async {
             match &mut self.stream {
                 InnerStream::Tcp(s) => {
                     s.read_exact(buf).await?;
@@ -98,11 +95,11 @@ impl Stream {
     /// Writes to the stream from the provided buffer.
     ///
     /// The buffer will be written completely before the future completes. Times out after
-    /// [TIMEOUT].
+    /// [time_limit].
     ///
     /// **Important**: Not cancel safe. If a timeout occurs, the stream may not be reused.
-    pub async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
-        match timeout(TIMEOUT, async {
+    pub async fn write_all(&mut self, buf: &[u8], time_limit: Duration) -> Result<()> {
+        match timeout(time_limit, async {
             match &mut self.stream {
                 InnerStream::Tcp(s) => {
                     s.write_all(buf).await?;
@@ -113,7 +110,7 @@ impl Stream {
         .await
         {
             Ok(res) => res,
-            Err(_) => Err(anyhow!("Writing to a stream to {} timed out", self.addr())),
+            Err(_) => Err(anyhow!("Writing to stream to {} timed out", self.addr())),
         }
     }
 

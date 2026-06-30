@@ -6,6 +6,7 @@ use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 pub mod buddy_group;
 pub mod misc;
@@ -26,6 +27,8 @@ pub trait BaseMsg: Any + std::fmt::Debug + Send + Sync + 'static {}
 pub trait Msg: BaseMsg + Default + Clone {
     /// Message type as defined in NetMessageTypes.h
     const ID: MsgId;
+    /// How long to wait to receive this message as a response
+    const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(2);
 }
 
 impl<M> BaseMsg for M where M: Msg {}
