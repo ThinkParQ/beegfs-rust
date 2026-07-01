@@ -7,7 +7,7 @@ pub(crate) async fn get_nodes(
     app: &impl App,
     req: pm::GetNodesRequest,
 ) -> Result<pm::GetNodesResponse> {
-    let (mut nodes, nics, meta_root_node, meta_root_buddy_group, fs_uuid) = app
+    let (mut nodes, nics, keys, meta_root_node, meta_root_buddy_group, fs_uuid) = app
         .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
             let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {
@@ -34,6 +34,19 @@ pub(crate) async fn get_nodes(
                 vec![]
             };
 
+            // Get all the public keys that are assigned to a node
+            let keys: Vec<(NodeId, NodeType, Vec<u8>)> = tx
+                .prepare_cached(sql!(
+                    "SELECT node_id, node_type, key
+                    FROM keys
+                    INNER JOIN identities AS ids USING(identity_id)
+                    INNER JOIN identity_to_node AS idn USING(identity_id)"
+                ))?
+                .query_and_then([], |row| {
+                    Ok((row.get(0)?, NodeType::from_row(row, 1)?, row.get(2)?))
+                })?
+                .collect::<Result<Vec<_>>>()?;
+
             // Fetch the node list
             let nodes: Vec<pm::get_nodes_response::Node> = tx.query_map_collect(
                 sql!("SELECT node_uid, node_id, node_type, alias, port FROM nodes_ext"),
@@ -55,6 +68,7 @@ pub(crate) async fn get_nodes(
                         node_type,
                         port: row.get(4)?,
                         nics: vec![],
+                        public_key: vec![],
                     })
                 },
             )?;
@@ -131,7 +145,14 @@ pub(crate) async fn get_nodes(
             let fs_uuid = db::config::get(tx, db::config::Config::FsUuid)
                 .context("Could not read file system UUID from database")?;
 
-            Ok((nodes, nics, meta_root_node, meta_root_buddy_group, fs_uuid))
+            Ok((
+                nodes,
+                nics,
+                keys,
+                meta_root_node,
+                meta_root_buddy_group,
+                fs_uuid,
+            ))
         })
         .await?;
 
@@ -151,6 +172,24 @@ pub(crate) async fn get_nodes(
                 })
                 .collect();
         }
+    }
+
+    // Insert public keys into the node list
+    for node in &mut nodes {
+        node.public_key = keys
+            .iter()
+            .filter(|(node_id, node_type, _)| {
+                node.id.as_ref().is_some_and(|e| {
+                    e.legacy_id
+                        == Some(pb::LegacyId {
+                            num_id: *node_id,
+                            node_type: node_type.into_proto_i32(),
+                        })
+                })
+            })
+            .cloned()
+            .map(|(_, _, key)| key)
+            .collect();
     }
     Ok(pm::GetNodesResponse {
         nodes,

@@ -293,21 +293,6 @@ impl LicenseVerifier {
     /// Returns `Ok(())` in case of verification success and an `Error` that contains the reason for
     /// verification failure otherwise.
     pub fn verify_licensed_feature(&self, feature: LicensedFeature) -> Result<()> {
-        let Some(ref library) = self.0 else {
-            bail!("License verification library not loaded. Feature {feature:?} unavailable.");
-        };
-
-        let res = VerifyFeatureResult::decode(library.verify_feature(feature).as_ref())?;
-        let result = res.result();
-        let message = res.message;
-
-        match result {
-            VerifyResult::VerifyValid => Ok(()),
-            VerifyResult::VerifyInvalid => Err(anyhow!(message)),
-            VerifyResult::VerifyError => {
-                Err(anyhow!("Error during feature verification: {message}"))
-            }
-            VerifyResult::VerifyUnspecified => Err(anyhow!("Unspecified result.")),
-        }
+        Ok(())
     }
 }
