@@ -18,6 +18,6 @@ CREATE TABLE identity_to_node (
 CREATE TABLE keys (
     key_id INTEGER PRIMARY KEY AUTOINCREMENT,
     key BLOB NOT NULL,
-    identity INTEGER NOT NULL
+    identity_id INTEGER NOT NULL
         REFERENCES identities (identity_id) ON DELETE CASCADE
 ) STRICT;
