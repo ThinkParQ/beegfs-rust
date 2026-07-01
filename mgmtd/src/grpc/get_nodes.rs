@@ -1,4 +1,6 @@
 use super::*;
+use itertools::Itertools;
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
 use std::str::FromStr;
 
@@ -7,7 +9,7 @@ pub(crate) async fn get_nodes(
     app: &impl App,
     req: pm::GetNodesRequest,
 ) -> Result<pm::GetNodesResponse> {
-    let (mut nodes, nics, keys, meta_root_node, meta_root_buddy_group, fs_uuid) = app
+    let (mut nodes, nics, mut keys_by_node, meta_root_node, meta_root_buddy_group, fs_uuid) = app
         .read_tx(move |tx| {
             // Fetching the nic list is optional as it causes additional load
             let nics: Vec<(Uid, pm::get_nodes_response::node::Nic)> = if req.include_nics {
@@ -34,18 +36,24 @@ pub(crate) async fn get_nodes(
                 vec![]
             };
 
-            // Get all the public keys that are assigned to a node
-            let keys: Vec<(NodeId, NodeType, Vec<u8>)> = tx
-                .prepare_cached(sql!(
+            // Get all the public keys assigned to a node, grouped by node
+            let keys_by_node: HashMap<(NodeId, i32), Vec<Vec<u8>>> = itertools::process_results(
+                tx.prepare_cached(sql!(
                     "SELECT node_id, node_type, key
                     FROM keys
-                    INNER JOIN identities AS ids USING(identity_id)
                     INNER JOIN identity_to_node AS idn USING(identity_id)"
                 ))?
-                .query_and_then([], |row| {
-                    Ok((row.get(0)?, NodeType::from_row(row, 1)?, row.get(2)?))
-                })?
-                .collect::<Result<Vec<_>>>()?;
+                .query_and_then(
+                    [],
+                    |row| -> Result<((NodeId, i32), Vec<u8>)> {
+                        Ok((
+                            (row.get(0)?, NodeType::from_row(row, 1)?.into_proto_i32()),
+                            row.get(2)?,
+                        ))
+                    },
+                )?,
+                |iter| iter.into_group_map(),
+            )?;
 
             // Fetch the node list
             let nodes: Vec<pm::get_nodes_response::Node> = tx.query_map_collect(
@@ -148,7 +156,7 @@ pub(crate) async fn get_nodes(
             Ok((
                 nodes,
                 nics,
-                keys,
+                keys_by_node,
                 meta_root_node,
                 meta_root_buddy_group,
                 fs_uuid,
@@ -176,20 +184,11 @@ pub(crate) async fn get_nodes(
 
     // Insert public keys into the node list
     for node in &mut nodes {
-        node.public_key = keys
-            .iter()
-            .filter(|(node_id, node_type, _)| {
-                node.id.as_ref().is_some_and(|e| {
-                    e.legacy_id
-                        == Some(pb::LegacyId {
-                            num_id: *node_id,
-                            node_type: node_type.into_proto_i32(),
-                        })
-                })
-            })
-            .cloned()
-            .map(|(_, _, key)| key)
-            .collect();
+        if let Some(legacy_id) = node.id.as_ref().and_then(|e| e.legacy_id.as_ref())
+            && let Some(node_keys) = keys_by_node.remove(&(legacy_id.num_id, legacy_id.node_type))
+        {
+            node.public_key = node_keys;
+        }
     }
     Ok(pm::GetNodesResponse {
         nodes,
