@@ -338,8 +338,15 @@ generate_structs! {
     #[serde(deserialize_with = "deserialize_duration")]
     quota_update_interval: Duration = Duration::from_secs(30),
 
+    // The following options specify the User/Group IDs for which to query the quota entries on the
+    // storage services. By default, all quota entries for all existing ids on the storage nodes are
+    // queried automatically. This is the preferred way. Setting any option below (group or user)
+    // completely opts out of automatic mode and only queries the ids specified. The settings can be
+    // mixed.
+
     /// Defines the minimum id of the existing system users to be quota checked and enforced.
     ///
+    /// Set to opt out of automatic query of all quota entries for all ids on the storage server.
     /// Note that this uses the users from the local machine the management is running on.
     #[arg(long)]
     #[arg(num_args = 1)] // Overwrite the automatic `num_args = 0..=1`
@@ -347,6 +354,7 @@ generate_structs! {
     quota_user_system_ids_min: Option<QuotaId> = None,
     /// Loads the user ids to be quota queried and enforced from a file.
     ///
+    /// Set to opt out of automatic query of all quota entries for all ids on the storage server.
     /// Ids must be numeric only and separated by any whitespace.
     #[arg(long)]
     #[arg(num_args = 1)]
@@ -354,6 +362,7 @@ generate_structs! {
     quota_user_ids_file: Option<PathBuf> = None,
     /// Defines a range of user ids to be quota queried and enforced.
     ///
+    /// Set to opt out of automatic query of all quota entries for all ids on the storage server.
     /// IMPORTANT: This setting may only be used for reasonable small ranges (hundreds or
     /// thousands). For dynamic ids in a large range, the file should be used instead to query
     /// only the existing ids. The file can be regularly updated by a cronjob to collect ids from
@@ -369,6 +378,7 @@ generate_structs! {
 
     /// Defines the minimum id of the existing system groups to be quota checked and enforced.
     ///
+    /// Set to opt out of automatic query of all quota entries for all ids on the storage server.
     /// Note that this uses the groups from the local machine the management is running on.
     #[arg(long)]
     #[arg(num_args = 1)]
@@ -376,6 +386,7 @@ generate_structs! {
     quota_group_system_ids_min: Option<QuotaId> = None,
     /// Loads the group ids to be quota queried and enforced from a file.
     ///
+    /// Set to opt out of automatic query of all quota entries for all ids on the storage server.
     /// Ids must be numeric only and separated by any whitespace.
     #[arg(long)]
     #[arg(num_args = 1)]
@@ -383,6 +394,7 @@ generate_structs! {
     quota_group_ids_file: Option<PathBuf> = None,
     /// Defines a range of group ids to be quota queried and enforced.
     ///
+    /// Set to opt out of automatic query of all quota entries for all ids on the storage server.
     /// IMPORTANT: This setting may only be used for reasonable small ranges (hundreds or
     /// thousands). For dynamic ids in a large range, the file should be used instead to query
     /// only the existing ids. The file can be regularly updated by a cronjob to collect ids from

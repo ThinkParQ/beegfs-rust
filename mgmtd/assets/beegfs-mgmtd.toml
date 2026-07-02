@@ -122,19 +122,24 @@
 # the IDs that exceed the limits and reports them back to the server nodes.
 # quota-update-interval = "30s"
 
-# The following options specify the User/Group IDs to be fetched from storage services for quota
-# checking and enforcement. They are disabled by default and least one needs to be enabled for
-# quota enforcement having any effect. They can be mixed.
+# The following options specify the User/Group IDs for which to query the quota entries on the
+# storage services. By default, all quota entries for all existing ids on the storage nodes are
+# queried automatically. This is the preferred way. Setting any option below (group or user)
+# completely opts out of automatic mode and only queries the ids specified. The settings can be
+# mixed.
 
 # Defines the minimum id of the existing system users to be quota checked and enforced.
+# Set to opt out of automatic query of all quota entries for all ids on the storage server.
 # Note that this uses the users from the local machine the management is running on.
 # quota-user-system-ids-min = 1000
 
 # Loads the user ids to be quota queried and enforced from a file.
+# Set to opt out of automatic query of all quota entries for all ids on the storage server.
 # Ids must be numeric only and separated by any whitespace.
 # quota-user-ids-file = ""
 
 # Defines a range of user ids to be quota queried and enforced.
+# Set to opt out of automatic query of all quota entries for all ids on the storage server.
 # IMPORTANT: This setting may only be used for reasonable small ranges (hundreds or thousands).
 # For dynamic ids in a large range, the file should be used instead to query only the existing ids.
 # The file can be regularly updated by a cronjob to collect ids from external sources (e.g. active

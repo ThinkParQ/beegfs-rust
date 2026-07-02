@@ -137,7 +137,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
     Ok(())
 }
 
-/// Request all quota entries
+/// Request all existing quota entries for the given target list. New, preferred automatic mode.
 fn request_all(
     app: &impl App,
     targets: Vec<TargetToQuery>,
@@ -171,6 +171,9 @@ fn request_all(
 
     tasks
 }
+
+/// Request all quota entries for the given target list for the configured ids (system, list range).
+/// The old way.
 async fn request_legacy(
     app: &impl App,
     targets: Vec<TargetToQuery>,
