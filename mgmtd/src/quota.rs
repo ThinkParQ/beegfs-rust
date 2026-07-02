@@ -50,103 +50,168 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
         targets.len()
     );
 
-    // The to-be-queried IDs
-    let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
+    let config = &app.static_info().user_config;
 
-    // If configured, add system User IDS
-    let user_ids_min = app.static_info().user_config.quota_user_system_ids_min;
+    // If no query ids are configured, use the newer, full automatic selection. Otherwise use the
+    // legacy mechanism.
+    let tasks = if config.quota_user_system_ids_min.is_none()
+        && config.quota_user_ids_file.is_none()
+        && config.quota_user_ids_range.is_none()
+        && config.quota_group_system_ids_min.is_none()
+        && config.quota_group_ids_file.is_none()
+        && config.quota_group_ids_range.is_none()
+    {
+        // let user_request = GetQuotaInfo::
+        let mut tasks = vec![];
+        // Sends one request per target to the respective owner node
+        // Requesting is done concurrently.
+        for (target_id, pool_id, node_uid) in targets {
+            let app2 = app.clone();
 
-    if let Some(user_ids_min) = user_ids_min {
-        system_id::user_ids()
-            .await
-            .filter(|e| e >= &user_ids_min)
-            .for_each(|e| {
-                user_ids.insert(e);
-            });
-    }
+            tasks.push(tokio::spawn(async move {
+                let resp_users: Result<GetQuotaInfoResp> = app2
+                    .request(
+                        node_uid,
+                        &GetQuotaInfo::with_all(QuotaIdType::User, target_id, pool_id),
+                    )
+                    .await;
 
-    // If configured, add system Group IDS
-    let group_ids_min = app.static_info().user_config.quota_group_system_ids_min;
+                let resp_groups: Result<GetQuotaInfoResp> = app2
+                    .request(
+                        node_uid,
+                        &GetQuotaInfo::with_all(QuotaIdType::Group, target_id, pool_id),
+                    )
+                    .await;
 
-    if let Some(group_ids_min) = group_ids_min {
-        system_id::group_ids()
-            .await
-            .filter(|e| e >= &group_ids_min)
-            .for_each(|e| {
-                group_ids.insert(e);
-            });
-    }
+                match (resp_users, resp_groups) {
+                    (Ok(u), Ok(mut g)) => {
+                        let mut entries = u.quota_entry;
+                        entries.append(&mut g.quota_entry);
 
-    // If configured, add user IDs from file
-    if let Some(ref path) = app.static_info().user_config.quota_user_ids_file {
-        try_read_quota_ids(path, &mut user_ids)?;
-    }
+                        (target_id, Some(entries))
+                    }
+                    (u, g) => {
+                        let log_u = u
+                            .err()
+                            .map(|err| format!("\nUsers: {err:#}"))
+                            .unwrap_or_else(|| "".into());
+                        let log_g = g
+                            .err()
+                            .map(|err| format!("\nGroups: {err:#}"))
+                            .unwrap_or_else(|| "".into());
 
-    // If configured, add group IDs from file
-    if let Some(ref path) = app.static_info().user_config.quota_group_ids_file {
-        try_read_quota_ids(path, &mut group_ids)?;
-    }
-
-    // If configured, add range based user IDs
-    if let Some(range) = &app.static_info().user_config.quota_user_ids_range {
-        user_ids.extend(range.clone());
-    }
-
-    // If configured, add range based group IDs
-    if let Some(range) = &app.static_info().user_config.quota_group_ids_range {
-        group_ids.extend(range.clone());
-    }
-
-    let mut tasks = vec![];
-    // Sends one request per target to the respective owner node
-    // Requesting is done concurrently.
-    for (target_id, pool_id, node_uid) in targets {
-        let app2 = app.clone();
-        let user_ids2 = user_ids.clone();
-        let group_ids2 = group_ids.clone();
-
-        tasks.push(tokio::spawn(async move {
-            let resp_users: Result<GetQuotaInfoResp> = app2
-                .request(
-                    node_uid,
-                    &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
-                )
-                .await;
-
-            let resp_groups: Result<GetQuotaInfoResp> = app2
-                .request(
-                    node_uid,
-                    &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
-                )
-                .await;
-
-            match (resp_users, resp_groups) {
-                (Ok(u), Ok(mut g)) => {
-                    let mut entries = u.quota_entry;
-                    entries.append(&mut g.quota_entry);
-
-                    (target_id, Some(entries))
-                }
-                (u, g) => {
-                    let log_u = u
-                        .err()
-                        .map(|err| format!("\nUsers: {err:#}"))
-                        .unwrap_or_else(|| "".into());
-                    let log_g = g
-                        .err()
-                        .map(|err| format!("\nGroups: {err:#}"))
-                        .unwrap_or_else(|| "".into());
-
-                    log::error!(
-                        "Fetching quota info for storage target {target_id} from node with uid \
+                        log::error!(
+                            "Fetching quota info for storage target {target_id} from node with uid \
 {node_uid} failed.{log_u}{log_g}"
-                    );
+                        );
 
-                    (target_id, None)
+                        (target_id, None)
+                    }
                 }
-            }
-        }));
-    }
+            }));
+        }
+
+        tasks
+    } else {
+        // The to-be-queried IDs
+        let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
+
+        // If configured, add system User IDS
+        let user_ids_min = config.quota_user_system_ids_min;
+
+        if let Some(user_ids_min) = user_ids_min {
+            system_id::user_ids()
+                .await
+                .filter(|e| e >= &user_ids_min)
+                .for_each(|e| {
+                    user_ids.insert(e);
+                });
+        }
+
+        // If configured, add system Group IDS
+        let group_ids_min = config.quota_group_system_ids_min;
+
+        if let Some(group_ids_min) = group_ids_min {
+            system_id::group_ids()
+                .await
+                .filter(|e| e >= &group_ids_min)
+                .for_each(|e| {
+                    group_ids.insert(e);
+                });
+        }
+
+        // If configured, add user IDs from file
+        if let Some(ref path) = config.quota_user_ids_file {
+            try_read_quota_ids(path, &mut user_ids)?;
+        }
+
+        // If configured, add group IDs from file
+        if let Some(ref path) = config.quota_group_ids_file {
+            try_read_quota_ids(path, &mut group_ids)?;
+        }
+
+        // If configured, add range based user IDs
+        if let Some(range) = &config.quota_user_ids_range {
+            user_ids.extend(range.clone());
+        }
+
+        // If configured, add range based group IDs
+        if let Some(range) = &config.quota_group_ids_range {
+            group_ids.extend(range.clone());
+        }
+        let mut tasks = vec![];
+        // Sends one request per target to the respective owner node
+        // Requesting is done concurrently.
+        for (target_id, pool_id, node_uid) in targets {
+            let app2 = app.clone();
+            let user_ids2 = user_ids.clone();
+            let group_ids2 = group_ids.clone();
+
+            tasks.push(tokio::spawn(async move {
+                let resp_users: Result<GetQuotaInfoResp> = app2
+                    .request(
+                        node_uid,
+                        &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
+                    )
+                    .await;
+
+                let resp_groups: Result<GetQuotaInfoResp> = app2
+                    .request(
+                        node_uid,
+                        &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
+                    )
+                    .await;
+
+                match (resp_users, resp_groups) {
+                    (Ok(u), Ok(mut g)) => {
+                        let mut entries = u.quota_entry;
+                        entries.append(&mut g.quota_entry);
+
+                        (target_id, Some(entries))
+                    }
+                    (u, g) => {
+                        let log_u = u
+                            .err()
+                            .map(|err| format!("\nUsers: {err:#}"))
+                            .unwrap_or_else(|| "".into());
+                        let log_g = g
+                            .err()
+                            .map(|err| format!("\nGroups: {err:#}"))
+                            .unwrap_or_else(|| "".into());
+
+                        log::error!(
+                            "Fetching quota info for storage target {target_id} from node with uid \
+{node_uid} failed.{log_u}{log_g}"
+                        );
+
+                        (target_id, None)
+                    }
+                }
+            }));
+        }
+
+        tasks
+    };
 
     // Await all the responses
     for t in tasks {

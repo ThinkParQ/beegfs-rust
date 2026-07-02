@@ -22,6 +22,7 @@ pub struct GetQuotaInfo {
 }
 
 impl GetQuotaInfo {
+    /// Legacy fetch mode, deprecated.
     pub fn with_group_ids(
         mut group_ids: HashSet<QuotaId>,
         target_id: TargetId,
@@ -39,6 +40,7 @@ impl GetQuotaInfo {
         }
     }
 
+    /// Legacy fetch mode, deprecated.
     pub fn with_user_ids(
         mut user_ids: HashSet<QuotaId>,
         target_id: TargetId,
@@ -50,6 +52,19 @@ impl GetQuotaInfo {
             id_range_start: 0,
             id_range_end: 0,
             id_list: user_ids.drain().collect(),
+            transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
+            target_id,
+            pool_id,
+        }
+    }
+
+    pub fn with_all(id_type: QuotaIdType, target_id: TargetId, pool_id: PoolId) -> Self {
+        Self {
+            query_type: QuotaQueryType::All,
+            id_type,
+            id_range_start: 0,
+            id_range_end: 0,
+            id_list: vec![],
             transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
             target_id,
             pool_id,
