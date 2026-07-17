@@ -2,16 +2,21 @@ use super::*;
 use crate::ClientPulledStateNotification;
 use crate::bee_msg::dispatch_request;
 use crate::license::LicenseVerifier;
+use crate::types::SqliteEnumExt;
 use anyhow::Result;
 use protobuf::license::GetCertDataResult;
 use rusqlite::{Connection, Transaction};
 use shared::conn::msg_dispatch::{DispatchRequest, Request};
 use shared::conn::outgoing::Pool;
+use shared::peak_concurrency_tracker;
 use shared::run_state::WeakRunStateHandle;
-use sqlite::Connections;
+use sqlite::{Connections, TransactionExt, rarray_param};
+use sqlite_check::sql;
 use std::fmt::Debug;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 /// A collection of Handles used for interacting and accessing the different components of the app.
 ///
@@ -124,24 +129,56 @@ impl App for RuntimeApp {
         node_types: &'static [NodeType],
         msg: &M,
     ) {
-        log::trace!("NOTIFICATION to {node_types:?}: {msg:?}");
+        if node_types.is_empty() {
+            return;
+        }
 
-        for t in node_types {
-            if let Err(err) = async {
-                let nodes = self
-                    .read_tx(move |tx| crate::db::node::get_with_type(tx, *t))
-                    .await?;
+        static NOTIFICATION_COUNTER: AtomicU32 = AtomicU32::new(0);
+        let trace_data = if log::log_enabled!(log::Level::Trace) {
+            let start_time = Instant::now();
+            let count = NOTIFICATION_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+            log::trace!("NOTIFICATION #{count} to {node_types:?}: {msg:?}");
+            Some((count, start_time))
+        } else {
+            None
+        };
 
-                self.conn
-                    .broadcast_datagram(nodes.into_iter().map(|e| e.uid), msg)
-                    .await?;
+        // We want to track the concurrent notification tasks that are going on to make it easy
+        // to catch a potential bottleneck here on big systems.
+        let concurrency_tracker = peak_concurrency_tracker!();
+        if let Some(peak) = concurrency_tracker.peaked() {
+            log::info!("Concurrent notifications peaked at {peak}",);
+        }
 
-                Ok(()) as Result<_>
-            }
-            .await
-            {
-                log::error!("Notification could not be sent to all {t} nodes: {err:#}");
-            }
+        let mut node_count = 0;
+        if let Err(err) = async {
+            let nodes: Vec<Uid> = self
+                .read_tx(move |tx| {
+                    Ok(tx.query_map_collect(
+                        sql!("SELECT node_uid FROM nodes WHERE node_type IN rarray(?1)"),
+                        [rarray_param(node_types.iter().map(|e| e.sql_variant()))],
+                        |row| row.get::<_, Uid>(0),
+                    )?)
+                })
+                .await?;
+
+            node_count = nodes.len();
+
+            self.conn.broadcast_datagram(nodes.into_iter(), msg).await?;
+
+            Ok(()) as Result<_>
+        }
+        .await
+        {
+            log::error!("Notification could not be sent: {err:#}");
+        }
+
+        if let Some(td) = trace_data {
+            log::trace!(
+                "-> Notification #{} to {node_count} nodes completed after {:?}",
+                td.0,
+                td.1.elapsed()
+            );
         }
     }
 
