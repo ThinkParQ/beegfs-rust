@@ -12,6 +12,7 @@ pub(crate) use runtime::RuntimeApp;
 use rusqlite::{Connection, Transaction};
 use shared::bee_msg::Msg;
 use shared::bee_serde::{Deserializable, Serializable};
+use shared::conn::key_store::KeyStore;
 use shared::types::{NodeId, NodeType, Uid};
 use std::fmt::Debug;
 use std::future::Future;
@@ -67,6 +68,12 @@ pub(crate) trait App: Debug + Clone + Send + 'static {
 
     /// Replace all stored BeeMsg network addresses of a node in the store
     fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>);
+
+    /// The peer public keys accepted for BeeMsg authentication.
+    ///
+    /// A key missing from here means the peer is rejected - the lookup is the authentication
+    /// decision, see [`shared::conn::key_store::KeyStore`].
+    fn key_store(&self) -> &KeyStore;
 
     // Run state
 

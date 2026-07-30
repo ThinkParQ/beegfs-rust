@@ -1,5 +1,7 @@
 //! Stream communication functionality
 
+use crate::crypto::Session;
+use crate::types::StaticPubKey;
 use anyhow::{Result, anyhow, bail};
 use std::fmt::Debug;
 use std::io;
@@ -18,6 +20,18 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Debug)]
 pub struct Stream {
     stream: InnerStream,
+    /// The symmetric keys established by the key exchange.
+    ///
+    /// [`None`] until the handshake completes, which is what makes "encrypted before a key exists"
+    /// unrepresentable: the handshake messages themselves must go over the wire in the clear, and
+    /// the send/receive paths key off this being [`Some`].
+    session: Option<Session>,
+    /// A session that has been derived but must not take effect until the next message has been
+    /// sent, see [`Stream::stage_session`].
+    pending_session: Option<(Session, StaticPubKey)>,
+    /// The peer's long-term public key, once the handshake has proven they hold the matching
+    /// private key. This is the authenticated identity of the peer.
+    peer_static_pub: Option<StaticPubKey>,
     pub authenticated: bool,
     /// Per-direction message counter for the derived AES-GCM nonce (see [`crate::crypto`]).
     /// Monotonic for the connection lifetime; the two sides stay in lockstep over the in-order
@@ -38,6 +52,9 @@ impl From<TcpStream> for Stream {
     fn from(stream: TcpStream) -> Self {
         Self {
             stream: InnerStream::Tcp(stream),
+            session: None,
+            pending_session: None,
+            peer_static_pub: None,
             authenticated: false,
             send_seq: 0,
             recv_seq: 0,
@@ -57,10 +74,99 @@ impl Stream {
 
         Ok(Self {
             stream: InnerStream::Tcp(stream),
+            session: None,
+            pending_session: None,
+            peer_static_pub: None,
             authenticated: false,
             send_seq: 0,
             recv_seq: 0,
         })
+    }
+
+    /// Installs the keys produced by a completed key exchange and marks the stream authenticated,
+    /// taking effect immediately.
+    ///
+    /// A completed handshake *is* authentication - it proves the peer holds the private key
+    /// matching the public key we have on file for it - so there is no separate authentication
+    /// step. Both message counters restart at zero, because they count messages under *these*
+    /// keys; the plaintext handshake messages are not counted.
+    ///
+    /// For the initiator, which installs after *receiving* the last plaintext message. The
+    /// responder must use [`Stream::stage_session`] instead.
+    pub fn install_session(&mut self, session: Session, peer_static_pub: StaticPubKey) {
+        log::debug!(
+            "Established encrypted session with {:?}, peer key {peer_static_pub}",
+            self.addr()
+        );
+
+        self.session = Some(session);
+        self.peer_static_pub = Some(peer_static_pub);
+        self.authenticated = true;
+        self.send_seq = 0;
+        self.recv_seq = 0;
+    }
+
+    /// Stages a session to take effect *after* the next message is sent.
+    ///
+    /// The responder's final handshake message must still go out in the clear, but by the time it
+    /// hands control back to the transport it has already derived the keys. Activating them
+    /// immediately would encrypt that very message, which the initiator cannot yet decrypt.
+    /// Staging expresses the actual contract: the session covers everything *after* the message
+    /// that completes the handshake.
+    pub fn stage_session(&mut self, session: Session, peer_static_pub: StaticPubKey) {
+        self.pending_session = Some((session, peer_static_pub));
+    }
+
+    /// Activates a session staged by [`Stream::stage_session`]. No-op if nothing is staged.
+    ///
+    /// Called by the send path directly after a message has been written.
+    pub fn activate_staged_session(&mut self) {
+        if let Some((session, peer_static_pub)) = self.pending_session.take() {
+            self.install_session(session, peer_static_pub);
+        }
+    }
+
+    /// The peer's authenticated long-term public key, if the handshake has completed.
+    ///
+    /// Currently only read by tests. It is kept because this is the authenticated identity of the
+    /// peer and therefore the hook for per-identity authorization ("may this identity act as meta
+    /// node 3"), which needs the `keys` -> `identity_to_node` mapping that is not wired up yet.
+    #[allow(dead_code)]
+    pub fn peer_static_pub(&self) -> Option<StaticPubKey> {
+        self.peer_static_pub
+    }
+
+    /// Encrypts a fully serialized outgoing message in place, consuming one send counter value.
+    ///
+    /// Does nothing while no session is established - the handshake messages themselves travel in
+    /// the clear. Keeping the counter increment and the encryption together in one place is
+    /// deliberate: the receiver derives its nonce from the matching counter, so a path that bumps
+    /// one without the other silently desynchronizes the channel.
+    pub fn encrypt_outgoing(&mut self, buf: &mut [u8]) -> Result<()> {
+        if self.session.is_some() {
+            let counter = self.next_send_seq();
+            self.session
+                .as_ref()
+                .expect("session presence checked above")
+                .encrypt(counter, buf)?;
+        }
+
+        Ok(())
+    }
+
+    /// Decrypts a fully read incoming message in place, consuming one receive counter value.
+    ///
+    /// The counterpart to [`Stream::encrypt_outgoing`]; does nothing while no session exists.
+    pub fn decrypt_incoming(&mut self, buf: &mut [u8]) -> Result<()> {
+        if self.session.is_some() {
+            let counter = self.next_recv_seq();
+            self.session
+                .as_ref()
+                .expect("session presence checked above")
+                .decrypt(counter, buf)?;
+        }
+
+        Ok(())
     }
 
     /// Returns the current send counter and post-increments it.

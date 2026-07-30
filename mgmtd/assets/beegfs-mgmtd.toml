@@ -75,6 +75,12 @@
 # The authentication file location.
 # auth-file = "/etc/beegfs/conn.auth"
 
+# This nodes X25519 private key file, containing the raw 32 bytes. Used to authenticate BeeMsg
+# connections via the key exchange. Create one with `beegfs-mgmtd --gen-key`, then register the
+# printed public key in the `keys` table of the management database - peers reject connections from
+# a node whose public key is not registered. Ignored when auth-disable is set.
+# key-file = "/etc/beegfs/node.key"
+
 
 ### General ###
 

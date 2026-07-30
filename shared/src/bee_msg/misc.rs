@@ -42,6 +42,44 @@ impl Msg for AuthenticateChannel {
     const ID: MsgId = 4007;
 }
 
+/// First message of the BeeMsg key exchange, sent by the side opening the connection.
+///
+/// Travels in the clear - it contains no secrets, only public keys. `static_pub` selects which key
+/// the responder should authenticate us against; the responder looks it up in the key list it
+/// downloaded from management and rejects the connection if it is not there.
+///
+/// See [`crate::crypto::handshake`] for the protocol.
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct KeyExchangeRequest {
+    /// Handshake wire version, see [`crate::crypto::handshake::HANDSHAKE_VERSION`].
+    pub version: u32,
+    /// Our long-term public key - identifies us to the peer.
+    pub static_pub: StaticPubKey,
+    /// Our freshly generated ephemeral public key.
+    pub ephemeral_pub: [u8; 32],
+}
+
+impl Msg for KeyExchangeRequest {
+    const ID: MsgId = 4013;
+}
+
+/// Second and final message of the BeeMsg key exchange.
+///
+/// Everything after this message is encrypted under the derived session keys.
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct KeyExchangeResponse {
+    /// The responder's freshly generated ephemeral public key.
+    pub ephemeral_pub: [u8; 32],
+    /// HMAC over the handshake transcript, keyed from the derived chaining key. Proves the
+    /// responder holds the private key matching the public key we have for it, and that it
+    /// recognised us - so a mismatch fails here instead of on undecryptable traffic later.
+    pub confirm: [u8; 32],
+}
+
+impl Msg for KeyExchangeResponse {
+    const ID: MsgId = 4015;
+}
+
 /// Tells the existence of a node
 ///
 /// Only used by the client after opening a connection.

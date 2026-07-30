@@ -2,6 +2,7 @@ use super::*;
 use crate::config::Config;
 use shared::bee_msg::MsgId;
 pub use shared::conn::msg_dispatch::test::TestRequest;
+use shared::crypto::handshake::StaticKeypair;
 use shared::nic::{NicFilter, query_nics};
 use shared::types::AuthSecret;
 use sqlite::Connections;
@@ -17,6 +18,8 @@ use std::sync::Mutex;
 pub struct TestApp {
     pub db: Connections,
     pub info: Arc<StaticInfo>,
+    /// Peer public keys accepted by this app. Tests register keys here to let a handshake succeed.
+    key_store: Arc<KeyStore>,
     data: Arc<Mutex<TestData>>,
 }
 
@@ -48,6 +51,7 @@ impl TestApp {
             info: Arc::new(StaticInfo {
                 user_config,
                 auth_secret: Some(AuthSecret::hash_from_bytes("secret")),
+                static_keypair: Some(Arc::new(StaticKeypair::generate())),
                 network_addrs: query_nics(
                     &[NicFilter {
                         address: Some(Ipv4Addr::LOCALHOST.into()),
@@ -58,6 +62,7 @@ impl TestApp {
                 .unwrap(),
                 use_ipv6: false,
             }),
+            key_store: Arc::new(KeyStore::new()),
             data: Arc::new(Mutex::new(TestData::default())),
         }
     }
@@ -93,6 +98,10 @@ impl TestApp {
 impl App for TestApp {
     fn static_info(&self) -> &StaticInfo {
         &self.info
+    }
+
+    fn key_store(&self) -> &KeyStore {
+        &self.key_store
     }
 
     async fn read_tx<T: Send + 'static + FnOnce(&Transaction) -> Result<R>, R: Send + 'static>(

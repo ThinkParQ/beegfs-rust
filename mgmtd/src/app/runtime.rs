@@ -149,6 +149,10 @@ impl App for RuntimeApp {
         Pool::replace_node_addrs(&self.conn, node_uid, new_addrs)
     }
 
+    fn key_store(&self) -> &KeyStore {
+        self.conn.key_store()
+    }
+
     fn is_pre_shutdown(&self) -> bool {
         WeakRunStateHandle::pre_shutdown(&self.run_state)
     }

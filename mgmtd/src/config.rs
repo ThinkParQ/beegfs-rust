@@ -252,6 +252,26 @@ generate_structs! {
     #[arg(value_name = "PATH")]
     auth_file: PathBuf = "/etc/beegfs/conn.auth".into(),
 
+    /// This nodes X25519 private key file, containing the raw 32 bytes.
+    /// [default: /etc/beegfs/node.key]
+    ///
+    /// Used to authenticate BeeMsg connections. The matching public key must be registered in the
+    /// management database for peers to accept connections from this node. Ignored when
+    /// authentication is disabled. Use `--gen-key` to create one.
+    #[arg(long)]
+    #[arg(value_name = "PATH")]
+    key_file: PathBuf = "/etc/beegfs/node.key".into(),
+
+    /// Generates a new X25519 keypair, writes the private key to `--key-file`, prints the public
+    /// key and exits.
+    ///
+    /// Refuses to overwrite an existing key file - replacing a nodes key makes every peer reject
+    /// it until the new public key is registered. The printed public key is what goes into the
+    /// `keys` table of the management database.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    gen_key: bool = false,
+
     /// General
 
     /// Disables registration of new nodes and targets (clients excluded).

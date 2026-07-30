@@ -22,7 +22,9 @@ use license::LicenseVerifier;
 use protobuf::license::CertType;
 use shared::bee_msg::target::RefreshTargetStates;
 use shared::conn::incoming;
+use shared::conn::key_store::KeyStore;
 use shared::conn::outgoing::Pool;
+use shared::crypto::handshake::StaticKeypair;
 use shared::nic::Nic;
 use shared::run_state::{self, RunStateControl};
 use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType};
@@ -42,6 +44,9 @@ use types::SqliteEnumExt;
 pub struct StaticInfo {
     pub user_config: Config,
     pub auth_secret: Option<AuthSecret>,
+    /// This nodes long-term X25519 identity, used by the BeeMsg key exchange. [`None`] when
+    /// authentication is disabled, which also disables encryption.
+    pub static_keypair: Option<Arc<StaticKeypair>>,
     pub network_addrs: Vec<Nic>,
     pub use_ipv6: bool,
 }
@@ -76,12 +81,17 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);
 
+    // The public keys we accept from peers, filled from the database below.
+    let key_store = Arc::new(KeyStore::new());
+
     // Node address store and connection pool
     let conn_pool = Pool::new(
         udp_socket.clone(),
         info.user_config.connection_limit,
         info.auth_secret,
         info.use_ipv6,
+        info.static_keypair.clone(),
+        key_store.clone(),
     );
 
     let db = sqlite::Connections::new(info.user_config.db_file.as_path());
@@ -151,6 +161,22 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         .into_iter()
         .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
 
+    // Fill the public key list from db. Until there is a provisioning mechanism the `keys` table is
+    // maintained by hand, so an empty list is a likely misconfiguration rather than a normal state
+    // - with authentication enabled it means no peer can connect.
+    let keys = db.read_tx(db::key::get_all).await?;
+    if info.static_keypair.is_some() && keys.is_empty() {
+        log::warn!(
+            "Authentication is enabled but no public keys are registered in the database. No node \
+             will be able to establish a BeeMsg connection until keys are added to the `keys` table."
+        );
+    }
+    log::debug!("Loaded {} peer public key(s)", keys.len());
+    key_store.replace_all(keys);
+
+    // Taken before the pool is moved into the app; the UDP receive path needs the same key.
+    let datagram_session = conn_pool.datagram_session();
+
     // This is used to signal a client that pulled its state back to the RunControl
     let (shutdown_client_tx, shutdown_client_rx) = mpsc::channel(16);
 
@@ -174,8 +200,9 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     )
     .await?;
 
-    // Recv UDP datagrams
-    incoming::recv_udp(udp_socket, app.clone(), run_state.clone())?;
+    // Recv UDP datagrams. Shares the send path's datagram key - datagrams are connectionless, so
+    // there is no handshake and no per-channel session for them.
+    incoming::recv_udp(udp_socket, app.clone(), datagram_session, run_state.clone())?;
 
     // Run the timers
     timer::start_tasks(app.clone(), run_state.clone());

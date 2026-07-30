@@ -3,7 +3,8 @@
 use super::stream::Stream;
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
-use crate::crypto::aes256_encrypt;
+use crate::crypto::Session;
+use crate::types::StaticPubKey;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;
@@ -25,6 +26,12 @@ pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
 pub trait Request: Send + Sync {
     fn respond<M: Msg + Serializable>(self, msg: &M) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
+    /// Installs the keys from a completed key exchange on the underlying channel.
+    ///
+    /// The counterpart to [`Request::authenticate_connection`] for the key exchange: message
+    /// handlers cannot reach the [`Stream`] directly, so this is how the handshake handler hands
+    /// the derived session down. No-op where there is no channel to key (datagrams).
+    fn install_session(&mut self, session: Session, peer_static_pub: StaticPubKey);
     fn addr(&self) -> SocketAddr;
     fn header(&self) -> &Header;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
@@ -41,10 +48,21 @@ pub struct StreamRequest<'a> {
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         let msg_len = serialize(msg, self.buf)?;
-        // Encrypt the response with the stream's send counter before sending.
-        let seq = self.stream.next_send_seq();
-        aes256_encrypt(seq, &mut self.buf[..msg_len])?;
-        self.stream.write_all(&self.buf[0..msg_len]).await
+        // No-op while the handshake is still in progress: those messages go out in the clear.
+        self.stream.encrypt_outgoing(&mut self.buf[..msg_len])?;
+        self.stream.write_all(&self.buf[0..msg_len]).await?;
+
+        // A session staged by the key exchange handler takes effect only now, once its plaintext
+        // response has actually been written.
+        self.stream.activate_staged_session();
+
+        Ok(())
+    }
+
+    fn install_session(&mut self, session: Session, peer_static_pub: StaticPubKey) {
+        // Staged rather than installed: this is called from a message handler, and the response to
+        // that message still has to go out unencrypted.
+        self.stream.stage_session(session, peer_static_pub);
     }
 
     fn authenticate_connection(&mut self) {
@@ -77,13 +95,16 @@ pub struct SocketRequest<'a> {
     pub(crate) peer_addr: SocketAddr,
     pub(crate) buf: &'a mut [u8],
     pub header: &'a Header,
+    /// The process-wide datagram session, see [`Session::for_datagrams`].
+    pub(crate) session: Arc<Session>,
 }
 
 impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
         let msg_len = serialize(msg, self.buf)?;
         // Datagrams are connectionless: encrypt with counter 0 (matching the C++ datagram path).
-        aes256_encrypt(0, &mut self.buf[..msg_len])?;
+        // See `Session::for_datagrams` - this reuses one (key, nonce) pair for all datagrams.
+        self.session.encrypt(0, &mut self.buf[..msg_len])?;
         self.sock
             .send_to(&self.buf[0..msg_len], &self.peer_addr)
             .await?;
@@ -92,6 +113,10 @@ impl Request for SocketRequest<'_> {
 
     fn authenticate_connection(&mut self) {
         // No authentication mechanism for sockets
+    }
+
+    fn install_session(&mut self, _session: Session, _peer_static_pub: StaticPubKey) {
+        // Datagrams are connectionless - there is no channel to key.
     }
 
     fn addr(&self) -> SocketAddr {
@@ -115,6 +140,9 @@ pub mod test {
     pub struct TestRequest {
         pub header: Header,
         pub authenticate_connection: bool,
+        /// The peer key of the session installed via [`Request::install_session`], if any. Lets
+        /// tests assert that a handler completed the key exchange.
+        pub installed_session_peer: Option<StaticPubKey>,
     }
 
     impl TestRequest {
@@ -122,6 +150,7 @@ pub mod test {
             Self {
                 header,
                 authenticate_connection: false,
+                installed_session_peer: None,
             }
         }
     }
@@ -134,6 +163,10 @@ pub mod test {
 
         fn authenticate_connection(&mut self) {
             self.authenticate_connection = true;
+        }
+
+        fn install_session(&mut self, _session: Session, peer_static_pub: StaticPubKey) {
+            self.installed_session_peer = Some(peer_static_pub);
         }
 
         fn addr(&self) -> SocketAddr {

@@ -160,6 +160,19 @@ clean-package:
 
 ### Utilities ###
 
+# Cross-checks the BeeMsg key exchange against an independent implementation.
+#
+# `tools/kk_handshake_check.py` reimplements the handshake using only the Python standard library,
+# recomputes the vectors pinned by the `kdf_vector` test in shared/src/crypto/handshake.rs and
+# compares. It shares no code with the Rust side, so agreement means the protocol is really as
+# specified rather than just self-consistent. The C++ and kernel implementations must reproduce the
+# same values - run this after any change to the handshake.
+#
+# Optionally also runs a live handshake against a running management, see the script's --help.
+.PHONY: check-handshake
+check-handshake:
+	tools/kk_handshake_check.py
+
 COVERAGE_DIR=$(shell echo $$(pwd)/target/coverage)
 
 # Generates test coverage of the code excluding doctests and prints a report

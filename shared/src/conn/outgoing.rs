@@ -1,15 +1,17 @@
 //! Outgoing communication functionality
 use super::store::Store;
-use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::misc::{GenericResponse, KeyExchangeRequest, KeyExchangeResponse};
 use crate::bee_msg::{
     Header, Msg, deserialize_body, deserialize_encryption_header, deserialize_header, serialize,
 };
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::TCP_BUF_LEN;
+use crate::conn::key_store::KeyStore;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::crypto::{aes256_decrypt, aes256_encrypt};
-use crate::types::{AuthSecret, Uid};
+use crate::crypto::Session;
+use crate::crypto::handshake::{self, StaticKeypair};
+use crate::types::{AuthSecret, StaticPubKey, Uid};
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -30,24 +32,47 @@ use tokio::time::timeout;
 pub struct Pool {
     store: Store<Uid>,
     udp_socket: Arc<UdpSocket>,
-    auth_secret: Option<AuthSecret>,
     use_ipv6: bool,
+    /// Our long-term identity, used as initiator in the key exchange. [`None`] disables
+    /// authentication and encryption on outgoing streams entirely.
+    keypair: Option<Arc<StaticKeypair>>,
+    /// The public keys we expect from the nodes we dial.
+    key_store: Arc<KeyStore>,
+    /// Shared key for the connectionless datagram path, see [`Session::for_datagrams`].
+    datagram_session: Arc<Session>,
 }
 
 impl Pool {
     /// Creates a new Pool.
+    ///
+    /// `auth_secret` is only used to derive the shared datagram key; stream authentication comes
+    /// from `keypair` plus `key_store` via the key exchange.
     pub fn new(
         udp_socket: Arc<UdpSocket>,
         connection_limit: usize,
         auth_secret: Option<AuthSecret>,
         use_ipv6: bool,
+        keypair: Option<Arc<StaticKeypair>>,
+        key_store: Arc<KeyStore>,
     ) -> Self {
         Self {
             store: Store::new(connection_limit),
-            auth_secret,
             udp_socket,
             use_ipv6,
+            keypair,
+            key_store,
+            datagram_session: Arc::new(Session::for_datagrams(auth_secret)),
         }
+    }
+
+    /// The datagram session, to be shared with the receive path.
+    pub fn datagram_session(&self) -> Arc<Session> {
+        self.datagram_session.clone()
+    }
+
+    /// The list of peer public keys, shared with the incoming side.
+    pub fn key_store(&self) -> &KeyStore {
+        &self.key_store
     }
 
     /// Sends a [Msg] to a node and receives the response.
@@ -145,27 +170,28 @@ impl Pool {
                             )
                         };
 
-                        // Authenticate to the peer if required
-                        if let Some(auth_secret) = self.auth_secret {
-                            // The provided buffer contains the actual message to be sent later -
-                            // obtain an additional one for the auth message
-                            let mut auth_buf = self.store.pop_buf_or_create();
-                            let msg_len =
-                                serialize(&AuthenticateChannel { auth_secret }, &mut auth_buf)?;
+                        // Establish the session before anything else goes over this stream. Every
+                        // message after the handshake is encrypted under the derived keys.
+                        if let Some(keypair) = &self.keypair {
+                            let Some(peer_static) = self.key_store.key_by_node(node_uid) else {
+                                bail!(
+                                    "No public key known for node with uid {node_uid} - it must be \
+                                     registered in the management key list before an encrypted \
+                                     connection can be established"
+                                );
+                            };
 
-                            // Encrypt with the stream's send counter. As the first message on a
-                            // fresh stream this uses counter 0, matching the C++ peer's
-                            // authenticateChannel.
-                            let seq = stream.as_mut().next_send_seq();
-                            aes256_encrypt(seq, &mut auth_buf[..msg_len])?;
+                            // The provided buffer holds the actual message to be sent later -
+                            // obtain an additional one for the handshake.
+                            let mut hs_buf = self.store.pop_buf_or_create();
+                            let res =
+                                key_exchange(stream.as_mut(), &mut hs_buf, keypair, peer_static)
+                                    .await;
+                            self.store.push_buf(hs_buf);
 
-                            stream
-                                .as_mut()
-                                .write_all(&auth_buf[0..msg_len])
-                                .await
-                                .with_context(err_context)?;
-
-                            self.store.push_buf(auth_buf);
+                            res.with_context(|| {
+                                format!("Key exchange with node with uid {node_uid} failed")
+                            })?;
                         }
 
                         // Communication using the newly opened stream should usually not fail. If
@@ -217,8 +243,7 @@ impl Pool {
         expect_response: bool,
     ) -> Result<Header> {
         // Encrypt the request with this stream's send counter right before sending it.
-        let send_seq = stream.as_mut().next_send_seq();
-        aes256_encrypt(send_seq, &mut buf[..send_len])?;
+        stream.as_mut().encrypt_outgoing(&mut buf[..send_len])?;
 
         stream.as_mut().write_all(&buf[0..send_len]).await?;
 
@@ -234,8 +259,7 @@ impl Pool {
                 .await?;
 
             // Decrypt the response with this stream's receive counter.
-            let recv_seq = stream.as_mut().next_recv_seq();
-            aes256_decrypt(recv_seq, &mut buf[..len])?;
+            stream.as_mut().decrypt_incoming(&mut buf[..len])?;
             deserialize_header(&buf[..Header::LEN])?
         } else {
             Header::default()
@@ -260,8 +284,9 @@ impl Pool {
         let msg_len = serialize(msg, &mut buf)?;
 
         // Datagrams are connectionless, so there is no per-connection counter: encrypt once with
-        // counter 0 (matching the C++ datagram path) and reuse the buffer for every peer.
-        aes256_encrypt(0, &mut buf[..msg_len])?;
+        // counter 0 (matching the C++ datagram path) and reuse the buffer for every peer. See
+        // `Session::for_datagrams` - this means all datagrams share one (key, nonce) pair.
+        self.datagram_session.encrypt(0, &mut buf[..msg_len])?;
 
         for node_uid in peers {
             let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
@@ -302,4 +327,72 @@ impl Pool {
     pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
         self.store.replace_node_addrs(node_uid, new_addrs)
     }
+}
+
+/// Runs the key exchange as initiator on a freshly connected stream and installs the session.
+///
+/// Both handshake messages travel in the clear - they carry only public keys - which is why this
+/// writes and reads the stream directly instead of going through the encrypting helpers. On
+/// success the stream is encrypted and authenticated for the rest of its life.
+async fn key_exchange(
+    stream: &mut Stream,
+    buf: &mut [u8],
+    local: &StaticKeypair,
+    peer_static: StaticPubKey,
+) -> Result<()> {
+    let initiator = handshake::Initiator::start(local, peer_static)?;
+
+    let msg_len = serialize(
+        &KeyExchangeRequest {
+            version: handshake::HANDSHAKE_VERSION,
+            static_pub: local.public(),
+            ephemeral_pub: initiator.ephemeral_pub(),
+        },
+        buf,
+    )?;
+    stream.write_all(&buf[0..msg_len]).await?;
+
+    // Read the reply. Framing is the same as for any BeeMsg, it is just not encrypted.
+    stream.read_exact(&mut buf[0..Header::LEN]).await?;
+    let resp_len = deserialize_encryption_header(&buf[0..Header::ENCRYPTION_INFO_LEN])?;
+    stream.read_exact(&mut buf[Header::LEN..resp_len]).await?;
+
+    let header = deserialize_header(&buf[0..Header::LEN])?;
+
+    // A peer that does not accept our key answers with a GenericResponse. Surface its description
+    // rather than a confusing "unexpected message id".
+    if header.msg_id() == GenericResponse::ID {
+        let resp: GenericResponse = deserialize_body(&header, &buf[Header::LEN..])?;
+        bail!(
+            "Peer rejected the key exchange: {}",
+            String::from_utf8_lossy(&resp.description)
+        );
+    }
+
+    if header.msg_id() != KeyExchangeResponse::ID {
+        bail!(
+            "Expected a key exchange response (msg id {}), got msg id {}",
+            KeyExchangeResponse::ID,
+            header.msg_id()
+        );
+    }
+
+    let resp: KeyExchangeResponse = deserialize_body(&header, &buf[Header::LEN..])?;
+
+    // A typed message handler cannot answer with a GenericResponse, so a peer that refuses us
+    // replies with a default initialized - all zero - response. Recognise that and name the likely
+    // cause, rather than letting the all-zero ephemeral key surface as a low order point error.
+    if resp.ephemeral_pub == [0u8; 32] {
+        bail!(
+            "Peer rejected the key exchange. Our public key {} is most likely not registered in \
+             the management key list - check the peer's log for the exact reason",
+            local.public()
+        );
+    }
+
+    let session = initiator.finish(&resp.ephemeral_pub, &resp.confirm)?;
+
+    stream.install_session(session, peer_static);
+
+    Ok(())
 }

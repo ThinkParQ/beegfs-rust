@@ -3,9 +3,9 @@
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::*;
-use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::misc::{AuthenticateChannel, KeyExchangeRequest};
 use crate::bee_msg::{Header, Msg, deserialize_encryption_header, deserialize_header};
-use crate::crypto::aes256_decrypt;
+use crate::crypto::Session;
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
 use std::io::{self, ErrorKind};
@@ -31,15 +31,17 @@ use tokio::net::{TcpListener, UdpSocket};
 /// There is no connection limit on incoming connections.
 ///
 /// # Return behavior
-/// Returns immediately after the task has been started.
+/// Returns immediately after the task has been started, yielding the address actually bound - which
+/// is what the caller needs when `listen_addr` requests an ephemeral port.
 pub async fn listen_tcp(
     listen_addr: SocketAddr,
     dispatch: impl DispatchRequest,
     stream_authentication_required: bool,
     mut run_state: RunStateHandle,
-) -> Result<()> {
+) -> Result<SocketAddr> {
     let listener = TcpListener::bind(listen_addr).await?;
-    log::info!("Listening for BeeGFS connections on {listen_addr}");
+    let bound_addr = listener.local_addr()?;
+    log::info!("Listening for BeeGFS connections on {bound_addr}");
 
     tokio::spawn(async move {
         // Listen-loop
@@ -74,7 +76,7 @@ pub async fn listen_tcp(
         log::debug!("TCP listener task has been shut down: {listener:?}")
     });
 
-    Ok(())
+    Ok(bound_addr)
 }
 
 /// Contains the stream reading loop
@@ -149,9 +151,9 @@ async fn read_stream(
     stream.read_exact(&mut buf[Header::LEN..msg_len]).await?;
 
     // Decrypt the whole message with this stream's receive counter. The full message (prefix
-    // included) is passed; only the trailing tag is excluded from the authenticated data.
-    let recv_seq = stream.next_recv_seq();
-    aes256_decrypt(recv_seq, &mut buf[..msg_len])?;
+    // included) is passed; only the trailing tag is excluded from the authenticated data. A stream
+    // without a session yet is still in the plaintext handshake phase, so this is a no-op there.
+    stream.decrypt_incoming(&mut buf[..msg_len])?;
 
     // Deserialize the header
     let header = deserialize_header(&buf[0..Header::LEN])?;
@@ -162,7 +164,10 @@ async fn read_stream(
     // check authentication
     if stream_authentication_required
         && !stream.authenticated
-        && header.msg_id() != AuthenticateChannel::ID
+        && !matches!(
+            header.msg_id(),
+            AuthenticateChannel::ID | KeyExchangeRequest::ID
+        )
     {
         bail!(
             "Stream is not authenticated and received message with id {}",
@@ -199,6 +204,7 @@ async fn read_stream(
 pub fn recv_udp(
     sock: Arc<UdpSocket>,
     dispatch: impl DispatchRequest,
+    datagram_session: Arc<Session>,
     mut run_state: RunStateHandle,
 ) -> Result<()> {
     log::info!("Receiving BeeGFS datagrams on {}", sock.local_addr()?);
@@ -208,7 +214,7 @@ pub fn recv_udp(
         loop {
             tokio::select! {
                 // Do the actual work
-                res = recv_datagram(sock.clone(), dispatch.clone()) => {
+                res = recv_datagram(sock.clone(), dispatch.clone(), datagram_session.clone()) => {
                     if let Err(err) = res {
                         log::error!("Error on receiving datagram using UDP socket {:?}: {err:#}", sock.local_addr());
                     }
@@ -228,7 +234,11 @@ pub fn recv_udp(
 ///
 /// The dispatcher is responsible for deserializing the message, dispatching it to the correct
 /// handler and sending back a message using the [`SocketRequest`] handle.
-async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) -> Result<()> {
+async fn recv_datagram(
+    sock: Arc<UdpSocket>,
+    msg_handler: impl DispatchRequest,
+    session: Arc<Session>,
+) -> Result<()> {
     // We use a new buffer for each incoming datagram. This is not ideal, but since each incoming
     // message spawns a new task (below) and we don't know how long the processing takes, we cannot
     // reuse Buffers like the TCP reader does.
@@ -242,9 +252,10 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     tokio::spawn(async move {
         if let Err(err) = async {
             // Decrypt the message first. Datagrams are connectionless, so counter 0 is used
-            // (matching the C++ datagram path).
+            // (matching the C++ datagram path). See `Session::for_datagrams` - all datagrams
+            // share one (key, nonce) pair, which is a known weakness of the UDP path.
             let msg_len = deserialize_encryption_header(&buf)?;
-            aes256_decrypt(0, &mut buf[..msg_len])?;
+            session.decrypt(0, &mut buf[..msg_len])?;
 
             let header = deserialize_header(&buf[0..Header::LEN])?;
 
@@ -253,6 +264,7 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
                 peer_addr,
                 buf: &mut buf,
                 header: &header,
+                session: session.clone(),
             };
 
             // Forward to the dispatcher

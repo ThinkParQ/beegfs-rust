@@ -32,6 +32,7 @@ mod get_target_mappings;
 mod get_target_states;
 mod heartbeat;
 mod heartbeat_request;
+mod key_exchange;
 mod map_targets;
 mod map_targets_resp;
 mod peer_info;
@@ -160,6 +161,7 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
         {misc::Ack => _, "Ack"}
         {misc::AuthenticateChannel => _, "Authenticate connection"}
         {misc::GetNodeCapacityPools => R, "Get capacity pools"}
+        {misc::KeyExchangeRequest => R, "Key exchange"}
         {misc::PeerInfo => _, "PeerInfo"}
         {misc::RefreshCapacityPools => R, "Refresh capacity pools"}
         {misc::SetChannelDirect => _, "SetChannelDirect"}

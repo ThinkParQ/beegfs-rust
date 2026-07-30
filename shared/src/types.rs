@@ -282,6 +282,54 @@ impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
     QuotaType::Inode => pb::QuotaType::Inode,
 }
 
+/// A nodes long-term X25519 public key.
+///
+/// Doubles as the nodes identifier in the BeeMsg key exchange: the initiator sends its own public
+/// key in the first handshake message and the responder looks it up in the key list downloaded from
+/// management. Identifying a peer by the key itself rather than by a numeric id makes the selector
+/// self-certifying - it can never point at the wrong key material - and means the lookup *is* the
+/// authentication decision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
+pub struct StaticPubKey([u8; 32]);
+
+impl StaticPubKey {
+    pub const LEN: usize = 32;
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl From<[u8; 32]> for StaticPubKey {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl TryFrom<&[u8]> for StaticPubKey {
+    type Error = anyhow::Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self> {
+        Ok(Self(bytes.try_into().with_context(|| {
+            format!(
+                "A public key must be exactly {} bytes, got {}",
+                Self::LEN,
+                bytes.len()
+            )
+        })?))
+    }
+}
+
+/// Hex, so keys are greppable against the `keys` table in the management database.
+impl std::fmt::Display for StaticPubKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 /// The BeeGFS authentication secret
 ///
 /// Sent by the `AuthenticateChannel` message to authenticate a connection.
@@ -303,6 +351,14 @@ impl AuthSecret {
         // Following our usual schema, we create the hash integer using little endian order
         let hash = u64::from_le_bytes(hash);
         Self(hash)
+    }
+
+    /// The raw secret in little endian byte order.
+    ///
+    /// Only meant as key derivation input, see `crypto::Session::for_datagrams`. Note this carries
+    /// 64 bits of entropy at most, so anything derived from it is bounded by that.
+    pub fn to_le_bytes(self) -> [u8; 8] {
+        self.0.to_le_bytes()
     }
 
     /// Extracts the secret from the input byte slice. Not to be confused with hash_from_bytes(),

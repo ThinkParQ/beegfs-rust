@@ -2,10 +2,13 @@
 
 mod async_queue;
 pub mod incoming;
+pub mod key_store;
 pub mod msg_dispatch;
 pub mod outgoing;
 mod store;
 mod stream;
+#[cfg(test)]
+mod test;
 
 /// Fixed length of the stream / TCP message buffers.
 /// Must match the `WORKER_BUF(IN|OUT)_SIZE` value in `Worker.h` in the C++
