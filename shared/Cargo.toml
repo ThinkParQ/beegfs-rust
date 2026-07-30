@@ -36,6 +36,16 @@ tonic = { workspace = true, optional = true }
 x25519-dalek = { workspace = true }
 zeroize = { workspace = true }
 
+[dev-dependencies]
+# Used by tests/kk_handshake.rs, which reimplements the key exchange independently of
+# src/crypto/handshake.rs. Integration tests do not inherit the crate's own dependencies, so the
+# primitives have to be listed again here.
+aes-gcm = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+x25519-dalek = { workspace = true }
+
 [features]
 grpc = ["dep:protobuf", "dep:tonic", "dep:tokio-stream"]
 
