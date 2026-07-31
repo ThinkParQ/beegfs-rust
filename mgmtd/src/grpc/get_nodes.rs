@@ -184,9 +184,37 @@ pub(crate) async fn get_nodes(
 
     // Insert public keys into the node list
     for node in &mut nodes {
-        if let Some(legacy_id) = node.id.as_ref().and_then(|e| e.legacy_id.as_ref())
-            && let Some(node_keys) = keys_by_node.remove(&(legacy_id.num_id, legacy_id.node_type))
-        {
+        let Some(legacy_id) = node.id.as_ref().and_then(|e| e.legacy_id.as_ref()) else {
+            continue;
+        };
+
+        let db_keys = keys_by_node.remove(&(legacy_id.num_id, legacy_id.node_type));
+
+        // Management answers with the key from the keypair it actually loaded rather than from the
+        // `keys` table. That keeps the key file the single source of truth: replacing it takes
+        // effect at once, instead of leaving a stale row that peers would use to reject us. It also
+        // means the management node does not have to be registered by hand for anything to be able
+        // to connect to it.
+        if node.id.as_ref().and_then(|e| e.uid) == Some(MGMTD_UID) {
+            if db_keys.is_some() {
+                log::warn!(
+                    "The `keys` table contains an entry for the management node. It is ignored - \
+                     management's own public key is taken from {:?}. Remove the entry to avoid \
+                     confusion.",
+                    app.static_info().user_config.key_file
+                );
+            }
+
+            node.public_key = match &app.static_info().static_keypair {
+                Some(keypair) => vec![keypair.public().as_bytes().to_vec()],
+                // Authentication is disabled, so there is no key exchange to advertise a key for.
+                None => vec![],
+            };
+
+            continue;
+        }
+
+        if let Some(node_keys) = db_keys {
             node.public_key = node_keys;
         }
     }
@@ -201,6 +229,7 @@ pub(crate) async fn get_nodes(
 mod test {
     use super::*;
     use crate::app::test::*;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn get_nodes() {
@@ -242,5 +271,121 @@ mod test {
             2
         );
         assert_eq!(res.meta_root_node.unwrap().uid.unwrap(), 101001);
+    }
+
+    /// Management must advertise the public key of the keypair it actually loaded. Peers need this
+    /// to open a BeeMsg connection to management, and taking it from the keypair rather than the
+    /// `keys` table means it can never disagree with the key file.
+    #[tokio::test]
+    async fn own_public_key_comes_from_the_loaded_keypair() {
+        let app = TestApp::new().await;
+
+        let expected = app
+            .static_info()
+            .static_keypair
+            .as_ref()
+            .expect("the test app configures a keypair")
+            .public();
+
+        let res = super::get_nodes(
+            &app,
+            pm::GetNodesRequest {
+                include_nics: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mgmtd = res
+            .nodes
+            .iter()
+            .find(|e| e.id.as_ref().unwrap().uid() == MGMTD_UID)
+            .expect("the management node must be in the node list");
+
+        assert_eq!(
+            mgmtd.public_key,
+            vec![expected.as_bytes().to_vec()],
+            "management must advertise its loaded public key"
+        );
+    }
+
+    /// A key registered for the management node in the database must not override the keypair - the
+    /// key file is the single source of truth, so a stale row cannot lock peers out.
+    #[tokio::test]
+    async fn database_entry_does_not_override_own_public_key() {
+        let app = TestApp::new().await;
+
+        let expected = app.static_info().static_keypair.as_ref().unwrap().public();
+
+        // Register a *different* key against the management node, the way an operator following
+        // older setup instructions would.
+        app.write_tx(|tx| {
+            tx.execute("INSERT INTO identities (name) VALUES ('stale-mgmtd')", [])?;
+            let identity_id = tx.last_insert_rowid();
+            tx.execute(
+                "INSERT INTO identity_to_node (identity_id, node_type, node_id)
+                SELECT ?1, node_type, node_id FROM nodes WHERE node_uid = ?2",
+                rusqlite::params![identity_id, MGMTD_UID],
+            )?;
+            tx.execute(
+                "INSERT INTO keys (key, identity_id) VALUES (?1, ?2)",
+                rusqlite::params![[0xabu8; 32].as_slice(), identity_id],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+        let res = super::get_nodes(
+            &app,
+            pm::GetNodesRequest {
+                include_nics: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mgmtd = res
+            .nodes
+            .iter()
+            .find(|e| e.id.as_ref().unwrap().uid() == MGMTD_UID)
+            .unwrap();
+
+        assert_eq!(
+            mgmtd.public_key,
+            vec![expected.as_bytes().to_vec()],
+            "the stale database entry must be ignored"
+        );
+    }
+
+    /// With authentication disabled there is no keypair and no key exchange, so management must
+    /// advertise no key at all rather than falling back to whatever is in the database.
+    #[tokio::test]
+    async fn no_public_key_when_authentication_is_disabled() {
+        let mut app = TestApp::new().await;
+        Arc::get_mut(&mut app.info)
+            .expect("no other handles to StaticInfo yet")
+            .static_keypair = None;
+
+        let res = super::get_nodes(
+            &app,
+            pm::GetNodesRequest {
+                include_nics: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        let mgmtd = res
+            .nodes
+            .iter()
+            .find(|e| e.id.as_ref().unwrap().uid() == MGMTD_UID)
+            .unwrap();
+
+        assert!(
+            mgmtd.public_key.is_empty(),
+            "no keypair means no advertised key, got {:?}",
+            mgmtd.public_key
+        );
     }
 }
