@@ -16,7 +16,9 @@ use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 struct TargetToQuery {
@@ -59,10 +61,10 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
         return Ok(());
     }
 
-    log::info!(
-        "Fetching quota information for {} storage targets",
-        targets_to_query.len()
-    );
+    let targets_to_query_count = targets_to_query.len();
+
+    let start_time = Instant::now();
+    let entry_counter = AtomicUsize::new(0);
 
     let tasks = create_and_send_requests(app, targets_to_query).await?;
 
@@ -72,6 +74,8 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
 
         // Only process that target if there were not errors when fetching for this target
         if let Some(entries) = entries {
+            entry_counter.fetch_add(entries.len(), Ordering::Relaxed);
+
             app.write_tx(move |tx| {
                 // Always delete all the old entries for that target to make sure entries for no
                 // longer queried ids are removed. We always get the complete list from the
@@ -86,12 +90,6 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                     INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
                     VALUES (?1, ?2, ?3 ,?4 ,?5)"
                 ))?;
-
-                log::debug!(
-                    "Setting {} quota usage entries for target {}",
-                    entries.len(),
-                    target.target_id
-                );
 
                 for e in entries {
                     if e.space > 0 {
@@ -120,6 +118,13 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
             .await?;
         }
     }
+
+    log::info!(
+        "Fetched and stored {} quota entries from {} targets in {:?}",
+        entry_counter.load(Ordering::Relaxed),
+        targets_to_query_count,
+        start_time.elapsed()
+    );
 
     Ok(())
 }
@@ -326,7 +331,6 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
     if !app.static_info().user_config.quota_enforce {
         return Ok(());
     }
-    log::info!("Calculating and pushing exceeded quota");
 
     let quota_licensed = app.verify_licensed_feature(LicensedFeature::Quota).is_ok();
 
@@ -376,6 +380,8 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
                     }
                 }
             } else {
+                // If quota is unlicensed, make sure the exceeding ids are removed from the servers.
+                // Otherwise exceeded ids could stay exceeded forever if quota was used before.
                 log::info!(
                     "Quota enforcement enabled but feature not licensed. Removing quota limits from nodes"
                 );
@@ -396,20 +402,22 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
         })
         .await?;
 
+    let start_time = Instant::now();
+    let mut id_counter = 0;
+
     // Send all messages with exceeded quota information to all meta and storage nodes
     // Since there is one message for each combination of (pool x (user, group) x (space, inode)),
     // this might be very demanding, but can't do anything about that without changing meta and
     // storage too.
     // If this shows as a bottleneck, the requests could be done concurrently though.
-    for msg in msges {
+    for msg in &msges {
         let mut request_fails = 0;
         let mut non_success_count = 0;
 
+        id_counter += msg.exceeded_quota_ids.len();
+
         for node_uid in &nodes {
-            match app
-                .request::<_, SetExceededQuotaResp>(*node_uid, &msg)
-                .await
-            {
+            match app.request::<_, SetExceededQuotaResp>(*node_uid, msg).await {
                 Ok(resp) => {
                     if resp.result != OpsErr::SUCCESS {
                         non_success_count += 1;
@@ -428,6 +436,14 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
             );
         }
     }
+
+    log::info!(
+        "Pushed {} exceeded quota ids to {} nodes using {} messages in {:?}",
+        id_counter,
+        nodes.len(),
+        msges.len(),
+        start_time.elapsed()
+    );
 
     Ok(())
 }

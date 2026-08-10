@@ -15,6 +15,8 @@ impl HandleWithResponse for SetStorageTargetInfo {
         fail_on_pre_shutdown(app)?;
 
         let node_type = self.node_type;
+        let target_ids: Vec<_> = self.info.iter().map(|e| e.target_id).collect();
+
         app.write_tx(move |tx| {
             db::target::get_and_update_capacities(
                 tx,
@@ -34,7 +36,7 @@ impl HandleWithResponse for SetStorageTargetInfo {
         })
         .await?;
 
-        log::debug!("Updated {node_type:?} target info");
+        log::info!("Updated {node_type:?} targets' ({target_ids:?}) info and capacities");
 
         // in the old mgmtd, a notice to refresh cap pools is sent out here if a cap pool
         // changed I consider this being to expensive to check here and just don't
