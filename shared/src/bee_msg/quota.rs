@@ -1,4 +1,5 @@
 use super::*;
+use std::ops::RangeInclusive;
 
 /// Fetch quota info for the given type and list or range of IDs.
 ///
@@ -22,34 +23,49 @@ pub struct GetQuotaInfo {
 }
 
 impl GetQuotaInfo {
-    pub fn with_group_ids(
-        mut group_ids: HashSet<QuotaId>,
+    pub fn with_list(
+        id_type: QuotaIdType,
         target_id: TargetId,
         pool_id: PoolId,
+        mut id_list: HashSet<QuotaId>,
     ) -> Self {
         Self {
             query_type: QuotaQueryType::List,
-            id_type: QuotaIdType::Group,
+            id_type,
             id_range_start: 0,
             id_range_end: 0,
-            id_list: group_ids.drain().collect(),
+            id_list: id_list.drain().collect(),
             transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
             target_id,
             pool_id,
         }
     }
 
-    pub fn with_user_ids(
-        mut user_ids: HashSet<QuotaId>,
+    pub fn with_range(
+        id_type: QuotaIdType,
         target_id: TargetId,
         pool_id: PoolId,
+        range: &RangeInclusive<QuotaId>,
     ) -> Self {
         Self {
-            query_type: QuotaQueryType::List,
-            id_type: QuotaIdType::User,
+            query_type: QuotaQueryType::Range,
+            id_type,
+            id_range_start: *range.start(),
+            id_range_end: *range.end(),
+            id_list: vec![],
+            transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
+            target_id,
+            pool_id,
+        }
+    }
+
+    pub fn with_all(id_type: QuotaIdType, target_id: TargetId, pool_id: PoolId) -> Self {
+        Self {
+            query_type: QuotaQueryType::All,
+            id_type,
             id_range_start: 0,
             id_range_end: 0,
-            id_list: user_ids.drain().collect(),
+            id_list: vec![],
             transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
             target_id,
             pool_id,

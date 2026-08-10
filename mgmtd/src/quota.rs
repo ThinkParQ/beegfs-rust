@@ -9,13 +9,21 @@ use anyhow::{Context as AnyhowContext, Result};
 use rusqlite::params;
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
-    GetQuotaInfo, GetQuotaInfoResp, SetExceededQuota, SetExceededQuotaResp,
+    GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, SetExceededQuota, SetExceededQuotaResp,
 };
 use shared::types::{NodeType, PoolId, QuotaId, QuotaIdType, QuotaType, TargetId, Uid};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::path::Path;
+use tokio::task::JoinHandle;
+
+#[derive(Debug, Clone, Copy)]
+struct TargetToQuery {
+    target_id: TargetId,
+    pool_id: PoolId,
+    node_uid: Uid,
+}
 
 /// Fetches quota information for all storage targets and updates the quota usage database
 pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
@@ -25,7 +33,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
     }
 
     // Fetch quota data from storage daemons
-    let targets: Vec<(TargetId, PoolId, Uid)> = app
+    let targets_to_query: Vec<TargetToQuery> = app
         .read_tx(move |tx| {
             tx.query_map_collect(
                 sql!(
@@ -35,122 +43,32 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                     WHERE node_id IS NOT NULL"
                 ),
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                |row| {
+                    Ok(TargetToQuery {
+                        target_id: row.get(0)?,
+                        pool_id: row.get(1)?,
+                        node_uid: row.get(2)?,
+                    })
+                },
             )
             .map_err(Into::into)
         })
         .await?;
 
-    if targets.is_empty() {
+    if targets_to_query.is_empty() {
         return Ok(());
     }
 
     log::info!(
         "Fetching quota information for {} storage targets",
-        targets.len()
+        targets_to_query.len()
     );
 
-    // The to-be-queried IDs
-    let (mut user_ids, mut group_ids) = (HashSet::new(), HashSet::new());
-
-    // If configured, add system User IDS
-    let user_ids_min = app.static_info().user_config.quota_user_system_ids_min;
-
-    if let Some(user_ids_min) = user_ids_min {
-        system_id::user_ids()
-            .await
-            .filter(|e| e >= &user_ids_min)
-            .for_each(|e| {
-                user_ids.insert(e);
-            });
-    }
-
-    // If configured, add system Group IDS
-    let group_ids_min = app.static_info().user_config.quota_group_system_ids_min;
-
-    if let Some(group_ids_min) = group_ids_min {
-        system_id::group_ids()
-            .await
-            .filter(|e| e >= &group_ids_min)
-            .for_each(|e| {
-                group_ids.insert(e);
-            });
-    }
-
-    // If configured, add user IDs from file
-    if let Some(ref path) = app.static_info().user_config.quota_user_ids_file {
-        try_read_quota_ids(path, &mut user_ids)?;
-    }
-
-    // If configured, add group IDs from file
-    if let Some(ref path) = app.static_info().user_config.quota_group_ids_file {
-        try_read_quota_ids(path, &mut group_ids)?;
-    }
-
-    // If configured, add range based user IDs
-    if let Some(range) = &app.static_info().user_config.quota_user_ids_range {
-        user_ids.extend(range.clone());
-    }
-
-    // If configured, add range based group IDs
-    if let Some(range) = &app.static_info().user_config.quota_group_ids_range {
-        group_ids.extend(range.clone());
-    }
-
-    let mut tasks = vec![];
-    // Sends one request per target to the respective owner node
-    // Requesting is done concurrently.
-    for (target_id, pool_id, node_uid) in targets {
-        let app2 = app.clone();
-        let user_ids2 = user_ids.clone();
-        let group_ids2 = group_ids.clone();
-
-        tasks.push(tokio::spawn(async move {
-            let resp_users: Result<GetQuotaInfoResp> = app2
-                .request(
-                    node_uid,
-                    &GetQuotaInfo::with_user_ids(user_ids2, target_id, pool_id),
-                )
-                .await;
-
-            let resp_groups: Result<GetQuotaInfoResp> = app2
-                .request(
-                    node_uid,
-                    &GetQuotaInfo::with_group_ids(group_ids2, target_id, pool_id),
-                )
-                .await;
-
-            match (resp_users, resp_groups) {
-                (Ok(u), Ok(mut g)) => {
-                    let mut entries = u.quota_entry;
-                    entries.append(&mut g.quota_entry);
-
-                    (target_id, Some(entries))
-                }
-                (u, g) => {
-                    let log_u = u
-                        .err()
-                        .map(|err| format!("\nUsers: {err:#}"))
-                        .unwrap_or_else(|| "".into());
-                    let log_g = g
-                        .err()
-                        .map(|err| format!("\nGroups: {err:#}"))
-                        .unwrap_or_else(|| "".into());
-
-                    log::error!(
-                        "Fetching quota info for storage target {target_id} from node with uid \
-{node_uid} failed.{log_u}{log_g}"
-                    );
-
-                    (target_id, None)
-                }
-            }
-        }));
-    }
+    let tasks = create_and_send_requests(app, targets_to_query).await?;
 
     // Await all the responses
     for t in tasks {
-        let (target_id, entries) = t.await?;
+        let (target, entries) = t.await?;
 
         // Only process that target if there were not errors when fetching for this target
         if let Some(entries) = entries {
@@ -160,17 +78,19 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                 // storages and we only update if there was no fetch error.
                 tx.execute_cached(
                     sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
-                    [target_id],
+                    [target.target_id],
                 )?;
 
                 let mut insert_stmt = tx.prepare_cached(sql!(
-                    "INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
+                    "INSERT OR IGNORE
+                    INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
                     VALUES (?1, ?2, ?3 ,?4 ,?5)"
                 ))?;
 
                 log::debug!(
-                    "Setting {} quota usage entries for target {target_id}",
-                    entries.len()
+                    "Setting {} quota usage entries for target {}",
+                    entries.len(),
+                    target.target_id
                 );
 
                 for e in entries {
@@ -179,7 +99,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                             e.id,
                             e.id_type.sql_variant(),
                             QuotaType::Space.sql_variant(),
-                            target_id,
+                            target.target_id,
                             e.space
                         ])?;
                     }
@@ -189,7 +109,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                             e.id,
                             e.id_type.sql_variant(),
                             QuotaType::Inode.sql_variant(),
-                            target_id,
+                            target.target_id,
                             e.inodes
                         ])?;
                     }
@@ -202,6 +122,203 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Request all quota entries for the given target list for the configured ids (system, list,
+/// range, all). Returns the async request tasks.
+async fn create_and_send_requests(
+    app: &impl App,
+    targets: Vec<TargetToQuery>,
+) -> Result<Vec<JoinHandle<(TargetToQuery, Option<Vec<QuotaEntry>>)>>> {
+    let config = &app.static_info().user_config;
+
+    // The to-be-queried IDs
+    let (mut user_list, mut group_list) = (HashSet::new(), HashSet::new());
+
+    // If configured, add system User IDS
+    let user_ids_min = config.quota_user_system_ids_min;
+
+    if let Some(user_ids_min) = user_ids_min {
+        system_id::user_ids()
+            .await
+            .filter(|e| e >= &user_ids_min)
+            .for_each(|e| {
+                user_list.insert(e);
+            });
+    }
+
+    // If configured, add system Group IDS
+    let group_ids_min = config.quota_group_system_ids_min;
+
+    if let Some(group_ids_min) = group_ids_min {
+        system_id::group_ids()
+            .await
+            .filter(|e| e >= &group_ids_min)
+            .for_each(|e| {
+                group_list.insert(e);
+            });
+    }
+
+    // If configured, add user IDs from file
+    if let Some(ref path) = config.quota_user_ids_file {
+        try_read_quota_ids(path, &mut user_list)?;
+    }
+
+    // If configured, add group IDs from file
+    if let Some(ref path) = config.quota_group_ids_file {
+        try_read_quota_ids(path, &mut group_list)?;
+    }
+
+    // Use the automatic "all" mode when no id selection at all is configured for that id type.
+    let user_use_all = config.quota_user_system_ids_min.is_none()
+        && config.quota_user_ids_file.is_none()
+        && config.quota_user_ids_range.is_none();
+    let group_use_all = config.quota_group_system_ids_min.is_none()
+        && config.quota_group_ids_file.is_none()
+        && config.quota_group_ids_range.is_none();
+
+    let mut tasks = vec![];
+
+    // Sends one request per (target, id_type, list|range|all) to the respective owner node
+    // Requesting is done concurrently for multiple targets but serialized for the different fetch
+    // modes.
+    for t in targets {
+        let app = app.clone();
+        let user_list = user_list.clone();
+        let group_list = group_list.clone();
+        let user_range = config.quota_user_ids_range.clone();
+        let group_range = config.quota_group_ids_range.clone();
+
+        tasks.push(tokio::spawn(async move {
+            let mut responses = vec![];
+
+            if user_use_all {
+                // Request all entries if no specific ids are configured
+                let resp: Result<GetQuotaInfoResp> = app
+                    .request(
+                        t.node_uid,
+                        &GetQuotaInfo::with_all(QuotaIdType::User, t.target_id, t.pool_id),
+                    )
+                    .await;
+
+                responses.push(("User all", resp));
+            } else {
+                // Otherwise query the configured ids via list and range
+                if !user_list.is_empty() {
+                    let resp: Result<GetQuotaInfoResp> = app
+                        .request(
+                            t.node_uid,
+                            &GetQuotaInfo::with_list(
+                                QuotaIdType::User,
+                                t.target_id,
+                                t.pool_id,
+                                user_list,
+                            ),
+                        )
+                        .await;
+
+                    responses.push(("User id list", resp));
+                }
+                if let Some(ref range) = user_range {
+                    let resp: Result<GetQuotaInfoResp> = app
+                        .request(
+                            t.node_uid,
+                            &GetQuotaInfo::with_range(
+                                QuotaIdType::User,
+                                t.target_id,
+                                t.pool_id,
+                                range,
+                            ),
+                        )
+                        .await;
+
+                    responses.push(("User id range", resp));
+                }
+            }
+
+            if group_use_all {
+                // Request all entries if no specific ids are configured
+                let resp: Result<GetQuotaInfoResp> = app
+                    .request(
+                        t.node_uid,
+                        &GetQuotaInfo::with_all(QuotaIdType::Group, t.target_id, t.pool_id),
+                    )
+                    .await;
+
+                responses.push(("Group all", resp));
+            } else {
+                // Otherwise query the configured ids via list and range
+                if !group_list.is_empty() {
+                    let resp: Result<GetQuotaInfoResp> = app
+                        .request(
+                            t.node_uid,
+                            &GetQuotaInfo::with_list(
+                                QuotaIdType::Group,
+                                t.target_id,
+                                t.pool_id,
+                                group_list,
+                            ),
+                        )
+                        .await;
+
+                    responses.push(("Group id list", resp));
+                }
+                if let Some(ref range) = group_range {
+                    let resp: Result<GetQuotaInfoResp> = app
+                        .request(
+                            t.node_uid,
+                            &GetQuotaInfo::with_range(
+                                QuotaIdType::Group,
+                                t.target_id,
+                                t.pool_id,
+                                range,
+                            ),
+                        )
+                        .await;
+
+                    responses.push(("Group id range", resp));
+                }
+            }
+
+            let results = extract_results(&t, responses);
+            (t, results)
+        }));
+    }
+
+    Ok(tasks)
+}
+
+/// Extracts the quota entries from the response message or log the errors
+fn extract_results(
+    target: &TargetToQuery,
+    responses: Vec<(&str, Result<GetQuotaInfoResp>)>,
+) -> Option<Vec<QuotaEntry>> {
+    let mut results = vec![];
+    let mut errs = String::new();
+
+    for resp in responses {
+        match resp.1 {
+            Ok(mut msg) => {
+                results.append(&mut msg.quota_entry);
+            }
+            Err(err) => {
+                errs.push_str(&format!("\n{}: {err:#}", resp.0));
+            }
+        }
+    }
+
+    if errs.is_empty() {
+        Some(results)
+    } else {
+        log::error!(
+            "Fetching quota info for storage target {} from node with uid \
+{} failed:{errs}",
+            target.target_id,
+            target.node_uid
+        );
+
+        None
+    }
 }
 
 /// Calculates and pushes exceeded quota info to the nodes
@@ -334,17 +451,24 @@ mod test {
     use crate::types::SqliteEnumExt;
     use shared::bee_msg::OpsErr;
     use shared::bee_msg::quota::{
-        GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, SetExceededQuota,
-        SetExceededQuotaResp,
+        GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, QuotaQueryType,
+        SetExceededQuota, SetExceededQuotaResp,
     };
     use shared::types::{QuotaIdType, QuotaType};
 
     #[tokio::test]
     async fn update() {
+        // Configure explicit ids via a file, which opts into list mode
+        let mut path = std::env::temp_dir();
+        path.push(format!("beegfs_quota_test_ids_{}", std::process::id()));
+        std::fs::write(&path, "5 7 2398239").unwrap();
+
         let app = TestApp::with_config(Config {
             quota_enable: true,
             quota_user_ids_range: Some(0..=9),
             quota_group_ids_range: Some(0..=9),
+            quota_user_ids_file: Some(path.clone()),
+            quota_group_ids_file: Some(path.clone()),
             ..Default::default()
         })
         .await;
@@ -355,8 +479,8 @@ mod test {
             let mut quota_entry = vec![];
 
             // Provide dummy quota values for target 1 depending on the id and type
-            if r.target_id == 1 {
-                for id in r.id_list.iter().copied() {
+            if r.target_id == 1 && r.query_type == QuotaQueryType::Range {
+                for id in r.id_range_start..=r.id_range_end {
                     quota_entry.push(QuotaEntry {
                         space: id as u64 * 1000 + r.id_type.sql_variant() as u64,
                         inodes: id as u64 * 100 + r.id_type.sql_variant() as u64,
@@ -366,6 +490,9 @@ mod test {
                     });
                 }
             } else if r.target_id == 2 && r.id_type == QuotaIdType::User {
+                // This result is intentionally returned for both range and list query. The test
+                // thus also checks if the result handling ignores duplicated
+                // results.
                 quota_entry.push(QuotaEntry {
                     space: 999,
                     inodes: 999,
