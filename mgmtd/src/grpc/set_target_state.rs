@@ -12,7 +12,7 @@ pub(crate) async fn set_target_state(
     fail_on_pre_shutdown(app)?;
 
     let state: TargetConsistencyState = req.consistency_state().try_into()?;
-    let target: EntityId = required_field(req.target)?.try_into()?;
+    let target: EntityId = required_field(req.target)?;
 
     let (target, node_uid) = app
         .write_tx(move |tx| {

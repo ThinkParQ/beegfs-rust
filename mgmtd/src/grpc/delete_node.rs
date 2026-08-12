@@ -8,7 +8,7 @@ pub(crate) async fn delete_node(
 ) -> Result<pm::DeleteNodeResponse> {
     fail_on_pre_shutdown(app)?;
 
-    let node: EntityId = required_field(req.node)?.try_into()?;
+    let node: EntityId = required_field(req.node)?;
     let execute: bool = required_field(req.execute)?;
 
     let node = app

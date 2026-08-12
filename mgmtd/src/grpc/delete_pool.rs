@@ -9,7 +9,7 @@ pub(crate) async fn delete_pool(
     fail_on_missing_license(app, LicensedFeature::Storagepool)?;
     fail_on_pre_shutdown(app)?;
 
-    let pool: EntityId = required_field(req.pool)?.try_into()?;
+    let pool: EntityId = required_field(req.pool)?;
     let execute: bool = required_field(req.execute)?;
 
     let pool = app

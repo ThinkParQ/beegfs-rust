@@ -12,7 +12,7 @@ pub(crate) async fn delete_buddy_group(
     fail_on_missing_license(app, LicensedFeature::Mirroring)?;
     fail_on_pre_shutdown(app)?;
 
-    let group: EntityId = required_field(req.group)?.try_into()?;
+    let group: EntityId = required_field(req.group)?;
     let execute: bool = required_field(req.execute)?;
 
     // 1. Check deletion is allowed

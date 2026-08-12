@@ -9,7 +9,7 @@ pub(crate) async fn delete_target(
 ) -> Result<pm::DeleteTargetResponse> {
     fail_on_pre_shutdown(app)?;
 
-    let target: EntityId = required_field(req.target)?.try_into()?;
+    let target: EntityId = required_field(req.target)?;
     let execute: bool = required_field(req.execute)?;
 
     let target = app

@@ -11,7 +11,7 @@ pub(crate) async fn set_alias(
 
     // Parse proto msg
     let entity_type: EntityType = req.entity_type().try_into()?;
-    let entity_id: EntityId = required_field(req.entity_id)?.try_into()?;
+    let entity_id: EntityId = required_field(req.entity_id)?;
     let new_alias: Alias = req.new_alias.try_into()?;
 
     let update_alias_fn = move |tx: &Transaction, new_alias: &Alias| -> Result<EntityIdSet> {

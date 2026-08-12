@@ -11,10 +11,10 @@ pub(crate) async fn create_buddy_group(
     fail_on_pre_shutdown(app)?;
 
     let node_type: NodeTypeServer = req.node_type().try_into()?;
-    let alias: Alias = required_field(req.alias)?.try_into()?;
-    let num_id: BuddyGroupId = req.num_id.unwrap_or_default().try_into()?;
-    let p_target: EntityId = required_field(req.primary_target)?.try_into()?;
-    let s_target: EntityId = required_field(req.secondary_target)?.try_into()?;
+    let alias: Alias = required_field(req.alias)?;
+    let num_id: BuddyGroupId = optional_field(req.num_id)?.unwrap_or_default();
+    let p_target: EntityId = required_field(req.primary_target)?;
+    let s_target: EntityId = required_field(req.secondary_target)?;
 
     let (group, p_target, s_target) = app
         .write_tx(move |tx| {

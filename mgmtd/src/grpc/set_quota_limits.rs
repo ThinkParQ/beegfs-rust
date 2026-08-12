@@ -26,9 +26,9 @@ pub(crate) async fn set_quota_limits(
 
         for lim in req.limits {
             let id_type: QuotaIdType = lim.id_type().try_into()?;
-            let quota_id = required_field(lim.quota_id)?;
+            let quota_id: QuotaId = required_field(lim.quota_id)?;
 
-            let pool: EntityId = required_field(lim.pool)?.try_into()?;
+            let pool: EntityId = required_field(lim.pool)?;
             let pool_id = pool.resolve(tx, EntityType::Pool)?.num_id();
 
             if let Some(l) = lim.space_limit {
