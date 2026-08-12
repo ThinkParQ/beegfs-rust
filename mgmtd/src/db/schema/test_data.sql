@@ -137,10 +137,10 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (302002, 4, "storage_buddy_group_2")
 ;
 
-INSERT INTO buddy_groups (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id) VALUES
-    (301001, 1, 1, 1, 2, NULL),
-    (302001, 2, 1, 1, 5, 1),
-    (302002, 2, 2, 9, 13, 1)
+INSERT INTO buddy_groups (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id, quota_accounting) VALUES
+    (301001, 1, 1, 1, 2, NULL, NULL),
+    (302001, 2, 1, 1, 5, 1, 1),
+    (302002, 2, 2, 9, 13, 1, 1)
 ;
 
 

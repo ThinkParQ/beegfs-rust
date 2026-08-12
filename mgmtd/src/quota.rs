@@ -4,7 +4,7 @@ mod system_id;
 
 use crate::app::*;
 use crate::license::LicensedFeature;
-use crate::types::SqliteEnumExt;
+use crate::types::{BuddyGroupQuotaAccounting, SqliteEnumExt};
 use anyhow::{Context as AnyhowContext, Result};
 use rusqlite::params;
 use shared::bee_msg::OpsErr;
@@ -362,12 +362,15 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
                     "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
                     FROM quota_usage AS e
                     INNER JOIN targets AS st USING(node_type, target_id)
+                    LEFT JOIN buddy_groups AS bg ON st.target_id = bg.s_target_id
+                        AND st.node_type = bg.node_type
                     LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
                     LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+                    WHERE bg.quota_accounting IS NULL OR bg.quota_accounting = ?1
                     GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
                     HAVING SUM(e.value) > COALESCE(l.value, d.value)"
                 ))?;
-                let mut rows = stmt.query([])?;
+                let mut rows = stmt.query([BuddyGroupQuotaAccounting::Both.sql_variant()])?;
                 while let Some(row) = rows.next()? {
                     for m in &mut msges {
                         if row.get::<_, PoolId>(3)? == m.pool_id

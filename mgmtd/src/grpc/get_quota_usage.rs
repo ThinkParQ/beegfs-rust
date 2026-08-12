@@ -1,5 +1,6 @@
 use super::common::{QUOTA_NOT_ENABLED_STR, QUOTA_STREAM_BUF_SIZE, QUOTA_STREAM_PAGE_LIMIT};
 use super::*;
+use crate::types::BuddyGroupQuotaAccounting;
 use itertools::Itertools;
 use std::fmt::Write;
 
@@ -13,8 +14,9 @@ pub(crate) async fn get_quota_usage(
         bail!(QUOTA_NOT_ENABLED_STR);
     }
 
-    let mut r#where = "FALSE ".to_string();
+    let mut r#where = "(FALSE ".to_string();
 
+    // Optionally filter by id range or list, separate for uids and gids
     let mut filter =
         |min: Option<u32>, max: Option<u32>, list: &[u32], typ: QuotaIdType| -> Result<()> {
             if min.is_some() || max.is_some() || !list.is_empty() {
@@ -52,6 +54,15 @@ pub(crate) async fn get_quota_usage(
         QuotaIdType::Group,
     )?;
 
+    write!(r#where, ") ")?;
+
+    // Filter out secondary targets if configured to avoid double accounting on buddy groups
+    write!(
+        r#where,
+        "AND (bg.quota_accounting IS NULL OR bg.quota_accounting = {})",
+        BuddyGroupQuotaAccounting::Both.sql_variant()
+    )?;
+
     let mut having = "TRUE ".to_string();
 
     if let Some(pool) = req.pool {
@@ -65,7 +76,7 @@ pub(crate) async fn get_quota_usage(
     }
     if let Some(exceeded) = req.exceeded {
         let base = "(space_used > space_limit AND space_limit > -1
-                OR inode_used > inode_limit AND inode_limit > -1)";
+            OR inode_used > inode_limit AND inode_limit > -1)";
         if exceeded {
             write!(having, "AND {base} ")?;
         } else {
@@ -85,6 +96,8 @@ pub(crate) async fn get_quota_usage(
             SUM(CASE WHEN u.quota_type = {inode} THEN u.value END) AS inode_used
         FROM quota_usage AS u
         INNER JOIN targets AS st USING(node_type, target_id)
+        LEFT JOIN buddy_groups AS bg ON st.target_id = bg.s_target_id
+            AND st.node_type = bg.node_type
         INNER JOIN pools_ext AS sp USING(node_type, pool_id)
         LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
         LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)

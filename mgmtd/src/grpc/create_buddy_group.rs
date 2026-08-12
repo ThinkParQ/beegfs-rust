@@ -1,4 +1,5 @@
 use super::*;
+use crate::types::BuddyGroupQuotaAccounting;
 use shared::bee_msg::buddy_group::SetMirrorBuddyGroup;
 use shared::bee_msg::storage_pool::RefreshStoragePools;
 
@@ -16,6 +17,18 @@ pub(crate) async fn create_buddy_group(
     let p_target: EntityId = required_field(req.primary_target)?;
     let s_target: EntityId = required_field(req.secondary_target)?;
 
+    // Compatibility: The options field is optional.
+    let options: pm::BuddyGroupOptions = optional_field(req.options)?.unwrap_or_default();
+    let quota_accounting: Option<BuddyGroupQuotaAccounting> =
+        optional_field(options.quota_accounting)?.or_else(|| {
+            // Compatibility: Allow creating storage buddy groups without this field by defaulting.
+            if node_type == NodeTypeServer::Storage {
+                Some(BuddyGroupQuotaAccounting::Primary)
+            } else {
+                None
+            }
+        });
+
     let (group, p_target, s_target) = app
         .write_tx(move |tx| {
             let p_target = p_target.resolve(tx, EntityType::Target)?;
@@ -28,6 +41,7 @@ pub(crate) async fn create_buddy_group(
                 node_type,
                 p_target.num_id().try_into()?,
                 s_target.num_id().try_into()?,
+                quota_accounting,
             )?;
             Ok((
                 EntityIdSet {
