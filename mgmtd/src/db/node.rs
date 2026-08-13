@@ -208,7 +208,7 @@ mod test {
     #[test]
     fn insert_get_delete() {
         with_test_data(|tx| {
-            assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
+            assert_eq!(7, get_with_type(tx, NodeType::Meta).unwrap().len());
             let node = insert(
                 tx,
                 1234,
@@ -233,11 +233,11 @@ mod test {
                 10000,
             )
             .unwrap_err();
-            assert_eq!(6, get_with_type(tx, NodeType::Meta).unwrap().len());
+            assert_eq!(8, get_with_type(tx, NodeType::Meta).unwrap().len());
 
             delete(tx, node.uid).unwrap();
             delete(tx, node.uid).unwrap_err();
-            assert_eq!(5, get_with_type(tx, NodeType::Meta).unwrap().len());
+            assert_eq!(7, get_with_type(tx, NodeType::Meta).unwrap().len());
         });
     }
 

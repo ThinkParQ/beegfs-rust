@@ -4,7 +4,7 @@ mod system_id;
 
 use crate::app::*;
 use crate::license::LicensedFeature;
-use crate::types::{BuddyGroupQuotaAccounting, SqliteEnumExt};
+use crate::types::SqliteEnumExt;
 use anyhow::{Context as AnyhowContext, Result};
 use rusqlite::params;
 use shared::bee_msg::OpsErr;
@@ -326,6 +326,31 @@ fn extract_results(
     }
 }
 
+/// Finds exceeded quota ids
+///
+/// The three parameters can be set to filter the data put into the result (before grouping) or set
+/// to `None` to get everything. This uses a hardcoded `2 = both` for the quota accounting mode -
+/// usage on a secondary is only counted when set to that mode.
+///
+/// Note that `quota_usage` is scanned either way: its primary key starts with `quota_id`, so
+/// neither the fixed nor the optional form of the id type / quota type filters can seek on it (thus
+/// no difference in performance).
+pub(crate) const EXCEEDED_QUOTA_IDS_SQL: &str = sql!(
+    "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
+    FROM quota_usage AS e
+    INNER JOIN targets AS st USING(node_type, target_id)
+    LEFT JOIN buddy_groups AS bg ON st.target_id = bg.s_target_id
+        AND st.node_type = bg.node_type
+    LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+    LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+    WHERE (?1 IS NULL OR e.id_type = ?1)
+        AND (?2 IS NULL OR e.quota_type = ?2)
+        AND (?3 IS NULL OR st.pool_id = ?3)
+        AND (bg.quota_accounting IS NULL OR bg.quota_accounting = 2)
+    GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+    HAVING SUM(e.value) > COALESCE(l.value, d.value)"
+);
+
 /// Calculates and pushes exceeded quota info to the nodes
 pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
     if !app.static_info().user_config.quota_enforce {
@@ -358,19 +383,8 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
 
             if quota_licensed {
                 // Fill the prepared messages with matching exceeded quota ids
-                let mut stmt = tx.prepare_cached(sql!(
-                    "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
-                    FROM quota_usage AS e
-                    INNER JOIN targets AS st USING(node_type, target_id)
-                    LEFT JOIN buddy_groups AS bg ON st.target_id = bg.s_target_id
-                        AND st.node_type = bg.node_type
-                    LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
-                    LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
-                    WHERE bg.quota_accounting IS NULL OR bg.quota_accounting = ?1
-                    GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
-                    HAVING SUM(e.value) > COALESCE(l.value, d.value)"
-                ))?;
-                let mut rows = stmt.query([BuddyGroupQuotaAccounting::Both.sql_variant()])?;
+                let mut stmt = tx.prepare_cached(EXCEEDED_QUOTA_IDS_SQL)?;
+                let mut rows = stmt.query(params![None::<i64>, None::<i64>, None::<i64>])?;
                 while let Some(row) = rows.next()? {
                     for m in &mut msges {
                         if row.get::<_, PoolId>(3)? == m.pool_id
@@ -386,10 +400,10 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
                 // If quota is unlicensed, make sure the exceeding ids are removed from the servers.
                 // Otherwise exceeded ids could stay exceeded forever if quota was used before.
                 log::info!(
-                    "Quota enforcement enabled but feature not licensed. Removing quota limits from nodes"
+                    "Quota enforcement enabled but feature not licensed. Removing quota limits \
+                    from nodes"
                 );
             }
-
 
             // Get all node uids to send the messages to
             let nodes: Vec<Uid> = tx.query_map_collect(
@@ -467,13 +481,15 @@ fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaId>) -> Result<(
 mod test {
     use crate::Config;
     use crate::app::test::*;
-    use crate::types::SqliteEnumExt;
+    use crate::types::{BuddyGroupQuotaAccounting, SqliteEnumExt};
     use shared::bee_msg::OpsErr;
     use shared::bee_msg::quota::{
         GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, QuotaQueryType,
         SetExceededQuota, SetExceededQuotaResp,
     };
     use shared::types::{QuotaIdType, QuotaType};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
     async fn update() {
@@ -647,15 +663,27 @@ mod test {
 
     #[tokio::test]
     async fn distribute_exceeded() {
-        // This fn doesn't need special config
-        let app = TestApp::new().await;
+        // EXCEEDED_QUOTA_IDS_SQL hardcodes this value, it must not silently change
+        assert_eq!(BuddyGroupQuotaAccounting::Both.sql_variant(), 2);
+
+        // Without both of these, distribute_exceeded() returns early and nothing is asserted
+        let app = TestApp::with_config(Config {
+            quota_enable: true,
+            quota_enforce: true,
+            ..Default::default()
+        })
+        .await;
+
+        let msg_count = Arc::new(AtomicUsize::new(0));
+        let handler_count = msg_count.clone();
 
         app.set_request_handler(move |req| {
+            handler_count.fetch_add(1, Ordering::SeqCst);
             let r = req.downcast_ref::<SetExceededQuota>().unwrap();
 
             match (r.pool_id, r.id_type, r.quota_type) {
                 (1, QuotaIdType::User, QuotaType::Space) => {
-                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10])
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10, 51])
                 }
                 (1, QuotaIdType::Group, QuotaType::Space) => {
                     assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 11])
@@ -680,5 +708,11 @@ mod test {
         });
 
         super::distribute_exceeded(&app).await.unwrap();
+
+        // Guards against the assertions above silently not running at all
+        assert!(
+            msg_count.load(Ordering::SeqCst) > 0,
+            "no SetExceededQuota messages were sent"
+        );
     }
 }

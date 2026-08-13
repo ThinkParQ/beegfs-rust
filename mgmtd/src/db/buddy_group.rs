@@ -329,7 +329,7 @@ mod test {
             let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
             let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-            assert_eq!(2, meta_groups.len());
+            assert_eq!(3, meta_groups.len());
             assert_eq!(2, storage_groups.len());
             assert!(meta_groups.iter().any(|e| e.0 == 1234));
         })
