@@ -9,6 +9,7 @@ mod impl_macros;
 
 pub mod bee_msg;
 pub mod bee_serde;
+pub mod concurrency_tracker;
 pub mod conn;
 #[cfg(feature = "grpc")]
 pub mod grpc;
