@@ -35,24 +35,31 @@ impl HandleWithResponse for MapTargets {
             self.node_id
         );
 
-        app.send_notifications(
-            &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-            &MapTargets {
-                target_ids: self.target_ids.clone(),
-                node_id: self.node_id,
-                ack_id: "".into(),
-            },
-        )
-        .await;
-
-        // Map targets alter pool membership, so trigger an immediate pool refresh
-        if updated > 0 {
+        // Don't wait for notifications to go out because storage only waits for a short time for
+        // the response. On some systems broadcasting the notifications seems to take longer and
+        // registration fails.
+        let slf = self.clone();
+        let app = app.clone();
+        tokio::spawn(async move {
             app.send_notifications(
-                &[NodeType::Meta, NodeType::Storage],
-                &RefreshStoragePools { ack_id: "".into() },
+                &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+                &MapTargets {
+                    target_ids: slf.target_ids,
+                    node_id: slf.node_id,
+                    ack_id: "".into(),
+                },
             )
             .await;
-        }
+
+            // Map targets alter pool membership, so trigger an immediate pool refresh
+            if updated > 0 {
+                app.send_notifications(
+                    &[NodeType::Meta, NodeType::Storage],
+                    &RefreshStoragePools { ack_id: "".into() },
+                )
+                .await;
+            }
+        });
 
         // Storage server expects a separate status code for each target map requested. We, however,
         // do a all-or-nothing approach. If e.g. one target id doesn't exist (which is an
