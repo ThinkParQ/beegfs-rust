@@ -5,7 +5,7 @@ mod system_id;
 use crate::app::*;
 use crate::license::LicensedFeature;
 use crate::types::SqliteEnumExt;
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, bail};
 use rusqlite::params;
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
@@ -17,7 +17,6 @@ use sqlite_check::sql;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -43,8 +42,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                 sql!(
                     "SELECT target_id, pool_id, node_uid
                     FROM storage_targets
-                    INNER JOIN nodes USING(node_type, node_id)
-                    WHERE node_id IS NOT NULL"
+                    INNER JOIN nodes USING(node_type, node_id)"
                 ),
                 [],
                 |row| {
@@ -64,66 +62,80 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
     }
 
     let targets_to_query_count = targets_to_query.len();
-
     let start_time = Instant::now();
-    let entry_counter = AtomicUsize::new(0);
 
     let tasks = create_and_send_requests(app, targets_to_query).await?;
 
     // Await all the responses
-    for t in tasks {
-        let (target, entries) = t.await?;
+    let mut entry_counter = 0;
+    for (target, jh) in tasks {
+        let res = async {
+            let entries = jh.await?;
 
-        // Only process that target if there were not errors when fetching for this target
-        if let Some(entries) = entries {
-            entry_counter.fetch_add(entries.len(), Ordering::Relaxed);
+            // Only process that target if there were not errors when fetching for this target
+            if let Some(entries) = entries {
+                entry_counter += entries.len();
 
-            app.write_tx(move |tx| {
-                // Always delete all the old entries for that target to make sure entries for no
-                // longer queried ids are removed. We always get the complete list from the
-                // storages and we only update if there was no fetch error.
-                tx.execute_cached(
-                    sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
-                    [target.target_id],
-                )?;
+                app.write_tx(move |tx| {
+                    // Always delete all the old entries for that target to make sure entries for no
+                    // longer queried ids are removed. We always get the complete list from the
+                    // storages and we only update if there was no fetch error.
+                    // There is one task per target with merged results from multiple queries, so no
+                    // accidental override here.
+                    tx.execute_cached(
+                        sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
+                        [target.target_id],
+                    )?;
 
-                let mut insert_stmt = tx.prepare_cached(sql!(
-                    "INSERT OR IGNORE
-                    INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
-                    VALUES (?1, ?2, ?3 ,?4 ,?5)"
-                ))?;
+                    // The entry list can contain duplicated entries if both range and list mode
+                    // are configured as they use two separate requests, thus the OR IGNORE.
+                    let mut insert_stmt = tx.prepare_cached(sql!(
+                        "INSERT OR IGNORE
+                        INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
+                        VALUES (?1, ?2, ?3 ,?4 ,?5)"
+                    ))?;
 
-                for e in entries {
-                    if e.space > 0 {
-                        insert_stmt.execute(params![
-                            e.id,
-                            e.id_type.sql_variant(),
-                            QuotaType::Space.sql_variant(),
-                            target.target_id,
-                            e.space
-                        ])?;
+                    for e in entries {
+                        if e.space > 0 {
+                            insert_stmt.execute(params![
+                                e.id,
+                                e.id_type.sql_variant(),
+                                QuotaType::Space.sql_variant(),
+                                target.target_id,
+                                e.space
+                            ])?;
+                        }
+
+                        if e.inodes > 0 {
+                            insert_stmt.execute(params![
+                                e.id,
+                                e.id_type.sql_variant(),
+                                QuotaType::Inode.sql_variant(),
+                                target.target_id,
+                                e.inodes
+                            ])?;
+                        }
                     }
 
-                    if e.inodes > 0 {
-                        insert_stmt.execute(params![
-                            e.id,
-                            e.id_type.sql_variant(),
-                            QuotaType::Inode.sql_variant(),
-                            target.target_id,
-                            e.inodes
-                        ])?;
-                    }
-                }
+                    Ok(())
+                })
+                .await?;
+            }
 
-                Ok(())
-            })
-            .await?;
+            Ok(()) as Result<_>
+        }
+        .await;
+
+        if let Err(err) = res {
+            log::error!(
+                "Receiving and storing quota info from storage target {} failed: {err:#}",
+                target.target_id
+            );
         }
     }
 
     log::info!(
-        "Fetched and stored {} quota entries from {} targets in {:?}",
-        entry_counter.load(Ordering::Relaxed),
+        "Fetched and stored {entry_counter} quota entries from {} targets in {:?}",
         targets_to_query_count,
         start_time.elapsed()
     );
@@ -136,7 +148,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
 async fn create_and_send_requests(
     app: &impl App,
     targets: Vec<TargetToQuery>,
-) -> Result<Vec<JoinHandle<(TargetToQuery, Option<Vec<QuotaEntry>>)>>> {
+) -> Result<Vec<(TargetToQuery, JoinHandle<Option<Vec<QuotaEntry>>>)>> {
     let config = &app.static_info().user_config;
 
     // The to-be-queried IDs
@@ -184,7 +196,14 @@ async fn create_and_send_requests(
         && config.quota_group_ids_file.is_none()
         && config.quota_group_ids_range.is_none();
 
-    let mut tasks = vec![];
+    if !user_use_all && user_list.is_empty() && config.quota_user_ids_range.is_none() {
+        bail!("User quota ID selection is configured but resolved to no IDs");
+    }
+    if !group_use_all && group_list.is_empty() && config.quota_group_ids_range.is_none() {
+        bail!("Group quota ID selection is configured but resolved to no IDs");
+    }
+
+    let mut tasks: Vec<(TargetToQuery, JoinHandle<Option<_>>)> = vec![];
 
     // These bound the concurrent requests going on to one node so these potentially long-running
     // requests don't block all available connections
@@ -204,7 +223,7 @@ async fn create_and_send_requests(
             .or_insert_with(|| Arc::new(Semaphore::new((config.connection_limit / 2).max(1))))
             .clone();
 
-        tasks.push(tokio::spawn(async move {
+        tasks.push((t, tokio::spawn(async move {
             let mut responses = vec![];
 
             let _permit = match semaphore.acquire().await {
@@ -216,7 +235,7 @@ async fn create_and_send_requests(
                         t.target_id, t.node_uid
                     );
 
-                    return (t, None);
+                    return None;
                 }
             };
 
@@ -308,9 +327,8 @@ async fn create_and_send_requests(
                 }
             }
 
-            let results = extract_results(&t, responses);
-            (t, results)
-        }));
+            extract_results(&t, responses)
+        })));
     }
 
     Ok(tasks)
@@ -340,7 +358,7 @@ fn extract_results(
     } else {
         log::error!(
             "Fetching quota info for storage target {} from node with uid \
-{} failed:{errs}",
+            {} failed:{errs}",
             target.target_id,
             target.node_uid
         );
@@ -359,7 +377,7 @@ fn extract_results(
 /// neither the fixed nor the optional form of the id type / quota type filters can seek on it (thus
 /// no difference in performance).
 pub(crate) const EXCEEDED_QUOTA_IDS_SQL: &str = sql!(
-    "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
+    "SELECT e.quota_id, e.id_type, e.quota_type, st.pool_id
     FROM quota_usage AS e
     INNER JOIN targets AS st USING(node_type, target_id)
     LEFT JOIN buddy_groups AS bg ON st.target_id = bg.s_target_id
@@ -492,9 +510,10 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
 ///
 /// IDs must be in numerical form and separated by any whitespace.
 fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaId>) -> Result<()> {
-    let data = std::fs::read_to_string(path)?;
+    let data = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not read quota id file {path:?}"))?;
     for id in data.split_whitespace().map(|e| e.parse()) {
-        read_into.insert(id.context("Invalid syntax in quota file {path}")?);
+        read_into.insert(id.with_context(|| format!("Invalid syntax in quota id file {path:?}"))?);
     }
 
     Ok(())
