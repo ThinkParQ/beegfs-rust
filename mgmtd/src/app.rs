@@ -10,7 +10,7 @@ use anyhow::Result;
 use protobuf::license::GetCertDataResult;
 pub(crate) use runtime::RuntimeApp;
 use rusqlite::{Connection, Transaction};
-use shared::bee_msg::Msg;
+use shared::bee_msg::{Header, Msg};
 use shared::bee_serde::{Deserializable, Serializable};
 use shared::types::{NodeId, NodeType, Uid};
 use std::fmt::Debug;
@@ -50,6 +50,13 @@ pub(crate) trait App: Debug + Clone + Send + 'static {
     ) -> impl Future<Output = Result<R>> + Send;
 
     // BeeMsg communication
+    //
+    /// Send a [Msg] to a node via TCP and receive the response
+    fn request_with_header<M: Msg + Serializable, R: Msg + Deserializable>(
+        &self,
+        node_uid: Uid,
+        msg: &M,
+    ) -> impl Future<Output = Result<(R, Header)>> + Send;
 
     /// Send a [Msg] to a node via TCP and receive the response
     fn request<M: Msg + Serializable, R: Msg + Deserializable>(

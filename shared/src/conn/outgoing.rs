@@ -47,12 +47,12 @@ impl Pool {
         }
     }
 
-    /// Sends a [Msg] to a node and receives the response.
+    /// Send a [Msg] to a node, receive the response and return it together with its header.
     pub async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
         node_uid: Uid,
         msg: &M,
-    ) -> Result<R> {
+    ) -> Result<(R, Header)> {
         log::trace!("REQUEST to {node_uid:?}: {msg:?}");
 
         let mut buf = self.store.pop_buf_or_create();
@@ -67,7 +67,7 @@ impl Pool {
 
         log::trace!("RESPONSE RECEIVED from {node_uid:?}: {resp_msg:?}");
 
-        Ok(resp_msg)
+        Ok((resp_msg, resp_header))
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.

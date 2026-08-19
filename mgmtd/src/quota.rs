@@ -15,6 +15,7 @@ use shared::types::{NodeType, PoolId, QuotaId, QuotaIdType, QuotaType, TargetId,
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::{HashMap, HashSet};
+use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -211,19 +212,19 @@ async fn create_and_send_requests(
 
     // Sends one request per (target, id_type, list|range|all) to the respective owner node
     // Requesting is done concurrently for multiple targets but serialized for the different fetch
-    // modes.
-    for t in targets {
+    // modes and multiple chunks.
+    for target in targets {
         let app = app.clone();
         let user_list = user_list.clone();
         let group_list = group_list.clone();
         let user_range = config.quota_user_ids_range.clone();
         let group_range = config.quota_group_ids_range.clone();
         let semaphore = semaphores
-            .entry(t.node_uid)
+            .entry(target.node_uid)
             .or_insert_with(|| Arc::new(Semaphore::new((config.connection_limit / 2).max(1))))
             .clone();
 
-        tasks.push((t, tokio::spawn(async move {
+        tasks.push((target, tokio::spawn(async move {
             let mut responses = vec![];
 
             let _permit = match semaphore.acquire().await {
@@ -231,8 +232,9 @@ async fn create_and_send_requests(
                 Err(err) => {
                     log::error!(
                         "Acquiring permit for fetching quota info for storage target {} from node \
-                        with uid {} failed: {err:#}",
-                        t.target_id, t.node_uid
+                            with uid {} failed: {err:#}",
+                        target.target_id,
+                        target.node_uid
                     );
 
                     return None;
@@ -240,25 +242,39 @@ async fn create_and_send_requests(
             };
 
             if user_use_all {
-                // Request all entries if no specific ids are configured
-                let resp: Result<GetQuotaInfoResp> = app
-                    .request(
-                        t.node_uid,
-                        &GetQuotaInfo::with_all(QuotaIdType::User, t.target_id, t.pool_id),
-                    )
-                    .await;
-
-                responses.push(("User all", resp));
+                // If configured, query the whole id space
+                range_requests(
+                    app.clone(),
+                    target.node_uid,
+                    QuotaIdType::User,
+                    &target,
+                    &(0..=QuotaId::MAX),
+                    "User id all",
+                    &mut responses,
+                )
+                .await;
             } else {
                 // Otherwise query the configured ids via list and range
+                if let Some(ref range) = user_range {
+                    range_requests(
+                        app.clone(),
+                        target.node_uid,
+                        QuotaIdType::User,
+                        &target,
+                        range,
+                        "User id range",
+                        &mut responses,
+                    )
+                    .await;
+                }
                 if !user_list.is_empty() {
                     let resp: Result<GetQuotaInfoResp> = app
                         .request(
-                            t.node_uid,
+                            target.node_uid,
                             &GetQuotaInfo::with_list(
                                 QuotaIdType::User,
-                                t.target_id,
-                                t.pool_id,
+                                target.target_id,
+                                target.pool_id,
                                 user_list,
                             ),
                         )
@@ -266,43 +282,41 @@ async fn create_and_send_requests(
 
                     responses.push(("User id list", resp));
                 }
-                if let Some(ref range) = user_range {
-                    let resp: Result<GetQuotaInfoResp> = app
-                        .request(
-                            t.node_uid,
-                            &GetQuotaInfo::with_range(
-                                QuotaIdType::User,
-                                t.target_id,
-                                t.pool_id,
-                                range,
-                            ),
-                        )
-                        .await;
-
-                    responses.push(("User id range", resp));
-                }
             }
 
             if group_use_all {
-                // Request all entries if no specific ids are configured
-                let resp: Result<GetQuotaInfoResp> = app
-                    .request(
-                        t.node_uid,
-                        &GetQuotaInfo::with_all(QuotaIdType::Group, t.target_id, t.pool_id),
-                    )
-                    .await;
-
-                responses.push(("Group all", resp));
+                range_requests(
+                    app.clone(),
+                    target.node_uid,
+                    QuotaIdType::Group,
+                    &target,
+                    &(0..=QuotaId::MAX),
+                    "Group id all",
+                    &mut responses,
+                )
+                .await;
             } else {
                 // Otherwise query the configured ids via list and range
+                if let Some(ref range) = group_range {
+                    range_requests(
+                        app.clone(),
+                        target.node_uid,
+                        QuotaIdType::Group,
+                        &target,
+                        range,
+                        "Group id range",
+                        &mut responses,
+                    )
+                    .await;
+                }
                 if !group_list.is_empty() {
                     let resp: Result<GetQuotaInfoResp> = app
                         .request(
-                            t.node_uid,
+                            target.node_uid,
                             &GetQuotaInfo::with_list(
                                 QuotaIdType::Group,
-                                t.target_id,
-                                t.pool_id,
+                                target.target_id,
+                                target.pool_id,
                                 group_list,
                             ),
                         )
@@ -310,28 +324,59 @@ async fn create_and_send_requests(
 
                     responses.push(("Group id list", resp));
                 }
-                if let Some(ref range) = group_range {
-                    let resp: Result<GetQuotaInfoResp> = app
-                        .request(
-                            t.node_uid,
-                            &GetQuotaInfo::with_range(
-                                QuotaIdType::Group,
-                                t.target_id,
-                                t.pool_id,
-                                range,
-                            ),
-                        )
-                        .await;
-
-                    responses.push(("Group id range", resp));
-                }
             }
 
-            extract_results(&t, responses)
+            extract_results(&target, responses)
         })));
     }
 
     Ok(tasks)
+}
+
+async fn range_requests(
+    app: impl App,
+    node_uid: Uid,
+    id_type: QuotaIdType,
+    target: &TargetToQuery,
+    range: &RangeInclusive<QuotaId>,
+    log_str: &'static str,
+    responses: &mut Vec<(&str, Result<GetQuotaInfoResp>)>,
+) {
+    let mut range_start = *range.start();
+    let range_end = *range.end();
+    let mut has_more = true;
+
+    while has_more && range_start <= range_end {
+        let resp = app
+            .request_with_header::<_, GetQuotaInfoResp>(
+                node_uid,
+                &GetQuotaInfo::with_range(
+                    id_type,
+                    target.target_id,
+                    target.pool_id,
+                    &(range_start..=range_end),
+                ),
+            )
+            .await;
+
+        (has_more, range_start) = resp
+            .as_ref()
+            .map(|e| {
+                let range_start =
+                    e.0.quota_entry
+                        .last()
+                        .map(|s| s.id.saturating_add(1))
+                        .unwrap_or_default();
+                let has_more = range_start > 0
+                    && e.1.msg_compat_feature_flags & GetQuotaInfoResp::HAS_MORE_ENTRIES_COMPATFLAG
+                        != 0;
+
+                (has_more, range_start)
+            })
+            .unwrap_or_default();
+
+        responses.push((log_str, resp.map(|e| e.0)));
+    }
 }
 
 /// Extracts the quota entries from the response message or log the errors
