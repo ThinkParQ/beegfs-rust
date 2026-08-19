@@ -143,7 +143,7 @@ async fn read_stream(
         .read_exact(&mut buf[0..Header::LEN], GENERIC_STREAM_TIME_LIMIT)
         .await?;
 
-    let header = deserialize_header(&buf[0..Header::LEN])?;
+    let header = deserialize_header(buf)?;
 
     // check authentication
     if stream_authentication_required
@@ -235,7 +235,7 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // immediately
     tokio::spawn(async move {
         if let Err(err) = async {
-            let header = deserialize_header(&buf[0..Header::LEN])?;
+            let header = deserialize_header(&buf)?;
 
             let req = SocketRequest {
                 sock,

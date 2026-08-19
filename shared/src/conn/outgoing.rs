@@ -226,7 +226,7 @@ impl Pool {
                 .as_mut()
                 .read_exact(&mut buf[0..Header::LEN], tl)
                 .await?;
-            let header = deserialize_header(&buf[0..Header::LEN])?;
+            let header = deserialize_header(buf)?;
 
             // Read body - the header has already been received, so the body should follow
             // immediately as currently nodes serialize whole messages before sending. Still
