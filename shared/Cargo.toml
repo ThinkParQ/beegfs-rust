@@ -21,6 +21,7 @@ regex = { workspace = true }
 # at some point, we should think about removing it.
 ring = { workspace = true}
 serde = { workspace = true, features = ["derive"] }
+snow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
     "net",
@@ -30,6 +31,7 @@ tokio = { workspace = true, features = [
 ] }
 tokio-stream = { workspace = true, optional = true }
 tonic = { workspace = true, optional = true }
+zeroize = { workspace = true }
 
 [features]
 grpc = ["dep:protobuf", "dep:tonic", "dep:tokio-stream"]

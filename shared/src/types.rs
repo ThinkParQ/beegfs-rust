@@ -282,6 +282,79 @@ impl_enum_protobuf_traits! {QuotaType=> pb::QuotaType,
     QuotaType::Inode => pb::QuotaType::Inode,
 }
 
+/// A nodes long term X25519 public key.
+///
+/// Doubles as the nodes identifier in the BeeMsg key exchange: the initiator sends its own public
+/// key in the clear and the responder looks it up in the identity list. Selecting by the key itself
+/// rather than by a name makes the selector self certifying - it can never point at the wrong key
+/// material - and means the lookup *is* the authentication decision.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct StaticPubKey([u8; Self::LEN]);
+
+impl StaticPubKey {
+    pub const LEN: usize = 32;
+
+    pub fn as_bytes(&self) -> &[u8; Self::LEN] {
+        &self.0
+    }
+}
+
+impl From<[u8; StaticPubKey::LEN]> for StaticPubKey {
+    fn from(bytes: [u8; StaticPubKey::LEN]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl TryFrom<&[u8]> for StaticPubKey {
+    type Error = anyhow::Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self> {
+        Ok(Self(bytes.try_into().with_context(|| {
+            format!(
+                "A public key must be exactly {} bytes, got {}",
+                Self::LEN,
+                bytes.len()
+            )
+        })?))
+    }
+}
+
+/// Hex, so keys are greppable against the management database and pasteable into it.
+impl std::fmt::Display for StaticPubKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for StaticPubKey {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(Self(parse_hex_32(s)?))
+    }
+}
+
+/// Parses 64 hex characters into 32 bytes. Shared by public keys and by the on disk private key.
+pub(crate) fn parse_hex_32(s: &str) -> Result<[u8; 32]> {
+    let s = s.trim();
+    anyhow::ensure!(
+        s.len() == 64,
+        "A hex encoded 32 byte key must be 64 characters, got {}",
+        s.len()
+    );
+
+    let mut key = [0u8; 32];
+    for (i, byte) in key.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
+            .context("Not a valid hex encoded 32 byte key")?;
+    }
+
+    Ok(key)
+}
+
 /// The BeeGFS authentication secret
 ///
 /// Sent by the `AuthenticateChannel` message to authenticate a connection.

@@ -21,6 +21,7 @@ use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use protobuf::license::CertType;
 use shared::bee_msg::target::RefreshTargetStates;
+use shared::conn::identity::IdentityStore;
 use shared::conn::outgoing::Pool;
 use shared::conn::{ConnConfig, incoming};
 use shared::nic::Nic;
@@ -83,6 +84,8 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         protocol: Protocol::Legacy,
         legacy_auth_required: info.auth_secret.is_some(),
         auth_secret: info.auth_secret,
+        keypair: None,
+        identities: Arc::new(IdentityStore::new()),
     });
     conn_cfg.check()?;
 

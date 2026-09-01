@@ -3,11 +3,17 @@
 use crate::protocol::Protocol;
 use crate::types::AuthSecret;
 use anyhow::{Result, ensure};
+use identity::IdentityStore;
+use noise::StaticKeypair;
+use std::sync::Arc;
 use std::time::Duration;
 
 mod async_queue;
+pub mod handshake;
+pub mod identity;
 pub mod incoming;
 pub mod msg_dispatch;
+pub mod noise;
 pub mod outgoing;
 mod store;
 mod stream;
@@ -25,6 +31,10 @@ pub struct ConnConfig {
     pub legacy_auth_required: bool,
     /// Legacy only: secret sent on newly opened outgoing streams.
     pub auth_secret: Option<AuthSecret>,
+    /// This nodes long term keypair. Required by the authenticating protocols.
+    pub keypair: Option<Arc<StaticKeypair>>,
+    /// Peers allowed to connect, and the keys to present to them.
+    pub identities: Arc<IdentityStore>,
 }
 
 impl ConnConfig {
@@ -33,6 +43,11 @@ impl ConnConfig {
         ensure!(
             self.protocol.is_legacy() || (self.auth_secret.is_none() && !self.legacy_auth_required),
             "The legacy authentication secret cannot be combined with the {:?} BeeMsg protocol",
+            self.protocol
+        );
+        ensure!(
+            !self.protocol.needs_handshake() || self.keypair.is_some(),
+            "The {:?} BeeMsg protocol requires a keypair",
             self.protocol
         );
 

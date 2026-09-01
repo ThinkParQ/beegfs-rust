@@ -22,8 +22,19 @@ regex = "1"
 ring = "0"
 rusqlite = { version = "0", features = ["bundled", "vtab", "array", "fallible_uint"] }
 serde = "1"
+# `ring-accelerated` makes snow use ring - which we depend on anyway - for cipher, hash and RNG.
+# The `use-*` features still have to be listed: snow's ring resolver has no X25519, so the DH falls
+# back to curve25519-dalek, and enabling the default resolver at all requires naming a cipher and a
+# hash for it even though ring serves them at runtime.
+snow = { version = "0.10", default-features = false, features = [
+    "ring-accelerated",
+    "use-curve25519",
+    "use-chacha20poly1305",
+    "use-sha2",
+] }
 thiserror = "~2"
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
 tokio-stream = { version = "0" }
 tonic = { version = "0.14", features = ["tls-ring"] }
 uuid = { version = "1", features = ["v4"] }
+zeroize = "1"

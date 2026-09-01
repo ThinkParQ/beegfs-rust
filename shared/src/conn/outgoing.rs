@@ -1,4 +1,5 @@
 //! Outgoing communication functionality
+use super::handshake;
 use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
@@ -130,6 +131,19 @@ impl Pool {
                 bail!("No available addresses for node with uid {node_uid}");
             };
 
+            // KK commits to one remote static key before the handshake starts, so a missing key
+            // is a hard error rather than something to discover once per address.
+            let peer_key = if self.cfg.protocol.needs_handshake() {
+                Some(self.cfg.identities.key_by_node(node_uid).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No BeeMsg public key known for node with uid {node_uid}, cannot \
+                        authenticate to it"
+                    )
+                })?)
+            } else {
+                None
+            };
+
             log::debug!("Connecting new stream to node with uid {node_uid}");
 
             for addr in addrs.iter() {
@@ -166,6 +180,14 @@ impl Pool {
                                 .with_context(err_context)?;
 
                             self.store.push_buf(auth_buf);
+                        }
+
+                        // A rejection is a policy decision, so do not fall through to the next
+                        // address - it would only be rejected again.
+                        if let Some(peer_key) = peer_key {
+                            handshake::initiate(stream.as_mut(), &self.cfg, peer_key)
+                                .await
+                                .with_context(err_context)?;
                         }
 
                         // Communication using the newly opened stream should usually not fail. If

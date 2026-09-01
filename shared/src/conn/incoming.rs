@@ -2,7 +2,7 @@
 
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
-use super::*;
+use super::{handshake, *};
 use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::{Msg, deserialize_header};
 use crate::run_state::RunStateHandle;
@@ -87,6 +87,23 @@ async fn stream_loop(
     log::debug!("Accepted incoming stream from {:?}", stream.addr());
 
     stream.set_protocol(cfg.protocol);
+
+    if cfg.protocol.needs_handshake() {
+        match handshake::respond(&mut stream, &cfg).await {
+            Ok(peer) => log::debug!(
+                "Stream from {:?} authenticated as identity {}",
+                stream.addr(),
+                peer.identity.name
+            ),
+            Err(err) => {
+                log::warn!(
+                    "Key exchange with {:?} failed, closing the stream: {err:#}",
+                    stream.addr()
+                );
+                return;
+            }
+        }
+    }
 
     // Use one owned buffer for reading into and writing from.
     let mut buf = vec![0; TCP_BUF_LEN];
