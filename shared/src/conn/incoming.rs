@@ -229,13 +229,15 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // A separate buffer pool could potentially be used to avoid allocating new buffers every time.
     let mut buf = vec![0; UDP_BUF_LEN];
 
-    let (_, peer_addr) = sock.recv_from(&mut buf).await?;
+    let (len, peer_addr) = sock.recv_from(&mut buf).await?;
 
     // Request shall be handled in a separate task, so the next datagram can be processed
     // immediately
     tokio::spawn(async move {
         if let Err(err) = async {
-            let header = deserialize_header(&buf)?;
+            // Limited to what actually arrived, so that a truncated datagram is rejected instead
+            // of being completed from the buffers zeroed tail.
+            let header = deserialize_header(&buf[..len])?;
 
             let req = SocketRequest {
                 sock,

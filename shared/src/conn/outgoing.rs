@@ -6,6 +6,7 @@ use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::conn::{CONNECT_STREAM_TIME_LIMIT, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
+use crate::protocol::Protocol;
 use crate::types::{AuthSecret, Uid};
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
@@ -57,7 +58,7 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, &mut buf)?;
+        let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
         let resp_header = self
             .comm_stream(node_uid, &mut buf, msg_len, Some(R::RESPONSE_TIME_LIMIT))
             .await?;
@@ -76,7 +77,7 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, &mut buf)?;
+        let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
         self.comm_stream(node_uid, &mut buf, msg_len, None).await?;
 
         self.store.push_buf(buf);
@@ -151,8 +152,11 @@ impl Pool {
                             // The provided buffer contains the actual message to be sent later -
                             // obtain an additional one for the auth message
                             let mut auth_buf = self.store.pop_buf_or_create();
-                            let msg_len =
-                                serialize(&AuthenticateChannel { auth_secret }, &mut auth_buf)?;
+                            let msg_len = serialize(
+                                &AuthenticateChannel { auth_secret },
+                                Protocol::Legacy,
+                                &mut auth_buf,
+                            )?;
 
                             stream
                                 .as_mut()
@@ -258,7 +262,7 @@ impl Pool {
     ) -> Result<()> {
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, &mut buf)?;
+        let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
 
         for node_uid in peers {
             let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();

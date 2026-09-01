@@ -4,6 +4,7 @@ use super::stream::Stream;
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::GENERIC_STREAM_TIME_LIMIT;
+use crate::protocol::Protocol;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;
@@ -40,7 +41,7 @@ pub struct StreamRequest<'a> {
 
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, self.buf)?;
+        let msg_len = serialize(msg, Protocol::Legacy, self.buf)?;
         self.stream
             .write_all(&self.buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
             .await
@@ -80,7 +81,7 @@ pub struct SocketRequest<'a> {
 
 impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, self.buf)?;
+        let msg_len = serialize(msg, Protocol::Legacy, self.buf)?;
         self.sock
             .send_to(&self.buf[0..msg_len], &self.peer_addr)
             .await?;
