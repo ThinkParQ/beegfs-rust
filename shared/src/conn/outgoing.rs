@@ -1,13 +1,13 @@
 //! Outgoing communication functionality
 use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::conn::{CONNECT_STREAM_TIME_LIMIT, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
+use crate::conn::{CONNECT_STREAM_TIME_LIMIT, ConnConfig, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
 use crate::protocol::Protocol;
-use crate::types::{AuthSecret, Uid};
+use crate::types::Uid;
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
 use std::net::SocketAddr;
@@ -28,7 +28,7 @@ use tokio::time::timeout;
 pub struct Pool {
     store: Store<Uid>,
     udp_socket: Arc<UdpSocket>,
-    auth_secret: Option<AuthSecret>,
+    cfg: Arc<ConnConfig>,
     use_ipv6: bool,
 }
 
@@ -37,12 +37,12 @@ impl Pool {
     pub fn new(
         udp_socket: Arc<UdpSocket>,
         connection_limit: usize,
-        auth_secret: Option<AuthSecret>,
+        cfg: Arc<ConnConfig>,
         use_ipv6: bool,
     ) -> Self {
         Self {
             store: Store::new(connection_limit),
-            auth_secret,
+            cfg,
             udp_socket,
             use_ipv6,
         }
@@ -58,7 +58,7 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
+        let msg_len = serialize(msg, self.cfg.protocol, &mut buf)?;
         let resp_header = self
             .comm_stream(node_uid, &mut buf, msg_len, Some(R::RESPONSE_TIME_LIMIT))
             .await?;
@@ -77,7 +77,7 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
+        let msg_len = serialize(msg, self.cfg.protocol, &mut buf)?;
         self.comm_stream(node_uid, &mut buf, msg_len, None).await?;
 
         self.store.push_buf(buf);
@@ -138,7 +138,8 @@ impl Pool {
                 }
 
                 match Stream::connect_tcp(addr, CONNECT_STREAM_TIME_LIMIT).await {
-                    Ok(stream) => {
+                    Ok(mut stream) => {
+                        stream.set_protocol(self.cfg.protocol);
                         let mut stream = StoredStream::from_stream(stream, permit);
 
                         let err_context = || {
@@ -148,19 +149,19 @@ impl Pool {
                         };
 
                         // Authenticate to the peer if required
-                        if let Some(auth_secret) = self.auth_secret {
+                        if let Some(auth_secret) = self.cfg.auth_secret {
                             // The provided buffer contains the actual message to be sent later -
                             // obtain an additional one for the auth message
                             let mut auth_buf = self.store.pop_buf_or_create();
                             let msg_len = serialize(
                                 &AuthenticateChannel { auth_secret },
-                                Protocol::Legacy,
+                                self.cfg.protocol,
                                 &mut auth_buf,
                             )?;
 
                             stream
                                 .as_mut()
-                                .write_all(&auth_buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
+                                .write_msg(&mut auth_buf, msg_len, GENERIC_STREAM_TIME_LIMIT)
                                 .await
                                 .with_context(err_context)?;
 
@@ -221,27 +222,11 @@ impl Pool {
     ) -> Result<Header> {
         stream
             .as_mut()
-            .write_all(&buf[0..send_len], GENERIC_STREAM_TIME_LIMIT)
+            .write_msg(buf, send_len, GENERIC_STREAM_TIME_LIMIT)
             .await?;
 
         let header = if let Some(tl) = response_time_limit {
-            // Read header - wait for the per-message defined time limit.
-            stream
-                .as_mut()
-                .read_exact(&mut buf[0..Header::LEN], tl)
-                .await?;
-            let header = deserialize_header(buf)?;
-
-            // Read body - the header has already been received, so the body should follow
-            // immediately as currently nodes serialize whole messages before sending. Still
-            // choosing the (potentially higher) per-message limit in case that changes at some
-            // point.
-            stream
-                .as_mut()
-                .read_exact(&mut buf[Header::LEN..header.msg_len()], tl)
-                .await?;
-
-            header
+            stream.as_mut().read_msg(buf, tl).await?
         } else {
             Header::default()
         };
@@ -262,6 +247,7 @@ impl Pool {
     ) -> Result<()> {
         let mut buf = self.store.pop_buf_or_create();
 
+        // Datagrams always use the legacy protocol.
         let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
 
         for node_uid in peers {

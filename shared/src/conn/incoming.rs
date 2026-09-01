@@ -4,7 +4,7 @@ use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::*;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_header};
+use crate::bee_msg::{Msg, deserialize_header};
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
 use std::io::{self, ErrorKind};
@@ -20,9 +20,9 @@ use tokio::net::{TcpListener, UdpSocket};
 /// The `dispatch` argument expects an implementation of [`DispatchRequest`] and is called whenever
 /// a BeeMsg is received.
 ///
-/// `stream_authentication_required` control on whether a [`Stream`] must have set to authenticated
-/// flag when receiving any other message than [`AuthenticateChannel`]. It is up to the handler to
-/// set the flag while handling this message.
+/// `cfg` selects the wire protocol and, for the legacy one, whether a [`Stream`] must have the
+/// authenticated flag set before any message other than [`AuthenticateChannel`] is accepted. It is
+/// up to the handler to set the flag while handling that message.
 ///
 /// The [`Shutdown`] handle is used to shutdown all running tasks gracefully (e.g. finishing running
 /// operations)
@@ -30,15 +30,16 @@ use tokio::net::{TcpListener, UdpSocket};
 /// There is no connection limit on incoming connections.
 ///
 /// # Return behavior
-/// Returns immediately after the task has been started.
+/// Returns the actually bound address immediately after the task has been started.
 pub async fn listen_tcp(
     listen_addr: SocketAddr,
     dispatch: impl DispatchRequest,
-    stream_authentication_required: bool,
+    cfg: Arc<ConnConfig>,
     mut run_state: RunStateHandle,
-) -> Result<()> {
+) -> Result<SocketAddr> {
     let listener = TcpListener::bind(listen_addr).await?;
-    log::info!("Listening for BeeGFS connections on {listen_addr}");
+    let bound_addr = listener.local_addr()?;
+    log::info!("Listening for BeeGFS connections on {bound_addr}");
 
     tokio::spawn(async move {
         // Listen-loop
@@ -61,7 +62,7 @@ pub async fn listen_tcp(
                     tokio::spawn(stream_loop(
                         stream.into(),
                         dispatch.clone(),
-                        stream_authentication_required,
+                        cfg.clone(),
                         run_state.clone(),
                     ));
                 }
@@ -73,17 +74,19 @@ pub async fn listen_tcp(
         log::debug!("TCP listener task has been shut down: {listener:?}")
     });
 
-    Ok(())
+    Ok(bound_addr)
 }
 
 /// Contains the stream reading loop
 async fn stream_loop(
     mut stream: Stream,
     dispatch: impl DispatchRequest,
-    stream_authentication_required: bool,
+    cfg: Arc<ConnConfig>,
     mut run_state: RunStateHandle,
 ) {
     log::debug!("Accepted incoming stream from {:?}", stream.addr());
+
+    stream.set_protocol(cfg.protocol);
 
     // Use one owned buffer for reading into and writing from.
     let mut buf = vec![0; TCP_BUF_LEN];
@@ -102,14 +105,7 @@ async fn stream_loop(
             }
         }
 
-        if let Err(err) = read_stream(
-            &mut stream,
-            &mut buf,
-            &dispatch,
-            stream_authentication_required,
-        )
-        .await
-        {
+        if let Err(err) = read_stream(&mut stream, &mut buf, &dispatch, &cfg).await {
             // If the error comes from the connection being closed, we only log a debug message
             if let Some(inner) = err.downcast_ref::<io::Error>()
                 && let ErrorKind::UnexpectedEof = inner.kind()
@@ -127,8 +123,8 @@ async fn stream_loop(
     }
 }
 
-/// Reads in data from the given stream into the given buffer and forwards it to the dispatcher.
-/// Checks the authentication flag on the [`Stream`] if `stream_authentication_required` is set.
+/// Reads in a message from the given stream into the given buffer and forwards it to the
+/// dispatcher. Checks the authentication flag on the [`Stream`] if the legacy protocol requires it.
 ///
 /// The dispatcher is responsible for deserializing the message, dispatching it to the correct
 /// handler and sending back a response using the [`StreamRequest`] handle.
@@ -136,17 +132,14 @@ async fn read_stream(
     stream: &mut Stream,
     buf: &mut [u8],
     dispatch: &impl DispatchRequest,
-    stream_authentication_required: bool,
+    cfg: &ConnConfig,
 ) -> Result<()> {
-    // Read header
-    stream
-        .read_exact(&mut buf[0..Header::LEN], GENERIC_STREAM_TIME_LIMIT)
-        .await?;
+    let header = stream.read_msg(buf, GENERIC_STREAM_TIME_LIMIT).await?;
 
-    let header = deserialize_header(buf)?;
-
-    // check authentication
-    if stream_authentication_required
+    // Only the legacy protocol authenticates per message - the new one gates the whole stream
+    // during connection setup.
+    if cfg.legacy_auth_required
+        && cfg.protocol.is_legacy()
         && !stream.authenticated
         && header.msg_id() != AuthenticateChannel::ID
     {
@@ -156,14 +149,6 @@ async fn read_stream(
         );
     }
 
-    // Read body
-    stream
-        .read_exact(
-            &mut buf[Header::LEN..header.msg_len()],
-            GENERIC_STREAM_TIME_LIMIT,
-        )
-        .await?;
-
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to
     // msg handlers and sending a response using the [`StreamRequest`] handle.
     dispatch
@@ -171,6 +156,7 @@ async fn read_stream(
             stream,
             buf,
             header: &header,
+            protocol: cfg.protocol,
         })
         .await
         .context("Stream msg dispatch failed")?;

@@ -21,9 +21,10 @@ use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use protobuf::license::CertType;
 use shared::bee_msg::target::RefreshTargetStates;
-use shared::conn::incoming;
 use shared::conn::outgoing::Pool;
+use shared::conn::{ConnConfig, incoming};
 use shared::nic::Nic;
+use shared::protocol::Protocol;
 use shared::run_state::{self, RunStateControl};
 use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType};
 use sqlite::TransactionExt;
@@ -76,11 +77,20 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);
 
+    // Shared by the incoming and outgoing side so both cannot disagree on the protocol.
+    // TODO: take the protocol from the user configuration.
+    let conn_cfg = Arc::new(ConnConfig {
+        protocol: Protocol::Legacy,
+        legacy_auth_required: info.auth_secret.is_some(),
+        auth_secret: info.auth_secret,
+    });
+    conn_cfg.check()?;
+
     // Node address store and connection pool
     let conn_pool = Pool::new(
         udp_socket.clone(),
         info.user_config.connection_limit,
-        info.auth_secret,
+        conn_cfg.clone(),
         info.use_ipv6,
     );
 
@@ -169,7 +179,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     incoming::listen_tcp(
         beemsg_serve_addr,
         app.clone(),
-        info.auth_secret.is_some(),
+        conn_cfg.clone(),
         run_state.clone(),
     )
     .await?;

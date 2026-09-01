@@ -37,13 +37,14 @@ pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
     pub(super) buf: &'a mut [u8],
     pub header: &'a Header,
+    pub(super) protocol: Protocol,
 }
 
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, Protocol::Legacy, self.buf)?;
+        let msg_len = serialize(msg, self.protocol, self.buf)?;
         self.stream
-            .write_all(&self.buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
+            .write_msg(self.buf, msg_len, GENERIC_STREAM_TIME_LIMIT)
             .await
     }
 
