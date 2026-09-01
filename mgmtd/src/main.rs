@@ -4,12 +4,16 @@ use mgmtd::config::LogTarget;
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
+use shared::conn::noise::StaticKeypair;
 use shared::journald_logger;
 use shared::nic::check_ipv6;
+use shared::protocol::Protocol;
 use shared::types::AuthSecret;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+use std::sync::Arc;
 use std::{fs, panic};
 use tokio::signal::unix::{SignalKind, signal};
 use uuid::Uuid;
@@ -32,12 +36,28 @@ fn inner_main() -> Result<()> {
 
     let (user_config, info_log) = mgmtd::config::load_and_parse()?;
 
+    if user_config.gen_key {
+        gen_key(&user_config.beemsg_key_file)?;
+        return Ok(());
+    }
+
     if user_config.init || user_config.import_from_v7.is_some() {
         init_db(
             &user_config.db_file,
             user_config.import_from_v7.as_deref(),
             user_config.fs_uuid,
         )?;
+
+        // A new system needs a keypair, but an existing key file must not be clobbered by a
+        // re-init.
+        if user_config.beemsg_key_file.exists() {
+            println!(
+                "Kept the existing BeeMsg key file {:?}.",
+                user_config.beemsg_key_file
+            );
+        } else {
+            gen_key(&user_config.beemsg_key_file)?;
+        }
         return Ok(());
     }
 
@@ -108,6 +128,17 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
         None
     };
 
+    let protocol: Protocol = user_config.beemsg_protocol.into();
+
+    let beemsg_keypair = if protocol.needs_handshake() {
+        let keypair = StaticKeypair::load(&user_config.beemsg_key_file)?;
+        warn_on_loose_permissions(&user_config.beemsg_key_file);
+        log::info!("BeeMsg public key: {}", keypair.public());
+        Some(Arc::new(keypair))
+    } else {
+        None
+    };
+
     let use_ipv6 = check_ipv6(user_config.beemsg_port, !user_config.ipv6_disable);
     let network_addrs = shared::nic::query_nics(&user_config.interfaces, use_ipv6)?;
 
@@ -137,6 +168,8 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
                 user_config,
                 auth_secret,
                 network_addrs,
+                protocol,
+                beemsg_keypair,
             },
             license,
         )
@@ -149,6 +182,73 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
         run.wait_for_shutdown(wait_for_shutdown_signal).await;
 
         Ok(())
+    })
+}
+
+/// Writes a new BeeMsg keypair and prints the public half.
+///
+/// Refuses to overwrite: replacing a nodes key makes every peer reject it until the new public key
+/// is registered.
+fn gen_key(key_file: &Path) -> Result<()> {
+    let keypair = StaticKeypair::generate()?;
+
+    (|| -> Result<_> {
+        std::fs::create_dir_all(
+            key_file
+                .parent()
+                .ok_or_else(|| anyhow!("File does not have a parent folder"))?,
+        )?;
+
+        let mut file = std::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(key_file)?;
+
+        // Hex plus newline, so an operator can cat it and the C++ and kernel side can parse it
+        // without a binary reader.
+        std::io::Write::write_all(
+            &mut file,
+            format!("{}\n", hex(keypair.secret_bytes().as_ref())).as_bytes(),
+        )?;
+
+        Ok(())
+    })()
+    .with_context(|| format!("Writing the BeeMsg key file {key_file:?} failed"))?;
+
+    println!(
+        "BeeMsg private key written to {key_file:?}.
+BeeMsg public key: {pubkey}
+
+Register it with every peer, e.g. in the management database:
+  INSERT INTO identities (name) VALUES ('<identity-name>');
+  INSERT INTO keys (key, identity_id) VALUES (x'{pubkey}', last_insert_rowid());",
+        pubkey = keypair.public()
+    );
+
+    Ok(())
+}
+
+/// The key file is a secret. A wrong mode is worth pointing out but not worth refusing to start
+/// over.
+fn warn_on_loose_permissions(key_file: &Path) {
+    let Ok(meta) = std::fs::metadata(key_file) else {
+        return;
+    };
+
+    let mode = meta.permissions().mode() & 0o077;
+    if mode != 0 {
+        log::warn!(
+            "BeeMsg key file {key_file:?} is accessible by group or others (mode {:04o})",
+            meta.permissions().mode() & 0o7777
+        );
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
     })
 }
 

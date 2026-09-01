@@ -7,6 +7,7 @@ use log::LevelFilter;
 use serde::{Deserialize, Deserializer};
 use shared::nic::{self, NicFilter};
 use shared::parser::{duration, integer_range};
+use shared::protocol::Protocol;
 use shared::types::{Port, QuotaId};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
@@ -252,6 +253,47 @@ generate_structs! {
     #[arg(value_name = "PATH")]
     auth_file: PathBuf = "/etc/beegfs/conn.auth".into(),
 
+    /// Selects the BeeMsg wire protocol and its protection. [default: legacy]
+    ///
+    /// All nodes of a system must agree on this - there is no negotiation, a mismatch shows up as
+    /// failing connections.
+    ///
+    /// * legacy: the pre-8.x wire format with the shared secret AuthenticateChannel message.
+    ///   Byte identical to previous releases.
+    ///
+    /// * plain: the new wire format, without authentication and without encryption.
+    ///
+    /// * authenticated: the new wire format with a mutual Noise KK key exchange at connection
+    ///   setup. Does NOT protect message contents or integrity afterwards - an on-path attacker
+    ///   can still tamper with traffic. Use encrypted if that matters.
+    ///
+    /// * encrypted: authenticated plus authenticated encryption of every message.
+    ///
+    /// UDP datagrams always use the legacy format, whatever this is set to. Note that auth-disable
+    /// governs the legacy secret and gRPC, not this setting.
+    #[arg(long)]
+    #[arg(value_name = "IDENT")]
+    beemsg_protocol: BeeMsgProtocol = BeeMsgProtocol::Legacy,
+
+    /// This nodes X25519 private key file for BeeMsg. [default: /etc/beegfs/beemsg.key]
+    ///
+    /// Required by the authenticated and encrypted protocols. The matching public key must be
+    /// registered with every peer for it to accept connections from this node. Create one with
+    /// --gen-key.
+    #[arg(long)]
+    #[arg(value_name = "PATH")]
+    beemsg_key_file: PathBuf = "/etc/beegfs/beemsg.key".into(),
+
+    /// Generates a new BeeMsg keypair, writes it to --beemsg-key-file, prints the public key and
+    /// exits.
+    ///
+    /// Refuses to overwrite an existing key file: replacing a nodes key makes every peer reject it
+    /// until the new public key is registered.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    #[serde(skip)]
+    gen_key: bool = false,
+
     /// General
 
     /// Disables registration of new nodes and targets (clients excluded).
@@ -459,6 +501,23 @@ impl Config {
             bail!("Quota enforcement requires quota being enabled");
         }
 
+        if self.beemsg_protocol.needs_key() && !self.gen_key {
+            // Fail here rather than at the first connection attempt.
+            std::fs::metadata(&self.beemsg_key_file).with_context(|| {
+                format!(
+                    "beemsg-protocol {:?} requires a key file at {:?}. Create one with --gen-key",
+                    self.beemsg_protocol, self.beemsg_key_file
+                )
+            })?;
+        }
+
+        if self.beemsg_protocol == BeeMsgProtocol::Plain && !self.auth_disable {
+            bail!(
+                "beemsg-protocol plain has no authentication at all. Set auth-disable to confirm \
+that, or use authenticated or encrypted"
+            );
+        }
+
         self.cap_pool_meta_limits
             .check()
             .context("Capacity pool meta limits")?;
@@ -561,6 +620,34 @@ pub fn load_and_parse() -> Result<(Config, Vec<String>)> {
 
 // Custom types for user input
 
+/// Selects the BeeMsg wire protocol and its protection.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BeeMsgProtocol {
+    #[default]
+    Legacy,
+    Plain,
+    Authenticated,
+    Encrypted,
+}
+
+impl BeeMsgProtocol {
+    fn needs_key(self) -> bool {
+        matches!(self, Self::Authenticated | Self::Encrypted)
+    }
+}
+
+impl From<BeeMsgProtocol> for Protocol {
+    fn from(value: BeeMsgProtocol) -> Self {
+        match value {
+            BeeMsgProtocol::Legacy => Protocol::Legacy,
+            BeeMsgProtocol::Plain => Protocol::Plain,
+            BeeMsgProtocol::Authenticated => Protocol::Authenticated,
+            BeeMsgProtocol::Encrypted => Protocol::Encrypted,
+        }
+    }
+}
+
 /// Defines where log messages shall be sent to
 #[derive(Clone, Debug, ValueEnum, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -594,5 +681,55 @@ impl From<LogLevel> for LevelFilter {
             LogLevel::Debug => LevelFilter::Debug,
             LogLevel::Trace => LevelFilter::Trace,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn with(protocol: BeeMsgProtocol, key_file: &str, auth_disable: bool) -> Config {
+        Config {
+            beemsg_protocol: protocol,
+            beemsg_key_file: key_file.into(),
+            auth_disable,
+            ..Default::default()
+        }
+    }
+
+    /// A missing key file must fail at parse time, not at the first connection.
+    #[test]
+    fn check_validity_requires_a_key_file() {
+        for protocol in [BeeMsgProtocol::Authenticated, BeeMsgProtocol::Encrypted] {
+            with(protocol, "/nonexistent/beemsg.key", true)
+                .check_validity()
+                .unwrap_err();
+
+            // Generating one is exactly the case where it may be missing.
+            let mut generating = with(protocol, "/nonexistent/beemsg.key", true);
+            generating.gen_key = true;
+            generating.check_validity().unwrap();
+        }
+
+        for protocol in [BeeMsgProtocol::Legacy, BeeMsgProtocol::Plain] {
+            with(protocol, "/nonexistent/beemsg.key", true)
+                .check_validity()
+                .unwrap();
+        }
+    }
+
+    /// `plain` drops authentication entirely, so it must not be reachable by only switching the
+    /// protocol and leaving the auth settings alone.
+    #[test]
+    fn check_validity_rejects_silent_auth_downgrade() {
+        with(BeeMsgProtocol::Plain, "/nonexistent", false)
+            .check_validity()
+            .unwrap_err();
+        with(BeeMsgProtocol::Plain, "/nonexistent", true)
+            .check_validity()
+            .unwrap();
+        with(BeeMsgProtocol::Legacy, "/nonexistent", false)
+            .check_validity()
+            .unwrap();
     }
 }

@@ -213,3 +213,19 @@ INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value) VALUES
     -- target 13 exists both as meta and storage, this tests their correct separation - not exceeded
     (52, 1, 1, 13, 800)
 ;
+
+INSERT INTO identities (identity_id, name) VALUES
+    (1, "meta_node_1"),
+    (2, "ctl")
+;
+
+INSERT INTO identity_to_node (identity_id, node_type, node_id) VALUES
+    (1, 1, 1)
+;
+
+-- ctl has no node, so it can connect to us but we never connect to it.
+INSERT INTO keys (key, identity_id) VALUES
+    (x'0101010101010101010101010101010101010101010101010101010101010101', 1),
+    (x'0202020202020202020202020202020202020202020202020202020202020202', 1),
+    (x'0303030303030303030303030303030303030303030303030303030303030303', 2)
+;

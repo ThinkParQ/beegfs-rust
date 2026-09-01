@@ -57,6 +57,8 @@ impl TestApp {
                 )
                 .unwrap(),
                 use_ipv6: false,
+                protocol: shared::protocol::Protocol::Legacy,
+                beemsg_keypair: None,
             }),
             data: Arc::new(Mutex::new(TestData::default())),
         }
