@@ -14,22 +14,20 @@ mod types;
 
 use crate::app::RuntimeApp;
 use crate::config::Config;
+use crate::db::lookup::DbLookup;
 use anyhow::{Context, Result};
 use app::App;
 use db::config::Config as dbConfig;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use protobuf::license::CertType;
-use rusqlite::Transaction;
 use shared::bee_msg::target::RefreshTargetStates;
-use shared::conn::identity::{Identity, IdentityStore};
-use shared::conn::noise::StaticKeypair;
-use shared::conn::outgoing::Pool;
-use shared::conn::{ConnConfig, incoming};
+use shared::conn::incoming;
+use shared::conn::outgoing::{Pool, PoolConfig};
+use shared::conn::protocol::Protocol;
 use shared::nic::Nic;
-use shared::protocol::Protocol;
 use shared::run_state::{self, RunStateControl};
-use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType, StaticPubKey, Uid};
+use shared::types::{MGMTD_UID, NicType, NodeId, NodeType};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
@@ -45,11 +43,9 @@ use types::SqliteEnumExt;
 #[derive(Debug)]
 pub struct StaticInfo {
     pub user_config: Config,
-    pub auth_secret: Option<AuthSecret>,
     pub network_addrs: Vec<Nic>,
     pub use_ipv6: bool,
     pub protocol: Protocol,
-    pub beemsg_keypair: Option<Arc<StaticKeypair>>,
 }
 
 /// Starts the management service.
@@ -81,31 +77,6 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
 
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);
-
-    let identities = Arc::new(IdentityStore::new());
-
-    // Shared by the incoming and outgoing side so both cannot disagree on the protocol. The legacy
-    // secret only applies to the legacy protocol, the key exchange replaces it everywhere else.
-    let conn_cfg = Arc::new(ConnConfig {
-        protocol: info.protocol,
-        legacy_auth_required: info.protocol.is_legacy() && info.auth_secret.is_some(),
-        auth_secret: info
-            .protocol
-            .is_legacy()
-            .then_some(info.auth_secret)
-            .flatten(),
-        keypair: info.beemsg_keypair.clone(),
-        identities: identities.clone(),
-    });
-    conn_cfg.check()?;
-
-    // Node address store and connection pool
-    let conn_pool = Pool::new(
-        udp_socket.clone(),
-        info.user_config.connection_limit,
-        conn_cfg.clone(),
-        info.use_ipv6,
-    );
 
     let db = sqlite::Connections::new(info.user_config.db_file.as_path());
 
@@ -168,21 +139,18 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         ),
     };
 
-    // Fill node addrs store from db
-    db.read_tx(db::node_nic::get_all_addrs)
-        .await?
-        .into_iter()
-        .for_each(|a| conn_pool.replace_node_addrs(a.0, a.1));
+    let lookup = DbLookup { db: db.clone() };
 
-    let keys = db.read_tx(beemsg_identities).await?;
-
-    if info.protocol.needs_handshake() && keys.is_empty() {
-        log::warn!(
-            "The BeeMsg identity list is empty - no peer can connect until keys are registered"
-        );
-    }
-
-    identities.replace_all(keys);
+    // Node address store and connection pool
+    let conn_pool = Pool::new(
+        lookup.clone(),
+        udp_socket.clone(),
+        PoolConfig {
+            connection_limit: info.user_config.connection_limit,
+            protocol: info.protocol.clone(),
+            use_ipv6: info.use_ipv6,
+        },
+    );
 
     // This is used to signal a client that pulled its state back to the RunControl
     let (shutdown_client_tx, shutdown_client_rx) = mpsc::channel(16);
@@ -202,8 +170,9 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     incoming::listen_tcp(
         beemsg_serve_addr,
         app.clone(),
-        conn_cfg.clone(),
+        info.protocol.clone(),
         run_state.clone(),
+        lookup,
     )
     .await?;
 
@@ -221,55 +190,6 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         run_state_control,
         shutdown_client_rx,
     })
-}
-
-/// Reads the BeeMsg identity list.
-///
-/// Ordered by `key_id` so the newest key of a node wins for the outgoing direction in
-/// [`IdentityStore::replace_all`]. An identity without a node can connect to us but is never
-/// connected to, hence the outer join.
-///
-/// The `keys` table is not restricted to X25519 keys - it is meant to hold other credential
-/// material later as well - so anything that is not one is skipped instead of failing the whole
-/// load and locking every peer out.
-fn beemsg_identities(tx: &Transaction) -> Result<Vec<(StaticPubKey, Identity)>> {
-    let rows: Vec<(Vec<u8>, String, Option<Uid>)> = tx.query_map_collect(
-        sql!(
-            "SELECT k.key, i.name, n.node_uid
-            FROM keys AS k
-            INNER JOIN identities AS i USING(identity_id)
-            LEFT JOIN identity_to_node AS idn USING(identity_id)
-            LEFT JOIN nodes AS n USING(node_type, node_id)
-            ORDER BY k.key_id ASC"
-        ),
-        [],
-        |row| {
-            Ok((
-                row.get_ref(0)?.as_blob()?.to_vec(),
-                row.get(1)?,
-                row.get(2)?,
-            ))
-        },
-    )?;
-
-    Ok(rows
-        .into_iter()
-        .filter_map(
-            |(key, name, node_uid)| match StaticPubKey::try_from(key.as_slice()) {
-                Ok(key) => Some((
-                    key,
-                    Identity {
-                        name: name.into(),
-                        node_uid,
-                    },
-                )),
-                Err(err) => {
-                    log::debug!("Ignoring a credential of identity {name} for BeeMsg: {err:#}");
-                    None
-                }
-            },
-        )
-        .collect())
 }
 
 /// Db schema migration
@@ -427,79 +347,5 @@ pub const fn version_str() -> &'static str {
     match option_env!("VERSION") {
         Some(version) => version,
         None => "undefined",
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use db::test::with_test_data;
-
-    #[test]
-    fn read_beemsg_identities() {
-        with_test_data(|tx| {
-            let keys = beemsg_identities(tx).unwrap();
-            assert_eq!(keys.len(), 3);
-
-            // Ordered by key_id, so the newest key of a node comes last and wins.
-            assert_eq!(keys[0].0, StaticPubKey::from([1; 32]));
-            assert_eq!(keys[1].0, StaticPubKey::from([2; 32]));
-            assert_eq!(keys[1].1.name.as_ref(), "meta_node_1");
-            assert_eq!(keys[0].1.node_uid, keys[1].1.node_uid);
-            assert!(keys[0].1.node_uid.is_some());
-
-            // An identity without a node still gets in, it just cannot be connected to.
-            assert_eq!(keys[2].1.name.as_ref(), "ctl");
-            assert_eq!(keys[2].1.node_uid, None);
-        });
-    }
-
-    /// Uniqueness keeps the authenticated principal unambiguous, and a credential of an identity
-    /// that does not exist has nothing to authenticate as.
-    #[test]
-    fn keys_table_rejects_bad_rows() {
-        with_test_data(|tx| {
-            tx.execute(
-                "INSERT INTO keys (key, identity_id) VALUES (?1, 2)",
-                [vec![1u8; 32]],
-            )
-            .unwrap_err();
-
-            tx.execute(
-                "INSERT INTO keys (key, identity_id) VALUES (?1, 999)",
-                [vec![9u8; 32]],
-            )
-            .unwrap_err();
-        });
-    }
-
-    /// The column is meant to carry other credential material later, so a row that is not an
-    /// X25519 key must be skipped rather than lock every peer out.
-    #[test]
-    fn non_key_credentials_are_skipped() {
-        with_test_data(|tx| {
-            tx.execute(
-                "INSERT INTO keys (key, identity_id) VALUES (?1, 2)",
-                [b"a password hash, not a key".to_vec()],
-            )
-            .unwrap();
-
-            let keys = beemsg_identities(tx).unwrap();
-            assert_eq!(keys.len(), 3);
-            assert!(keys.iter().all(|(k, _)| k.as_bytes().len() == 32));
-        });
-    }
-
-    /// Deleting an identity must take its keys with it, otherwise a revoked peer keeps working.
-    #[test]
-    fn deleting_an_identity_removes_its_keys() {
-        with_test_data(|tx| {
-            tx.execute("DELETE FROM identities WHERE identity_id = 1", [])
-                .unwrap();
-
-            let keys = beemsg_identities(tx).unwrap();
-            assert_eq!(keys.len(), 1);
-            assert_eq!(keys[0].1.name.as_ref(), "ctl");
-        });
     }
 }

@@ -1,21 +1,30 @@
 use super::*;
 use shared::bee_msg::misc::*;
+use shared::conn::protocol::Protocol;
 
 impl HandleNoResponse for AuthenticateChannel {
     async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<()> {
-        if let Some(ref secret) = app.static_info().auth_secret {
-            if secret == &self.auth_secret {
-                req.authenticate_connection();
+        if let Protocol::Legacy(ref secret) = app.static_info().protocol {
+            if let Some(secret) = secret {
+                if secret == &self.auth_secret {
+                    req.authenticate_connection();
+                } else {
+                    log::error!(
+                        "Peer {:?} tried to authenticate stream with wrong secret",
+                        req.addr()
+                    );
+                }
             } else {
-                log::error!(
-                    "Peer {:?} tried to authenticate stream with wrong secret",
-                    req.addr()
+                log::debug!(
+                    "Peer {:?} tried to authenticate stream with legacy authentication, but it is not required",
+                    req.addr(),
                 );
             }
         } else {
-            log::debug!(
-                "Peer {:?} tried to authenticate stream, but authentication is not required",
-                req.addr()
+            log::warn!(
+                "Peer {:?} tried to authenticate stream with legacy authentication, but protocol is {:?}",
+                req.addr(),
+                app.static_info().protocol
             );
         }
 

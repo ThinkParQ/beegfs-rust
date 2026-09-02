@@ -1,19 +1,17 @@
 use anyhow::{Context, Result, anyhow};
 use log::LevelFilter;
-use mgmtd::config::LogTarget;
+use mgmtd::config::{BeeMsgProtocol, LogTarget};
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
-use shared::conn::noise::StaticKeypair;
+use shared::conn::protocol::{ProtectedProtocol, Protocol, StaticKeypair, TransportProtectionMode};
 use shared::journald_logger;
 use shared::nic::check_ipv6;
-use shared::protocol::Protocol;
 use shared::types::AuthSecret;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
-use std::sync::Arc;
 use std::{fs, panic};
 use tokio::signal::unix::{SignalKind, signal};
 use uuid::Uuid;
@@ -116,27 +114,39 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
         );
     }
 
-    let auth_secret = if !user_config.auth_disable {
-        let secret = std::fs::read(&user_config.auth_file).with_context(|| {
-            format!(
-                "Could not open authentication file {:?}",
-                user_config.auth_file
-            )
-        })?;
-        Some(AuthSecret::hash_from_bytes(secret))
-    } else {
-        None
-    };
+    let protocol = match user_config.beemsg_protocol {
+        BeeMsgProtocol::Legacy => {
+            if user_config.auth_disable {
+                Protocol::Legacy(None)
+            } else {
+                let secret = std::fs::read(&user_config.auth_file).with_context(|| {
+                    format!(
+                        "Could not open authentication file {:?}",
+                        user_config.auth_file
+                    )
+                })?;
 
-    let protocol: Protocol = user_config.beemsg_protocol.into();
+                let secret = AuthSecret::hash_from_bytes(secret);
 
-    let beemsg_keypair = if protocol.needs_handshake() {
-        let keypair = StaticKeypair::load(&user_config.beemsg_key_file)?;
-        warn_on_loose_permissions(&user_config.beemsg_key_file);
-        log::info!("BeeMsg public key: {}", keypair.public());
-        Some(Arc::new(keypair))
-    } else {
-        None
+                Protocol::Legacy(Some(secret))
+            }
+        }
+        p @ BeeMsgProtocol::Authenticated | p @ BeeMsgProtocol::Encrypted => {
+            let key_pair = StaticKeypair::load(&user_config.beemsg_key_file)?;
+            warn_on_loose_permissions(&user_config.beemsg_key_file);
+
+            log::info!("BeeMsg public key: {}", key_pair.public());
+
+            Protocol::Protected(ProtectedProtocol::new(
+                key_pair,
+                if matches!(p, BeeMsgProtocol::Encrypted) {
+                    TransportProtectionMode::Encrypted
+                } else {
+                    TransportProtectionMode::Plain
+                },
+            ))
+        }
+        BeeMsgProtocol::Plain => Protocol::Plain,
     };
 
     let use_ipv6 = check_ipv6(user_config.beemsg_port, !user_config.ipv6_disable);
@@ -166,10 +176,8 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
             StaticInfo {
                 use_ipv6,
                 user_config,
-                auth_secret,
                 network_addrs,
                 protocol,
-                beemsg_keypair,
             },
             license,
         )
@@ -222,7 +230,7 @@ BeeMsg public key: {pubkey}
 
 Register it with every peer, e.g. in the management database:
   INSERT INTO identities (name) VALUES ('<identity-name>');
-  INSERT INTO keys (key, identity_id) VALUES (x'{pubkey}', last_insert_rowid());",
+  INSERT INTO keys (key, identity_id) VALUES ('{pubkey}', last_insert_rowid());",
         pubkey = keypair.public()
     );
 

@@ -1,10 +1,11 @@
 //! Handle incoming TCP and UDP connections and BeeMsgs.
 
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
+use super::protocol::Protocol;
 use super::stream::Stream;
 use super::{handshake, *};
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Msg, deserialize_header};
+use crate::bee_msg::{Header, Msg};
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
 use std::io::{self, ErrorKind};
@@ -34,8 +35,9 @@ use tokio::net::{TcpListener, UdpSocket};
 pub async fn listen_tcp(
     listen_addr: SocketAddr,
     dispatch: impl DispatchRequest,
-    cfg: Arc<ConnConfig>,
+    protocol: Protocol,
     mut run_state: RunStateHandle,
+    lookup: impl Lookup,
 ) -> Result<SocketAddr> {
     let listener = TcpListener::bind(listen_addr).await?;
     let bound_addr = listener.local_addr()?;
@@ -60,10 +62,11 @@ pub async fn listen_tcp(
                     // reading from each stream in a separate task that is also used for
                     // (de-)serializing, processing the request and sending the response.
                     tokio::spawn(stream_loop(
-                        stream.into(),
+                        Stream::from_tcpstream(stream, &protocol),
                         dispatch.clone(),
-                        cfg.clone(),
+                        protocol.clone(),
                         run_state.clone(),
+                        lookup.clone(),
                     ));
                 }
 
@@ -81,15 +84,14 @@ pub async fn listen_tcp(
 async fn stream_loop(
     mut stream: Stream,
     dispatch: impl DispatchRequest,
-    cfg: Arc<ConnConfig>,
+    protocol: Protocol,
     mut run_state: RunStateHandle,
+    lookup: impl Lookup,
 ) {
     log::debug!("Accepted incoming stream from {:?}", stream.addr());
 
-    stream.set_protocol(cfg.protocol);
-
-    if cfg.protocol.needs_handshake() {
-        match handshake::respond(&mut stream, &cfg).await {
+    if let Protocol::Protected(ref p) = protocol {
+        match handshake::respond(&mut stream, p, &lookup).await {
             Ok(peer) => log::debug!(
                 "Stream from {:?} authenticated as identity {}",
                 stream.addr(),
@@ -122,7 +124,7 @@ async fn stream_loop(
             }
         }
 
-        if let Err(err) = read_stream(&mut stream, &mut buf, &dispatch, &cfg).await {
+        if let Err(err) = read_stream(&mut stream, &mut buf, &dispatch, &protocol).await {
             // If the error comes from the connection being closed, we only log a debug message
             if let Some(inner) = err.downcast_ref::<io::Error>()
                 && let ErrorKind::UnexpectedEof = inner.kind()
@@ -149,14 +151,13 @@ async fn read_stream(
     stream: &mut Stream,
     buf: &mut [u8],
     dispatch: &impl DispatchRequest,
-    cfg: &ConnConfig,
+    protocol: &Protocol,
 ) -> Result<()> {
     let header = stream.read_msg(buf, GENERIC_STREAM_TIME_LIMIT).await?;
 
     // Only the legacy protocol authenticates per message - the new one gates the whole stream
     // during connection setup.
-    if cfg.legacy_auth_required
-        && cfg.protocol.is_legacy()
+    if let Protocol::Legacy(Some(_)) = protocol
         && !stream.authenticated
         && header.msg_id() != AuthenticateChannel::ID
     {
@@ -173,7 +174,6 @@ async fn read_stream(
             stream,
             buf,
             header: &header,
-            protocol: cfg.protocol,
         })
         .await
         .context("Stream msg dispatch failed")?;
@@ -232,15 +232,13 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // A separate buffer pool could potentially be used to avoid allocating new buffers every time.
     let mut buf = vec![0; UDP_BUF_LEN];
 
-    let (len, peer_addr) = sock.recv_from(&mut buf).await?;
+    let (_, peer_addr) = sock.recv_from(&mut buf).await?;
 
     // Request shall be handled in a separate task, so the next datagram can be processed
     // immediately
     tokio::spawn(async move {
         if let Err(err) = async {
-            // Limited to what actually arrived, so that a truncated datagram is rejected instead
-            // of being completed from the buffers zeroed tail.
-            let header = deserialize_header(&buf[..len])?;
+            let header = Header::deserialize_legacy(&buf)?;
 
             let req = SocketRequest {
                 sock,

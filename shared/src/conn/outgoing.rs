@@ -1,13 +1,13 @@
 //! Outgoing communication functionality
 use super::handshake;
+use super::protocol::Protocol;
 use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize_body};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::conn::{CONNECT_STREAM_TIME_LIMIT, ConnConfig, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
-use crate::protocol::Protocol;
+use crate::conn::{CONNECT_STREAM_TIME_LIMIT, GENERIC_STREAM_TIME_LIMIT, Lookup, TCP_BUF_LEN};
 use crate::types::Uid;
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
@@ -16,6 +16,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
+
+#[derive(Debug)]
+pub struct PoolConfig {
+    pub connection_limit: usize,
+    pub protocol: Protocol,
+    pub use_ipv6: bool,
+}
 
 /// The connection pool.
 ///
@@ -26,26 +33,21 @@ use tokio::time::timeout;
 /// Meant to be wrapped in an [Arc] or another sharable struct and provided to tasks for access to
 /// communication.
 #[derive(Debug)]
-pub struct Pool {
-    store: Store<Uid>,
+pub struct Pool<L: Lookup> {
+    conn_store: Store<Uid>,
+    lookup: L,
     udp_socket: Arc<UdpSocket>,
-    cfg: Arc<ConnConfig>,
-    use_ipv6: bool,
+    config: PoolConfig,
 }
 
-impl Pool {
+impl<L: Lookup> Pool<L> {
     /// Creates a new Pool.
-    pub fn new(
-        udp_socket: Arc<UdpSocket>,
-        connection_limit: usize,
-        cfg: Arc<ConnConfig>,
-        use_ipv6: bool,
-    ) -> Self {
+    pub fn new(lookup: L, udp_socket: Arc<UdpSocket>, config: PoolConfig) -> Self {
         Self {
-            store: Store::new(connection_limit),
-            cfg,
+            conn_store: Store::new(config.connection_limit),
+            lookup,
             udp_socket,
-            use_ipv6,
+            config,
         }
     }
 
@@ -57,15 +59,15 @@ impl Pool {
     ) -> Result<(R, Header)> {
         log::trace!("REQUEST to {node_uid:?}: {msg:?}");
 
-        let mut buf = self.store.pop_buf_or_create();
+        let mut buf = self.conn_store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, self.cfg.protocol, &mut buf)?;
+        let header = serialize_body(msg, &mut buf)?;
         let resp_header = self
-            .comm_stream(node_uid, &mut buf, msg_len, Some(R::RESPONSE_TIME_LIMIT))
+            .comm_stream(node_uid, &mut buf, &header, Some(R::RESPONSE_TIME_LIMIT))
             .await?;
-        let resp_msg = deserialize_body(&resp_header, &buf[Header::LEN..])?;
+        let resp_msg = deserialize_body(&resp_header, &buf[Header::END_POS..])?;
 
-        self.store.push_buf(buf);
+        self.conn_store.push_buf(buf);
 
         log::trace!("RESPONSE RECEIVED from {node_uid:?}: {resp_msg:?}");
 
@@ -76,12 +78,12 @@ impl Pool {
     pub async fn send<M: Msg + Serializable>(&self, node_uid: Uid, msg: &M) -> Result<()> {
         log::trace!("SEND to {node_uid:?}: {msg:?}");
 
-        let mut buf = self.store.pop_buf_or_create();
+        let mut buf = self.conn_store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, self.cfg.protocol, &mut buf)?;
-        self.comm_stream(node_uid, &mut buf, msg_len, None).await?;
+        let header = serialize_body(msg, &mut buf)?;
+        self.comm_stream(node_uid, &mut buf, &header, None).await?;
 
-        self.store.push_buf(buf);
+        self.conn_store.push_buf(buf);
 
         Ok(())
     }
@@ -104,15 +106,15 @@ impl Pool {
         &self,
         node_uid: Uid,
         buf: &mut [u8],
-        send_len: usize,
+        header: &Header,
         response_time_limit: Option<Duration>,
     ) -> Result<Header> {
         debug_assert_eq!(buf.len(), TCP_BUF_LEN);
 
         // 1. Pop open streams until communication succeeds or none are left
-        while let Some(stream) = self.store.try_pop_stream(node_uid) {
+        while let Some(stream) = self.conn_store.try_pop_stream(node_uid) {
             match self
-                .write_and_read_stream(buf, stream, send_len, response_time_limit)
+                .write_and_read_stream(buf, stream, header, response_time_limit)
                 .await
             {
                 Ok(header) => return Ok(header),
@@ -126,34 +128,22 @@ impl Pool {
         }
 
         // 2. Obtain a permit and try to open a new stream on each available address
-        if let Some(permit) = self.store.try_acquire_permit(node_uid) {
-            let Some(addrs) = self.store.get_node_addrs(node_uid) else {
+        if let Some(permit) = self.conn_store.try_acquire_permit(node_uid) {
+            let Some(addrs) = self.lookup.node_addrs(node_uid).await? else {
                 bail!("No available addresses for node with uid {node_uid}");
-            };
-
-            // KK commits to one remote static key before the handshake starts, so a missing key
-            // is a hard error rather than something to discover once per address.
-            let peer_key = if self.cfg.protocol.needs_handshake() {
-                Some(self.cfg.identities.key_by_node(node_uid).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "No BeeMsg public key known for node with uid {node_uid}, cannot \
-                        authenticate to it"
-                    )
-                })?)
-            } else {
-                None
             };
 
             log::debug!("Connecting new stream to node with uid {node_uid}");
 
             for addr in addrs.iter() {
-                if addr.is_ipv6() && !self.use_ipv6 {
+                if addr.is_ipv6() && !self.config.use_ipv6 {
                     continue;
                 }
 
-                match Stream::connect_tcp(addr, CONNECT_STREAM_TIME_LIMIT).await {
-                    Ok(mut stream) => {
-                        stream.set_protocol(self.cfg.protocol);
+                match Stream::connect_tcp(addr, &self.config.protocol, CONNECT_STREAM_TIME_LIMIT)
+                    .await
+                {
+                    Ok(stream) => {
                         let mut stream = StoredStream::from_stream(stream, permit);
 
                         let err_context = || {
@@ -163,37 +153,51 @@ impl Pool {
                         };
 
                         // Authenticate to the peer if required
-                        if let Some(auth_secret) = self.cfg.auth_secret {
-                            // The provided buffer contains the actual message to be sent later -
-                            // obtain an additional one for the auth message
-                            let mut auth_buf = self.store.pop_buf_or_create();
-                            let msg_len = serialize(
-                                &AuthenticateChannel { auth_secret },
-                                self.cfg.protocol,
-                                &mut auth_buf,
-                            )?;
+                        match self.config.protocol {
+                            Protocol::Legacy(Some(auth_secret)) => {
+                                // The provided buffer contains the actual message to be sent later
+                                // - obtain an additional one for the auth message
+                                let mut auth_buf = self.conn_store.pop_buf_or_create();
+                                let auth_header = serialize_body(
+                                    &AuthenticateChannel { auth_secret },
+                                    &mut auth_buf,
+                                )?;
 
-                            stream
-                                .as_mut()
-                                .write_msg(&mut auth_buf, msg_len, GENERIC_STREAM_TIME_LIMIT)
-                                .await
-                                .with_context(err_context)?;
+                                stream
+                                    .as_mut()
+                                    .write_msg(
+                                        &mut auth_buf,
+                                        &auth_header,
+                                        GENERIC_STREAM_TIME_LIMIT,
+                                    )
+                                    .await
+                                    .with_context(err_context)?;
 
-                            self.store.push_buf(auth_buf);
-                        }
+                                self.conn_store.push_buf(auth_buf);
+                            }
 
-                        // A rejection is a policy decision, so do not fall through to the next
-                        // address - it would only be rejected again.
-                        if let Some(peer_key) = peer_key {
-                            handshake::initiate(stream.as_mut(), &self.cfg, peer_key)
-                                .await
-                                .with_context(err_context)?;
+                            Protocol::Protected(ref p) => {
+                                // If a key can't be found in the store or handshake fails, error
+                                // out immediately as this can't be fixed by trying other addresses.
+                                let peer_key =
+                                    self.lookup.key_by_node(node_uid).await?.ok_or_else(|| {
+                                        anyhow::anyhow!(
+                                            "No BeeMsg public key known for node with uid \
+                                            {node_uid}, cannot authenticate to it"
+                                        )
+                                    })?;
+
+                                handshake::initiate(stream.as_mut(), p, peer_key)
+                                    .await
+                                    .with_context(err_context)?;
+                            }
+                            Protocol::Plain | Protocol::Legacy(None) => {}
                         }
 
                         // Communication using the newly opened stream should usually not fail. If
                         // it does, abort. It might be better to just try the next address though.
                         let resp_header = self
-                            .write_and_read_stream(buf, stream, send_len, response_time_limit)
+                            .write_and_read_stream(buf, stream, header, response_time_limit)
                             .await
                             .with_context(err_context)?;
 
@@ -217,14 +221,17 @@ impl Pool {
         // user can always increase the connection limit to work around it. It's also in the
         // responsibility of requesters to limit potentially long running requests (e.g. quota
         // queries) to not block the whole pool.
-        let stream = timeout(GENERIC_STREAM_TIME_LIMIT, self.store.pop_stream(node_uid))
-            .await
-            .map_err(|_| {
-                anyhow::anyhow!("Popping a stream for node with uid {node_uid:?} timed out")
-            })?;
+        let stream = timeout(
+            GENERIC_STREAM_TIME_LIMIT,
+            self.conn_store.pop_stream(node_uid),
+        )
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("Popping a stream for node with uid {node_uid:?} timed out")
+        })?;
 
         let resp_header = self
-            .write_and_read_stream(buf, stream, send_len, response_time_limit)
+            .write_and_read_stream(buf, stream, header, response_time_limit)
             .await
             .with_context(|| {
                 format!("Communication using existing stream to node with uid {node_uid} failed")
@@ -239,22 +246,22 @@ impl Pool {
         &self,
         buf: &mut [u8],
         mut stream: StoredStream<Uid>,
-        send_len: usize,
+        header: &Header,
         response_time_limit: Option<Duration>,
     ) -> Result<Header> {
         stream
             .as_mut()
-            .write_msg(buf, send_len, GENERIC_STREAM_TIME_LIMIT)
+            .write_msg(buf, header, GENERIC_STREAM_TIME_LIMIT)
             .await?;
 
-        let header = if let Some(tl) = response_time_limit {
+        let resp_header = if let Some(tl) = response_time_limit {
             stream.as_mut().read_msg(buf, tl).await?
         } else {
             Header::default()
         };
 
-        self.store.push_stream(stream);
-        Ok(header)
+        self.conn_store.push_stream(stream);
+        Ok(resp_header)
     }
 
     /// Broadcasts a BeeMsg datagram to all given nodes using all their known addresses
@@ -264,31 +271,28 @@ impl Pool {
     /// not that the messages reached their destinations.
     pub async fn broadcast_datagram<M: Msg + Serializable>(
         &self,
-        peers: impl IntoIterator<Item = Uid>,
+        nodes_addrs: &[(Uid, Vec<SocketAddr>)],
         msg: &M,
     ) -> Result<()> {
-        let mut buf = self.store.pop_buf_or_create();
+        let mut buf = self.conn_store.pop_buf_or_create();
 
         // Datagrams always use the legacy protocol.
-        let msg_len = serialize(msg, Protocol::Legacy, &mut buf)?;
+        let header = serialize_body(msg, &mut buf)?;
 
-        for node_uid in peers {
-            let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
+        header.serialize_legacy(&mut buf[..Header::END_POS])?;
 
-            if addrs.is_empty() {
-                log::error!(
-                    "Failed to send datagram to node with uid {node_uid}: No known addresses"
-                );
-                continue;
-            }
-
+        for (node_uid, addrs) in nodes_addrs {
             let mut errs = vec![];
             for addr in addrs.iter() {
-                if addr.is_ipv6() && !self.use_ipv6 {
+                if addr.is_ipv6() && !self.config.use_ipv6 {
                     continue;
                 }
 
-                if let Err(err) = self.udp_socket.send_to(&buf[0..msg_len], addr).await {
+                if let Err(err) = self
+                    .udp_socket
+                    .send_to(&buf[0..header.msg_len()], addr)
+                    .await
+                {
                     log::debug!(
                         "Sending datagram to node with uid {node_uid} using {addr} failed: {err}"
                     );
@@ -303,12 +307,8 @@ impl Pool {
             }
         }
 
-        self.store.push_buf(buf);
+        self.conn_store.push_buf(buf);
 
         Ok(())
-    }
-
-    pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
-        self.store.replace_node_addrs(node_uid, new_addrs)
     }
 }

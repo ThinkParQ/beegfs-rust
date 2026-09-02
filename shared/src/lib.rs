@@ -16,6 +16,5 @@ pub mod grpc;
 pub mod journald_logger;
 pub mod nic;
 pub mod parser;
-pub mod protocol;
 pub mod run_state;
 pub mod types;

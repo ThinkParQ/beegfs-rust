@@ -69,10 +69,10 @@
 # Maximum number of outgoing connections per node.
 # connection-limit = 12
 
-# Disables requiring authentication (BeeMsg and gRPC).
+# Disables requiring authentication (legacy BeeMsg and gRPC).
 # auth-disable = false
 
-# The authentication file location.
+# The authentication file location, used by the legacy protocol only.
 # auth-file = "/etc/beegfs/conn.auth"
 
 # Selects the BeeMsg wire protocol and its protection. All nodes of a system must agree on this -
@@ -87,7 +87,9 @@
 #                  can still tamper with traffic. Use encrypted if that matters.
 #   encrypted      authenticated plus authenticated encryption of every message.
 #
-# Note that auth-disable governs the legacy secret and gRPC, not this setting.
+# Only legacy uses auth-file, and only legacy authenticates gRPC with the secret from it. The other
+# protocols leave gRPC unauthenticated - proving a BeeMsg identity to gRPC is not implemented yet -
+# so auth-file and auth-disable have no effect and the file can be removed.
 # beemsg-protocol = "legacy"
 
 # This nodes X25519 private key file for BeeMsg, required by the authenticated and encrypted

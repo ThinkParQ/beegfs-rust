@@ -2,12 +2,13 @@
 
 use super::handshake::AuthenticatedPeer;
 use super::noise::Transport;
-use crate::bee_msg::{Header, deserialize_header, deserialize_header_v2};
-use crate::protocol::{
-    FRAME_HEADER_LEN, FrameHeader, FrameType, Protocol, RECORD_LEN, RECORD_PLAINTEXT_LEN,
+use super::protocol::{
+    FrameHeader, FrameType, Protocol, RECORD_LEN, RECORD_PLAINTEXT_LEN, TransportProtectionMode,
     record_frame_len, record_plaintext_len,
 };
-use anyhow::{Result, anyhow, bail, ensure};
+use crate::bee_msg::Header;
+use crate::conn::protocol::MAX_FRAME_LEN;
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::fmt::Debug;
 use std::io;
 use std::net::SocketAddr;
@@ -15,10 +16,6 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
-
-/// Upper bound for a key exchange frame payload. The largest is a `Reject` with a full detail
-/// string.
-pub(super) const MAX_CONTROL_PAYLOAD_LEN: usize = 512;
 
 /// A connected generic stream.
 ///
@@ -33,19 +30,23 @@ pub struct Stream {
 }
 
 /// How messages on a stream are framed and protected.
-///
-/// Separate from [`Protocol`] because it is per stream state, not configuration: it advances as a
-/// connection is set up and makes framing a message the peer cannot read unrepresentable.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 enum Protection {
-    /// Legacy protocol, no frames.
-    #[default]
     Legacy,
     /// New protocol, payload in the clear.
     Frames,
-    /// New protocol, payload as Noise records. Only reachable through a completed handshake, which
-    /// makes protecting a message the peer cannot read unrepresentable.
+    /// New protocol, payload as Noise records.
     Records(Transport),
+}
+
+impl Protection {
+    fn from_protocol(protocol: &Protocol) -> Self {
+        if protocol.is_legacy() {
+            Self::Legacy
+        } else {
+            Self::Frames
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -54,64 +55,23 @@ enum InnerStream {
     Tcp(TcpStream),
 }
 
-impl From<TcpStream> for Stream {
-    fn from(stream: TcpStream) -> Self {
-        Self {
-            stream: InnerStream::Tcp(stream),
-            authenticated: false,
-            protection: Protection::default(),
-            peer: None,
-        }
-    }
-}
-
-/// Reads into the whole buffer. Free function so callers can hold a mutable borrow of another
-/// [`Stream`] field at the same time, which the record loops need.
-async fn read_exact_inner(
-    stream: &mut InnerStream,
-    buf: &mut [u8],
-    time_limit: Duration,
-) -> Result<()> {
-    let addr = inner_addr(stream);
-
-    match timeout(time_limit, async {
-        match stream {
-            InnerStream::Tcp(s) => {
+impl InnerStream {
+    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<()> {
+        match self {
+            Self::Tcp(s) => {
                 s.read_exact(buf).await?;
                 Ok(()) as Result<_>
             }
         }
-    })
-    .await
-    {
-        Ok(res) => res,
-        Err(_) => Err(anyhow!("Reading from stream to {addr} timed out")),
     }
-}
 
-/// Counterpart of [`read_exact_inner`].
-async fn write_all_inner(stream: &mut InnerStream, buf: &[u8], time_limit: Duration) -> Result<()> {
-    let addr = inner_addr(stream);
-
-    match timeout(time_limit, async {
-        match stream {
-            InnerStream::Tcp(s) => {
+    async fn write_all(&mut self, buf: &[u8]) -> Result<()> {
+        match self {
+            Self::Tcp(s) => {
                 s.write_all(buf).await?;
                 Ok(()) as Result<_>
             }
         }
-    })
-    .await
-    {
-        Ok(res) => res,
-        Err(_) => Err(anyhow!("Writing to a stream to {addr} timed out")),
-    }
-}
-
-fn inner_addr(stream: &InnerStream) -> SocketAddr {
-    match stream {
-        // TODO unwrap ?
-        InnerStream::Tcp(s) => s.peer_addr().unwrap(),
     }
 }
 
@@ -119,7 +79,11 @@ impl Stream {
     /// Connect to peer using TCP and obtain a [Stream] object.
     ///
     /// Times out after `time_limit`.
-    pub async fn connect_tcp(addr: &SocketAddr, time_limit: Duration) -> Result<Self> {
+    pub async fn connect_tcp(
+        addr: &SocketAddr,
+        protocol: &Protocol,
+        time_limit: Duration,
+    ) -> Result<Self> {
         let stream = match timeout(time_limit, TcpStream::connect(addr)).await {
             Ok(res) => res?,
             Err(_) => bail!("Connecting a TCP stream to {addr} timed out"),
@@ -128,18 +92,18 @@ impl Stream {
         Ok(Self {
             stream: InnerStream::Tcp(stream),
             authenticated: false,
-            protection: Protection::default(),
+            protection: Protection::from_protocol(protocol),
             peer: None,
         })
     }
 
-    /// Selects the framing for this stream. Must be called before the first message.
-    pub(super) fn set_protocol(&mut self, protocol: Protocol) {
-        self.protection = if protocol.is_legacy() {
-            Protection::Legacy
-        } else {
-            Protection::Frames
-        };
+    pub fn from_tcpstream(stream: TcpStream, protocol: &Protocol) -> Self {
+        Self {
+            stream: InnerStream::Tcp(stream),
+            authenticated: false,
+            protection: Protection::from_protocol(protocol),
+            peer: None,
+        }
     }
 
     /// Installs the negotiated record protection. Only [`super::handshake`] calls this.
@@ -154,9 +118,6 @@ impl Stream {
     }
 
     /// The identity proven by the key exchange.
-    ///
-    /// The hook for per identity authorization ("may this identity act as meta node 3"), which is
-    /// not implemented yet - hence unused.
     #[allow(dead_code)]
     pub fn peer(&self) -> Option<&AuthenticatedPeer> {
         self.peer.as_ref()
@@ -164,215 +125,250 @@ impl Stream {
 
     /// Writes a complete serialized BeeMsg from `buf[0..msg_len]`.
     ///
-    /// Times out after `time_limit`, per write - an encrypted message spanning several records
-    /// therefore has no overall bound.
+    /// `time_limit` bounds the whole operation, so an encrypted message spanning several records
+    /// must be handed over completely within it.
+    ///
+    /// **Important**: Not cancel safe. On a timeout an arbitrary prefix of the message has been
+    /// written, so the stream must be dropped rather than reused.
     pub(super) async fn write_msg(
         &mut self,
         buf: &mut [u8],
-        msg_len: usize,
+        header: &Header,
         time_limit: Duration,
     ) -> Result<()> {
-        let Protection::Records(transport) = &mut self.protection else {
-            // `serialize` already wrote the frame header, so the unprotected protocols send the
-            // buffer as is.
-            return write_all_inner(&mut self.stream, &buf[0..msg_len], time_limit).await;
-        };
+        timeout(time_limit, async {
+            let plaintext_len = header.msg_len() - FrameHeader::END_POS;
 
-        ensure!(
-            msg_len >= Header::LEN,
-            "A serialized BeeMsg is at least {} bytes, got {msg_len}",
-            Header::LEN
-        );
-        let plaintext_len = msg_len - FRAME_HEADER_LEN;
+            // Serialize the complete header
+            match self.protection {
+                Protection::Legacy => {
+                    header.serialize_legacy(&mut buf[..Header::END_POS])?;
 
-        // `serialize` wrote the frame header for an unprotected payload - correct the length and
-        // mark the payload as records.
-        let frame = FrameHeader {
-            ftype: FrameType::Message,
-            protected: true,
-            payload_len: record_frame_len(plaintext_len),
-        };
+                    self.stream.write_all(&buf[0..header.msg_len()]).await?;
+                }
+                Protection::Frames => {
+                    let frame = FrameHeader {
+                        frame_type: FrameType::Message,
+                        protection: TransportProtectionMode::Plain,
+                        frame_len: header.msg_len(),
+                    };
+                    frame.serialize(buf)?;
+                    header.serialize(&mut buf[FrameHeader::END_POS..Header::END_POS])?;
 
-        let mut first = true;
-        for chunk in buf[FRAME_HEADER_LEN..msg_len].chunks(RECORD_PLAINTEXT_LEN) {
-            let out = transport.seal_record(chunk)?;
+                    self.stream.write_all(&buf[0..header.msg_len()]).await?;
+                }
+                Protection::Records(ref mut transport) => {
+                    let frame = FrameHeader {
+                        frame_type: FrameType::Message,
+                        protection: TransportProtectionMode::Encrypted,
+                        frame_len: record_frame_len(plaintext_len),
+                    };
+                    // Serializing the frame header happens below, directly into the front of the
+                    // scratch buffer after encryption
+                    header.serialize(&mut buf[FrameHeader::END_POS..Header::END_POS])?;
 
-            // The frame header goes into the space reserved in front of the first record, so a
-            // message that fits one record leaves in a single write.
-            let out = if first {
-                frame.encode(out)?;
-                first = false;
-                &out[..]
-            } else {
-                &out[Transport::SEND_PREFIX_LEN..]
-            };
+                    let mut first = true;
+                    for chunk in
+                        buf[FrameHeader::END_POS..header.msg_len()].chunks(RECORD_PLAINTEXT_LEN)
+                    {
+                        let out = transport.seal_record(chunk)?;
 
-            write_all_inner(&mut self.stream, out, time_limit).await?;
-        }
+                        // The frame header goes into the space reserved in front of the first
+                        // record, so a message that fits one record leaves
+                        // in a single write.
+                        let out = if first {
+                            frame.serialize(out)?;
+                            first = false;
+                            &out[..]
+                        } else {
+                            &out[Transport::SEND_PREFIX_LEN..]
+                        };
 
-        Ok(())
-    }
+                        self.stream.write_all(out).await?;
+                    }
+                }
+            }
 
-    /// Writes a small key exchange frame.
-    pub(super) async fn write_control_frame(
-        &mut self,
-        ftype: FrameType,
-        payload: &[u8],
-        time_limit: Duration,
-    ) -> Result<()> {
-        let mut buf = [0u8; FRAME_HEADER_LEN + MAX_CONTROL_PAYLOAD_LEN];
-
-        let end = FRAME_HEADER_LEN + payload.len();
-        let buf = buf.get_mut(..end).ok_or_else(|| {
-            anyhow!(
-                "A key exchange frame carries at most {MAX_CONTROL_PAYLOAD_LEN} bytes, got {}",
-                payload.len()
+            Ok(())
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Writing message to a stream connected to {} timed out",
+                self.addr()
             )
-        })?;
-
-        FrameHeader {
-            ftype,
-            protected: false,
-            payload_len: payload.len(),
-        }
-        .encode(buf)?;
-        buf[FRAME_HEADER_LEN..].copy_from_slice(payload);
-
-        write_all_inner(&mut self.stream, buf, time_limit).await
-    }
-
-    /// Reads a small key exchange frame, putting the payload at the start of `buf`.
-    ///
-    /// # Return value
-    /// Returns the frame type and the payload length.
-    pub(super) async fn read_control_frame(
-        &mut self,
-        buf: &mut [u8],
-        time_limit: Duration,
-    ) -> Result<(FrameType, usize)> {
-        let mut header = [0u8; FRAME_HEADER_LEN];
-        read_exact_inner(&mut self.stream, &mut header, time_limit).await?;
-
-        let frame = FrameHeader::decode(&header)?;
-        ensure!(
-            !frame.protected,
-            "Key exchange frames are never protected, but the peer marked one as such"
-        );
-
-        ensure!(
-            frame.payload_len <= buf.len(),
-            "Peer announced a {} byte key exchange frame, at most {} are accepted",
-            frame.payload_len,
-            buf.len()
-        );
-        read_exact_inner(&mut self.stream, &mut buf[..frame.payload_len], time_limit).await?;
-
-        Ok((frame.ftype, frame.payload_len))
+        })?
     }
 
     /// Reads one complete BeeMsg into `buf`, which must be the whole message buffer so the
     /// announced length can be checked against it.
     ///
-    /// `time_limit` applies to each read separately, matching how the legacy path bounded its
-    /// header and body reads individually.
+    /// `time_limit` bounds the whole operation, including the peer's think time before the first
+    /// byte arrives.
     ///
-    /// # Return value
-    /// Returns the deserialized header.
+    /// **Important**: Not cancel safe. On a timeout, the stream must be dropped rather than reused.
     pub(super) async fn read_msg(
         &mut self,
         buf: &mut [u8],
         time_limit: Duration,
     ) -> Result<Header> {
-        if matches!(self.protection, Protection::Legacy) {
-            self.read_exact(&mut buf[0..Header::LEN], time_limit)
-                .await?;
-            let header = deserialize_header(buf)?;
+        timeout(time_limit, async {
+            if matches!(self.protection, Protection::Legacy) {
+                self.stream.read_exact(&mut buf[0..Header::END_POS]).await?;
+                let header = Header::deserialize_legacy(buf)?;
 
-            self.read_exact(&mut buf[Header::LEN..header.msg_len()], time_limit)
-                .await?;
-
-            return Ok(header);
-        }
-
-        let mut header = [0u8; FRAME_HEADER_LEN];
-        read_exact_inner(&mut self.stream, &mut header, time_limit).await?;
-        let frame = FrameHeader::decode(&header)?;
-
-        ensure!(
-            frame.ftype == FrameType::Message,
-            "Expected a BeeMsg frame on an established stream, got {:?}",
-            frame.ftype
-        );
-
-        // Disjoint field borrows: the record loop needs the transport and the socket at once.
-        let plaintext_len = match &mut self.protection {
-            Protection::Records(transport) => {
-                ensure!(
-                    frame.protected,
-                    "Peer sent an unprotected frame although encryption was negotiated"
-                );
-
-                let plaintext_len = record_plaintext_len(frame.payload_len)?;
-                ensure!(
-                    FRAME_HEADER_LEN + plaintext_len <= buf.len(),
-                    "Received BeeMsg doesn't fit into the provided buffer: Reported plaintext {}, \
-                    buffer size is {}",
-                    plaintext_len,
-                    buf.len()
-                );
-
-                let mut written = 0;
-                let mut remaining = frame.payload_len;
-                while remaining > 0 {
-                    let record_len = remaining.min(RECORD_LEN);
-
-                    read_exact_inner(
-                        &mut self.stream,
-                        transport.record_in(record_len)?,
-                        time_limit,
-                    )
+                self.stream
+                    .read_exact(&mut buf[Header::END_POS..header.msg_len()])
                     .await?;
-                    written += transport
-                        .open_record(record_len, &mut buf[FRAME_HEADER_LEN + written..])?;
 
-                    remaining -= record_len;
-                }
-
-                ensure!(
-                    written == plaintext_len,
-                    "Records decrypted to {written} bytes, expected {plaintext_len}"
-                );
-
-                plaintext_len
+                return Ok(header);
             }
-            _ => {
-                ensure!(
-                    !frame.protected,
-                    "Peer sent a protected frame although no encryption was negotiated"
-                );
 
-                // Checked before slicing - the length comes from the peer.
-                let end = FRAME_HEADER_LEN + frame.payload_len;
-                ensure!(
-                    end <= buf.len(),
-                    "Received BeeMsg doesn't fit into the provided buffer: Reported frame payload \
-                    {}, buffer size is {}",
-                    frame.payload_len,
-                    buf.len()
-                );
+            let mut header = [0u8; FrameHeader::END_POS];
+            self.stream.read_exact(&mut header).await?;
+            let frame = FrameHeader::deserialize(&header)?;
 
-                read_exact_inner(
-                    &mut self.stream,
-                    &mut buf[FRAME_HEADER_LEN..end],
-                    time_limit,
-                )
+            ensure!(
+                frame.frame_type == FrameType::Message,
+                "Expected a BeeMsg frame on an established stream, got {:?}",
+                frame.frame_type
+            );
+
+            let plaintext_len = match self.protection {
+                Protection::Records(ref mut transport) => {
+                    ensure!(
+                        frame.protection == TransportProtectionMode::Encrypted,
+                        "Peer sent an unprotected frame although encryption was negotiated"
+                    );
+                    ensure!(frame.frame_len <= MAX_FRAME_LEN);
+
+                    let plaintext_len = record_plaintext_len(frame.frame_len)?;
+                    ensure!(
+                        FrameHeader::END_POS + plaintext_len <= buf.len(),
+                        "Received BeeMsg doesn't fit into the provided buffer: \
+                        Reported plaintext {}, buffer size is {}",
+                        plaintext_len,
+                        buf.len()
+                    );
+
+                    let mut written = 0;
+                    let mut remaining = frame.body_len();
+                    while remaining > 0 {
+                        let record_len = remaining.min(RECORD_LEN);
+
+                        self.stream
+                            .read_exact(transport.record_in(record_len)?)
+                            .await?;
+                        written += transport
+                            .open_record(record_len, &mut buf[FrameHeader::END_POS + written..])?;
+
+                        remaining -= record_len;
+                    }
+
+                    ensure!(
+                        written == plaintext_len,
+                        "Records decrypted to {written} bytes, expected {plaintext_len}"
+                    );
+
+                    plaintext_len
+                }
+                _ => {
+                    ensure!(
+                        frame.protection == TransportProtectionMode::Plain,
+                        "Peer sent a protected frame although no encryption was negotiated"
+                    );
+
+                    // Checked before slicing - the length comes from the peer.
+                    ensure!(
+                        frame.frame_len <= buf.len(),
+                        "Received BeeMsg doesn't fit into the provided buffer: \
+                        Reported frame length {}, buffer size is {}",
+                        frame.frame_len,
+                        buf.len()
+                    );
+
+                    self.stream
+                        .read_exact(&mut buf[FrameHeader::END_POS..frame.frame_len])
+                        .await?;
+
+                    frame.body_len()
+                }
+            };
+
+            Header::deserialize(
+                &buf[FrameHeader::END_POS..Header::END_POS],
+                FrameHeader::END_POS + plaintext_len,
+            )
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Reading message from a stream connected to {} timed out",
+                self.addr()
+            )
+        })?
+    }
+
+    pub(super) async fn write_control_frame(
+        &mut self,
+        frame_type: FrameType,
+        buf: &mut [u8],
+        time_limit: Duration,
+    ) -> Result<()> {
+        ensure!(buf.len() >= FrameHeader::END_POS);
+
+        timeout(time_limit, async {
+            FrameHeader {
+                frame_type,
+                protection: TransportProtectionMode::Plain,
+                frame_len: buf.len(),
+            }
+            .serialize(&mut buf[..FrameHeader::END_POS])?;
+
+            self.stream.write_all(buf).await
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Writing control frame to a stream connected to {} timed out",
+                self.addr()
+            )
+        })?
+    }
+
+    pub(super) async fn read_control_frame(
+        &mut self,
+        buf: &mut [u8],
+        time_limit: Duration,
+    ) -> Result<FrameType> {
+        ensure!(buf.len() >= FrameHeader::END_POS);
+
+        timeout(time_limit, async {
+            self.stream
+                .read_exact(&mut buf[..FrameHeader::END_POS])
                 .await?;
 
-                frame.payload_len
-            }
-        };
+            let frame = FrameHeader::deserialize(&buf[..FrameHeader::END_POS])?;
+            ensure!(
+                frame.protection == TransportProtectionMode::Plain,
+                "Control frames are never protected, but the peer marked one as such"
+            );
 
-        deserialize_header_v2(&buf[FRAME_HEADER_LEN..], plaintext_len)
+            ensure!(frame.frame_len <= buf.len());
+
+            self.stream
+                .read_exact(&mut buf[FrameHeader::END_POS..frame.frame_len])
+                .await?;
+
+            Ok(frame.frame_type)
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Reading control frame from a stream connected to {} timed out",
+                self.addr()
+            )
+        })?
     }
 
     /// Wait for the stream to become readable.
@@ -391,28 +387,6 @@ impl Stream {
                     Err(err) => break Err(anyhow!(err)),
                 }
             },
-        }
-    }
-
-    /// Reads from the stream into the provided buffer.
-    ///
-    /// The buffer will be filled completely before the future completes. Times out after
-    /// `time_limit`.
-    ///
-    /// **Important**: Not cancel safe. If a timeout occurs, the stream may not be reused.
-    pub async fn read_exact(&mut self, buf: &mut [u8], time_limit: Duration) -> Result<()> {
-        match timeout(time_limit, async {
-            match &mut self.stream {
-                InnerStream::Tcp(s) => {
-                    s.read_exact(buf).await?;
-                    Ok(()) as Result<_>
-                }
-            }
-        })
-        .await
-        {
-            Ok(res) => res,
-            Err(_) => Err(anyhow!("Reading from stream to {} timed out", self.addr())),
         }
     }
 

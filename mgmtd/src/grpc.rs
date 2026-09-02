@@ -7,6 +7,7 @@ use crate::types::{ResolveEntityId, SqliteEnumExt};
 use anyhow::{Context as AContext, Result, anyhow, bail};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, named_params, params};
+use shared::conn::protocol::Protocol;
 use shared::grpc::*;
 use shared::impl_grpc_handler;
 use shared::run_state::RunStateHandle;
@@ -207,7 +208,9 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
         ManagementService { app: app.clone() },
         move |req: Request<()>| {
             // If authentication is enabled, require the secret passed with every request
-            if let Some(required_secret) = app2.info.auth_secret {
+            // TODO: For now this is only checked on legacy protocol. If one uses the new one,
+            // we need a way to couple identities to gRPC communication as well.
+            if let Protocol::Legacy(Some(required_secret)) = app2.info.protocol {
                 let check = || -> Result<()> {
                     let Some(request_secret) = req.metadata().get("auth-secret") else {
                         bail!("Request requires authentication but no secret was provided")

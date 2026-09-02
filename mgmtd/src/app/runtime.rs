@@ -1,6 +1,7 @@
 use super::*;
 use crate::ClientPulledStateNotification;
 use crate::bee_msg::dispatch_request;
+use crate::db::lookup::DbLookup;
 use crate::license::LicenseVerifier;
 use crate::types::SqliteEnumExt;
 use anyhow::Result;
@@ -10,9 +11,10 @@ use shared::conn::msg_dispatch::{DispatchRequest, Request};
 use shared::conn::outgoing::Pool;
 use shared::peak_concurrency_tracker;
 use shared::run_state::WeakRunStateHandle;
-use sqlite::{Connections, TransactionExt, rarray_param};
+use sqlite::{Connections, rarray_param};
 use sqlite_check::sql;
 use std::fmt::Debug;
+use std::net::{IpAddr, SocketAddr};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::mpsc;
@@ -28,7 +30,7 @@ pub(crate) struct RuntimeApp(Arc<InnerAppHandles>);
 /// Stores the actual handles.
 #[derive(Debug)]
 pub(crate) struct InnerAppHandles {
-    pub conn: Pool,
+    pub conn: Pool<DbLookup>,
     pub db: Connections,
     pub license: LicenseVerifier,
     pub info: &'static StaticInfo,
@@ -41,7 +43,7 @@ impl RuntimeApp {
     ///
     /// Takes all the stored handles.
     pub(crate) fn new(
-        conn: Pool,
+        conn: Pool<DbLookup>,
         db: Connections,
         license: LicenseVerifier,
         info: &'static StaticInfo,
@@ -160,19 +162,39 @@ impl App for RuntimeApp {
 
         let mut node_count = 0;
         if let Err(err) = async {
-            let nodes: Vec<Uid> = self
+            let nodes: Vec<(Uid, Vec<SocketAddr>)> = self
                 .read_tx(move |tx| {
-                    Ok(tx.query_map_collect(
-                        sql!("SELECT node_uid FROM nodes WHERE node_type IN rarray(?1)"),
-                        [rarray_param(node_types.iter().map(|e| e.sql_variant()))],
-                        |row| row.get::<_, Uid>(0),
-                    )?)
+                    let mut st = tx.prepare_cached(sql!(
+                        "SELECT node_uid, addr, port FROM node_nics
+                        INNER JOIN nodes USING(node_uid) WHERE node_type IN rarray(?1)"
+                    ))?;
+
+                    let mut rows =
+                        st.query([rarray_param(node_types.iter().map(|e| e.sql_variant()))])?;
+
+                    let mut nodes = vec![];
+                    let mut cur: Option<&mut (Uid, Vec<SocketAddr>)> = None;
+                    while let Some(row) = rows.next()? {
+                        let node_uid = row.get(0)?;
+                        let addr: IpAddr = row.get_ref(1)?.as_str()?.parse()?;
+                        let addr = SocketAddr::new(addr, row.get(2)?);
+
+                        if let Some(ref mut cur) = cur
+                            && cur.0 == node_uid
+                        {
+                            cur.1.push(addr);
+                        } else {
+                            nodes.push((node_uid, vec![addr]));
+                        }
+                    }
+
+                    Ok(nodes)
                 })
                 .await?;
 
             node_count = nodes.len();
 
-            self.conn.broadcast_datagram(nodes.into_iter(), msg).await?;
+            self.conn.broadcast_datagram(&nodes, msg).await?;
 
             Ok(()) as Result<_>
         }
@@ -188,10 +210,6 @@ impl App for RuntimeApp {
                 td.1.elapsed()
             );
         }
-    }
-
-    fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
-        Pool::replace_node_addrs(&self.conn, node_uid, new_addrs)
     }
 
     fn is_pre_shutdown(&self) -> bool {

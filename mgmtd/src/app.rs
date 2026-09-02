@@ -15,7 +15,6 @@ use shared::bee_serde::{Deserializable, Serializable};
 use shared::types::{NodeId, NodeType, Uid};
 use std::fmt::Debug;
 use std::future::Future;
-use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -71,9 +70,6 @@ pub(crate) trait App: Debug + Clone + Send + 'static {
         node_types: &'static [NodeType],
         msg: &M,
     ) -> impl Future<Output = ()> + Send;
-
-    /// Replace all stored BeeMsg network addresses of a node in the store
-    fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>);
 
     // Run state
 

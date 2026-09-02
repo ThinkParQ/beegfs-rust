@@ -10,6 +10,7 @@ pub(crate) mod buddy_group;
 pub(crate) mod config;
 pub(crate) mod entity;
 mod import_v7;
+pub(crate) mod lookup;
 pub(crate) mod misc;
 pub(crate) mod node;
 pub(crate) mod node_nic;

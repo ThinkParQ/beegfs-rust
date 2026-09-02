@@ -6,8 +6,6 @@ use rusqlite::{Transaction, params};
 use shared::bee_msg::node::*;
 use shared::bee_msg::target::*;
 use shared::types::{NodeId, TargetId};
-use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 // Maximum number of clients that can register if license verification fails or license is invalid
@@ -233,14 +231,6 @@ client version < 8.0)"
             Ok((node, meta_root, is_new))
         })
         .await?;
-
-    app.replace_node_addrs(
-        node.uid,
-        nics.clone()
-            .into_iter()
-            .map(|e| SocketAddr::new(e.addr, msg.port))
-            .collect::<Arc<_>>(),
-    );
 
     if is_new {
         log::info!("Registered new node {node} (Requested Numeric Id: {requested_node_id})",);

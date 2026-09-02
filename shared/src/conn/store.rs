@@ -9,8 +9,7 @@ use crate::conn::stream::Stream;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// The Store structure
@@ -19,7 +18,6 @@ pub struct Store<T: Debug> {
     #[allow(clippy::type_complexity)]
     streams: Mutex<HashMap<T, (Arc<AsyncQueue<StoredStream<T>>>, Arc<Semaphore>)>>,
     bufs: Mutex<VecDeque<Vec<u8>>>,
-    addrs: RwLock<HashMap<T, Arc<[SocketAddr]>>>,
     connection_limit: usize,
 }
 
@@ -113,18 +111,6 @@ impl<T: Debug + Display + Clone + Default + PartialEq + Eq + Hash> Store<T> {
     /// Push back a message buffer to the store
     pub fn push_buf(&self, buf: Vec<u8>) {
         self.bufs.lock().unwrap().push_back(buf);
-    }
-
-    /// Get a list of known addresses for the given node UID
-    pub fn get_node_addrs(&self, key: T) -> Option<Arc<[SocketAddr]>> {
-        self.addrs.read().unwrap().get(&key).cloned()
-    }
-
-    /// Replace **all** addresses for the given node UID
-    pub fn replace_node_addrs(&self, key: T, new_addrs: impl Into<Arc<[SocketAddr]>>) {
-        let mut addrs = self.addrs.write().unwrap();
-        let addr = addrs.entry(key).or_insert_with(|| Arc::new([]));
-        *addr = new_addrs.into();
     }
 }
 

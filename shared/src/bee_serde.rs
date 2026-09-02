@@ -218,6 +218,14 @@ impl<'a> Serializer<'a> {
     }
 }
 
+/// Convenience function to serialize a serializable
+pub fn serialize(obj: impl Serializable, buf: &mut [u8]) -> Result<usize> {
+    let mut ser = Serializer::new(buf);
+    obj.serialize(&mut ser)?;
+
+    Ok(ser.bytes_written())
+}
+
 // DESERIALIZATION
 
 /// Makes a type BeeSerde deserializable
@@ -290,6 +298,11 @@ impl<'a> Deserializer<'a> {
     /// Deserialize a block of bytes as expected by BeeGFS
     pub fn bytes(&mut self, len: usize) -> Result<Vec<u8>> {
         Ok(self.take(len)?.to_owned())
+    }
+
+    /// Deserialize a fixed size block of bytes. Unlike [`Self::bytes`] this does not allocate.
+    pub fn byte_array<const N: usize>(&mut self) -> Result<[u8; N]> {
+        Ok(self.take(N)?.try_into()?)
     }
 
     /// Deserialize a BeeGFS serialized c string
@@ -408,6 +421,15 @@ impl<'a> Deserializer<'a> {
             }
         }
     }
+}
+
+/// Convenience function to deserialize into a deserializable
+pub fn deserialize<T: Deserializable>(buf: &[u8]) -> Result<T> {
+    let mut des = Deserializer::new(buf);
+    let res = T::deserialize(&mut des)?;
+    des.finish()?;
+
+    Ok(res)
 }
 
 // HELPER / CONVENIENCE FUNCTIONS

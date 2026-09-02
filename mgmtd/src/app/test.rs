@@ -2,6 +2,7 @@ use super::*;
 use crate::config::Config;
 use shared::bee_msg::MsgId;
 pub use shared::conn::msg_dispatch::test::TestRequest;
+use shared::conn::protocol::Protocol;
 use shared::nic::{NicFilter, query_nics};
 use shared::types::AuthSecret;
 use sqlite::Connections;
@@ -47,7 +48,6 @@ impl TestApp {
             db,
             info: Arc::new(StaticInfo {
                 user_config,
-                auth_secret: Some(AuthSecret::hash_from_bytes("secret")),
                 network_addrs: query_nics(
                     &[NicFilter {
                         address: Some(Ipv4Addr::LOCALHOST.into()),
@@ -57,8 +57,7 @@ impl TestApp {
                 )
                 .unwrap(),
                 use_ipv6: false,
-                protocol: shared::protocol::Protocol::Legacy,
-                beemsg_keypair: None,
+                protocol: Protocol::Legacy(Some(AuthSecret::hash_from_bytes("secret"))),
             }),
             data: Arc::new(Mutex::new(TestData::default())),
         }
@@ -161,8 +160,6 @@ impl App for TestApp {
             .notifications
             .push((M::ID, node_types.to_owned()));
     }
-
-    fn replace_node_addrs(&self, _node_uid: Uid, _new_addrs: impl Into<Arc<[SocketAddr]>>) {}
 
     fn is_pre_shutdown(&self) -> bool {
         false

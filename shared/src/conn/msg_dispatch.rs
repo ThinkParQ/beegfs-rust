@@ -1,10 +1,9 @@
 //! Facilities for dispatching TCP and UDP messages to their message handlers
 
 use super::stream::Stream;
-use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize_body};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::GENERIC_STREAM_TIME_LIMIT;
-use crate::protocol::Protocol;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;
@@ -37,14 +36,13 @@ pub struct StreamRequest<'a> {
     pub(super) stream: &'a mut Stream,
     pub(super) buf: &'a mut [u8],
     pub header: &'a Header,
-    pub(super) protocol: Protocol,
 }
 
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, self.protocol, self.buf)?;
+        let header = serialize_body(msg, self.buf)?;
         self.stream
-            .write_msg(self.buf, msg_len, GENERIC_STREAM_TIME_LIMIT)
+            .write_msg(self.buf, &header, GENERIC_STREAM_TIME_LIMIT)
             .await
     }
 
@@ -63,7 +61,7 @@ impl Request for StreamRequest<'_> {
     }
 
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
-        deserialize_body(self.header, &self.buf[Header::LEN..])
+        deserialize_body(self.header, &self.buf[Header::END_POS..])
     }
 
     fn header(&self) -> &Header {
@@ -82,9 +80,11 @@ pub struct SocketRequest<'a> {
 
 impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, Protocol::Legacy, self.buf)?;
+        let header = serialize_body(msg, self.buf)?;
+        header.serialize_legacy(&mut self.buf[..Header::END_POS])?;
+
         self.sock
-            .send_to(&self.buf[0..msg_len], &self.peer_addr)
+            .send_to(&self.buf[0..header.msg_len()], &self.peer_addr)
             .await?;
         Ok(())
     }
@@ -98,7 +98,7 @@ impl Request for SocketRequest<'_> {
     }
 
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
-        deserialize_body(self.header, &self.buf[Header::LEN..])
+        deserialize_body(self.header, &self.buf[Header::END_POS..])
     }
 
     fn header(&self) -> &Header {

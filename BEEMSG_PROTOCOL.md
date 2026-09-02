@@ -4,8 +4,9 @@ Reference for reimplementing BeeMsg framing outside this repository — the C++ 
 kernel client. Everything here is a wire contract: changing any of it breaks interoperability and
 needs a coordinated change in all trees.
 
-The Rust implementation lives in `shared/src/protocol.rs` (framing), `shared/src/conn/stream.rs`
-(the send and receive paths), `shared/src/conn/noise.rs` (the key exchange) and
+The Rust implementation lives in `shared/src/conn/protocol.rs` (framing, the frame header and the
+static keys), `shared/src/bee_msg.rs` (both BeeMsg header layouts), `shared/src/conn/stream.rs` (the
+send and receive paths), `shared/src/conn/noise.rs` (the key exchange primitives) and
 `shared/src/conn/handshake.rs` (the handshake frames). The golden vectors in
 `shared/src/conn/handshake.rs` are the authoritative test data; embed the same hex.
 
@@ -59,8 +60,9 @@ protected.
 ```
 frame header — 12 bytes, always cleartext
   0..4    magic: u32 = 0x53464742        reads as "BGFS" on the wire
-  4..8    frame_len: u32                 payload bytes following this header
-  8..9    frame_type: u8                 1 ClientHello, 2 ServerHello, 3 Reject, 4 Message
+  4..8    frame_len: u32                 total frame length, including this header
+  8..9    frame_type: u8                 1 HandshakeInit, 2 HandshakeResponse,
+                                         3 HandshakeReject, 4 Message
   9..10   frame_flags: u8                bit0 = payload is Noise records
                                          bit1 reserved, bits 2..7 MUST be 0
   10..12  reserved: u16 = 0              MUST be 0
@@ -68,6 +70,15 @@ frame header — 12 bytes, always cleartext
 
 A receiver MUST reject a non-zero `reserved`, an unknown `frame_type`, and any set bit among
 `frame_flags` bits 1..7. Rejecting them is what keeps those bits usable for a later extension.
+
+A receiver MUST also reject a `frame_len` below 12 or larger than the biggest frame it can hold —
+for the record layer that is the buffer limit plus the header plus one tag per record — and it MUST
+do so while parsing the frame header, before reading or slicing on the announced length. `frame_len`
+is fully peer controlled and is the only length the new framing carries.
+
+`frame_len` counts the frame header itself, matching the legacy `msg_len` convention. For a Message
+frame that is not protected, `frame_len` is therefore numerically equal to what `msg_len` would have
+been for the same message.
 
 For `frame_type = 4` (Message) the payload begins with the BeeMsg header:
 
@@ -111,17 +122,18 @@ Records are **maximally filled**: for a plaintext of `L` bytes there are `k = ce
 the first `k-1` carrying exactly `P` plaintext bytes and the last carrying the remainder.
 
 ```
-encode:  frame_len = L + k * T
+encode:  frame_len = 12 + L + k * T
 
-decode:  k = ceil(frame_len / C)
-         L = frame_len - k * T
+decode:  payload = frame_len - 12               reject if frame_len < 12
+         k = ceil(payload / C)
+         L = payload - k * T
          reject unless L > (k - 1) * P          <- canonicality
          reject unless 28 <= L <= <buffer> - 12
 ```
 
 There is no per-record length field; boundaries follow from `frame_len` alone. The canonicality
-check is mandatory, not cosmetic: `frame_len = C + T` decodes to `k = 2, L = P`, which a canonical
-sender would have emitted as one record. Rejecting non-maximal splits leaves a peer no freedom over
+check is mandatory, not cosmetic: `frame_len = 12 + C + T` decodes to `k = 2, L = P`, which a
+canonical sender would have emitted as one record. Rejecting non-maximal splits leaves a peer no freedom over
 record boundaries.
 
 **Nonces are implicit.** One Noise message per record, the counter starts at 0 per direction and is
@@ -152,26 +164,22 @@ The responder must select the remote static key *before* it can process message 
 initiator's public key travels in the clear as an identity selector.
 
 ```
-ClientHello — frame_type = 1, flags = 0, frame_len = 88
+HandshakeInit — frame_type = 1, flags = 0, frame_len = 100 (12 + 88)
   0..2    hs_version: u16 = 1
   2..4    modes: u16                     requested protection; bit0 = encrypt
-  4..8    reserved: u32 = 0              MUST be 0
+  4..8    reserved: u32 = 0              senders MUST write zero
   8..40   init_static_pub: [u8; 32]      identity selector, cleartext
   40..88  noise_msg_1
 
-ServerHello — frame_type = 2, flags = 0, frame_len = 58
+HandshakeResponse — frame_type = 2, flags = 0, frame_len = 64 (12 + 52)
   0..2    hs_version: u16 = 1
-  2..8    reserved
-  8..58   noise_msg_2, whose Noise payload is agreed_modes: u16
+  2..52   noise_msg_2, whose Noise payload is agreed_modes: u16
 
-Reject — frame_type = 3, flags = 0, frame_len = 8 + detail_len
-  0..2    hs_version: u16
-  2..4    reason: u16
-  4..8    detail_len: u32                <= 256
-  8..     detail, UTF-8
+HandshakeReject — frame_type = 3, flags = 0, frame_len = 14 (12 + 2)
+  0..2    reason: u16
 ```
 
-**The Noise prologue is `ClientHello` payload bytes 0..40** — everything before `noise_msg_1` —
+**The Noise prologue is `HandshakeInit` payload bytes 0..40** — everything before `noise_msg_1` —
 byte-exact on both sides. This is the single most security-critical detail in the design. Without
 it, an on-path attacker flips one bit of the cleartext `modes` and silently downgrades a configured
 `encrypted` connection to `authenticated`, which protects no traffic at all.
@@ -179,12 +187,15 @@ it, an on-path attacker flips one bit of the cleartext `modes` and silently down
 `agreed_modes` rides inside the encrypted Noise payload of message 2, so it is authenticated for
 free. The initiator MUST abort unless it equals what it requested.
 
-After `ServerHello`, both sides enter Noise transport mode when `agreed_modes` bit 0 is set, and
+After `HandshakeResponse`, both sides enter Noise transport mode when `agreed_modes` bit 0 is set, and
 otherwise discard the handshake state. A receiver MUST reject a Message frame whose `frame_flags`
 bit 0 disagrees with what was negotiated.
 
-The responder sends `Reject` instead of `ServerHello` and then closes the connection. `detail` must
-come from a closed set of strings — never echo anything derived from what the peer sent.
+The responder sends `HandshakeReject` instead of `HandshakeResponse` and then closes the
+connection. The payload is the `reason` code alone — no free-form text, so nothing derived from what
+the peer sent is ever echoed back. An initiator that does not recognise a `reason` MUST still report
+the rejection rather than treat the frame as malformed; the codes are append only, so a newer
+responder may send one it has never seen.
 
 `reason` is a stable numeric enum; new codes append only.
 
@@ -195,7 +206,7 @@ come from a closed set of strings — never echo anything derived from what the 
 | 2 | unsupported key exchange version |
 | 3 | requested protection not permitted |
 | 4 | key exchange failed to authenticate |
-| 5 | the new BeeMsg protocol is disabled on this node |
+| 5 | the new BeeMsg protocol is disabled on this node (reserved, not currently sent) |
 
 The key exchange belongs in the socket/channel layer, not the message dispatcher: it completes
 before the first BeeMsg is read, so it consumes no message id and no handler sees it.
@@ -209,14 +220,14 @@ Static keys are the raw scalars `01…01` and `02…02`; ephemeral keys are `03�
 initiator static public  a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209
 responder static public  ce8d3ad1ccb633ec7b70c17814a5c76ecd029685050d344745ba05870e587d59
 
-ClientHello payload (88 bytes)
+HandshakeInit payload (88 bytes)
   0100010000000000
   a4e09292b651c278b9772c569f5fa9bb13d906b46ab68c9df9dc2b4409f8a209
   5dfedd3b6bd47f6fa28ee15d969d5bb0ea53774d488bdaf9df1c6e0124b3ef22
   7b407cca059a3e7dafbca3dcf1e4f296
 
-ServerHello payload (58 bytes)
-  0100000000000000
+HandshakeResponse payload (52 bytes)
+  0100
   ac01b2209e86354fb853237b5de0f4fab13c7fcbf433a61c019369617fecf10b
   abc977b34d742620eed958cbc07786246910
 
@@ -235,5 +246,5 @@ Coordinate across all trees before changing any of these:
 5. The prologue definition.
 6. The nonce discipline — one Noise message per record, per-direction counters from 0, no rekey.
 7. The set or numbering of protocol values, or the `modes` bit assignment.
-8. `Reject` reason numbering.
+8. `HandshakeReject` reason numbering.
 9. The golden vectors.

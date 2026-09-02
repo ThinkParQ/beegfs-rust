@@ -1,41 +1,8 @@
 //! Functions for node nic management.
 use super::*;
 use std::borrow::Cow;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::Arc;
-
-/// Retrieves all node addresses grouped by EntityUID.
-///
-/// # Return value
-/// A Vec containing (EntityUID, Vec<SocketAddr>) entries.
-pub(crate) fn get_all_addrs(tx: &Transaction) -> Result<Vec<(Uid, Vec<SocketAddr>)>> {
-    let mut stmt = tx.prepare_cached(sql!(
-        "SELECT nn.node_uid, nn.addr, n.port
-        FROM node_nics AS nn
-        INNER JOIN nodes AS n USING(node_uid)
-        ORDER BY nn.node_uid ASC"
-    ))?;
-
-    let mut rows = stmt.query([])?;
-
-    let mut res = vec![];
-    let mut cur: Option<&mut (Uid, Vec<SocketAddr>)> = None;
-    while let Some(row) = rows.next()? {
-        let node_uid = row.get(0)?;
-        let addr: IpAddr = row.get_ref(1)?.as_str()?.parse()?;
-        let addr = SocketAddr::new(addr, row.get(2)?);
-
-        if cur.is_some() && cur.as_ref().unwrap().0 == node_uid {
-            #[allow(clippy::unnecessary_unwrap)]
-            cur.as_mut().unwrap().1.push(addr);
-        } else {
-            res.push((node_uid, vec![addr]));
-            cur = res.last_mut();
-        }
-    }
-
-    Ok(res)
-}
 
 /// Represents a network interface entry
 #[derive(Clone, Debug)]
@@ -136,15 +103,6 @@ mod test {
     use super::*;
     use shared::types::MGMTD_UID;
     use std::net::Ipv4Addr;
-
-    #[test]
-    fn get_all_addrs() {
-        with_test_data(|tx| {
-            let addrs = super::get_all_addrs(tx).unwrap();
-            assert_eq!(12, addrs.len());
-            assert_eq!(4, addrs[0].1.len());
-        })
-    }
 
     #[test]
     fn get_with_node() {
