@@ -6,6 +6,7 @@ use anyhow::{Context, Result, anyhow};
 use bee_serde_derive::BeeSerde;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 pub mod buddy_group;
 pub mod misc;
@@ -26,6 +27,8 @@ pub trait BaseMsg: Any + std::fmt::Debug + Send + Sync + 'static {}
 pub trait Msg: BaseMsg + Default + Clone {
     /// Message type as defined in NetMessageTypes.h
     const ID: MsgId;
+    /// How long to wait to receive this message as a response
+    const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(5);
 }
 
 impl<M> BaseMsg for M where M: Msg {}
@@ -152,6 +155,9 @@ pub fn serialize<M: Msg + Serializable>(msg: &M, buf: &mut [u8]) -> Result<usize
 
 /// Deserializes a BeeMsg header from the provided buffer.
 ///
+/// The function checks on wether the reported message length fits into the buffer. Thus, the whole
+/// buffer must be passed.
+///
 /// # Return value
 /// Returns the deserialized header.
 pub fn deserialize_header(buf: &[u8]) -> Result<Header> {
@@ -181,6 +187,16 @@ pub fn deserialize_header(buf: &[u8]) -> Result<Header> {
         .context(CTX);
     }
 
+    if header.msg_len as usize > buf.len() {
+        return Err(anyhow!(
+            "Received BeeMsg doesn't fit into the provided buffer: Reported length {}, \
+            buffer size is {}",
+            header.msg_len,
+            buf.len()
+        ))
+        .context(CTX);
+    }
+
     Ok(header)
 }
 
@@ -206,7 +222,7 @@ pub fn deserialize_body<M: Msg + Deserializable>(header: &Header, buf: &[u8]) ->
 /// # Return value
 /// Returns the deserialized message.
 pub fn deserialize<M: Msg + Deserializable>(buf: &[u8]) -> Result<M> {
-    let header = deserialize_header(&buf[0..Header::LEN])?;
+    let header = deserialize_header(buf)?;
     let msg = deserialize_body(&header, &buf[Header::LEN..])?;
     Ok(msg)
 }

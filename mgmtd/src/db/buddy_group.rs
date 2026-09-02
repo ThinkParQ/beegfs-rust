@@ -48,6 +48,7 @@ pub(crate) fn insert(
     node_type: NodeTypeServer,
     p_target_id: TargetId,
     s_target_id: TargetId,
+    quota_accounting: Option<BuddyGroupQuotaAccounting>,
 ) -> Result<(Uid, BuddyGroupId)> {
     let group_id = if group_id == 0 {
         misc::find_new_id(tx, "buddy_groups", "group_id", node_type.into(), 1..=0xFFFF)?
@@ -128,12 +129,24 @@ pub(crate) fn insert(
         None
     };
 
+    // Quota accounting only applies to storage groups
+    let quota_accounting = match (node_type, quota_accounting) {
+        (NodeTypeServer::Meta, None) => None,
+        (NodeTypeServer::Meta, Some(_)) => {
+            bail!("The quota accounting mode can only be set for storage buddy groups")
+        }
+        (NodeTypeServer::Storage, None) => {
+            bail!("The quota accounting mode must be set for storage buddy groups");
+        }
+        (NodeTypeServer::Storage, Some(q)) => Some(q),
+    };
+
     // Insert generic buddy group
     tx.execute(
         sql!(
             "INSERT INTO buddy_groups
-            (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+            (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id, quota_accounting)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
         ),
         params![
             new_uid,
@@ -141,7 +154,8 @@ pub(crate) fn insert(
             group_id,
             p_target_id,
             s_target_id,
-            pool_id
+            pool_id,
+            quota_accounting.map(|e| e.sql_variant())
         ],
     )?;
 
@@ -298,6 +312,7 @@ mod test {
                 NodeTypeServer::Meta,
                 3,
                 4,
+                None,
             )
             .unwrap();
             super::insert(
@@ -307,13 +322,14 @@ mod test {
                 NodeTypeServer::Storage,
                 3,
                 7,
+                None,
             )
             .unwrap_err();
 
             let meta_groups = get_with_type(tx, NodeTypeServer::Meta).unwrap();
             let storage_groups = get_with_type(tx, NodeTypeServer::Storage).unwrap();
 
-            assert_eq!(2, meta_groups.len());
+            assert_eq!(3, meta_groups.len());
             assert_eq!(2, storage_groups.len());
             assert!(meta_groups.iter().any(|e| e.0 == 1234));
         })

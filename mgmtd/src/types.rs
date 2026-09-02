@@ -1,6 +1,8 @@
 //! Contains types used by the local database and config.
 
-use rusqlite::Row;
+use protobuf::management as pm;
+use rusqlite::{Row, RowIndex};
+use shared::impl_enum_protobuf_traits;
 use shared::types::*;
 
 mod entity;
@@ -13,7 +15,7 @@ pub(crate) trait SqliteEnumExt {
     where
         Self: Sized;
 
-    fn from_row(row: &Row, idx: usize) -> rusqlite::Result<Self>
+    fn from_row(row: &Row, idx: impl RowIndex) -> rusqlite::Result<Self>
     where
         Self: Sized,
     {
@@ -86,4 +88,23 @@ impl_enum_sqlite! {QuotaIdType,
 impl_enum_sqlite! {QuotaType,
     QuotaType::Space => 1,
     QuotaType::Inode => 2,
+}
+
+/// How to handle quota data on targets that are part of a buddy group
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum BuddyGroupQuotaAccounting {
+    Primary,
+    Both,
+}
+
+impl_enum_sqlite! {BuddyGroupQuotaAccounting,
+    BuddyGroupQuotaAccounting::Primary => 1,
+    BuddyGroupQuotaAccounting::Both => 2,
+}
+
+use pm::buddy_group_options::BuddyGroupQuotaAccounting as BGQ;
+impl_enum_protobuf_traits! {BuddyGroupQuotaAccounting => BGQ,
+    unspecified => BGQ::Unspecified,
+    BuddyGroupQuotaAccounting::Primary => BGQ::Primary,
+    BuddyGroupQuotaAccounting::Both => BGQ::Both,
 }

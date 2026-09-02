@@ -65,8 +65,8 @@ doesn't match stored state {old_stored}, no consistency state changes will be ma
             })
             .await?;
 
-        log::debug!(
-            "Updated target states for {:?} targets {:?}, {} consistency states and {reachabilities_changed} reachability states changed",
+        log::info!(
+            "Updated {:?} targets' ({:?}) states: {} consistency states and {reachabilities_changed} reachability states changed",
             self.node_type,
             self.target_ids,
             consistencies_changed.unwrap_or(0)

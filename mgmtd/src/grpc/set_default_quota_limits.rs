@@ -13,7 +13,7 @@ pub(crate) async fn set_default_quota_limits(
         bail!(QUOTA_NOT_ENABLED_STR);
     }
 
-    let pool: EntityId = required_field(req.pool)?.try_into()?;
+    let pool: EntityId = required_field(req.pool)?;
 
     fn update(
         tx: &Transaction,

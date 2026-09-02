@@ -58,19 +58,6 @@ impl GetQuotaInfo {
             pool_id,
         }
     }
-
-    pub fn with_all(id_type: QuotaIdType, target_id: TargetId, pool_id: PoolId) -> Self {
-        Self {
-            query_type: QuotaQueryType::All,
-            id_type,
-            id_range_start: 0,
-            id_range_end: 0,
-            id_list: vec![],
-            transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
-            target_id,
-            pool_id,
-        }
-    }
 }
 
 impl Msg for GetQuotaInfo {
@@ -133,8 +120,15 @@ pub struct GetQuotaInfoResp {
     pub quota_entry: Vec<QuotaEntry>,
 }
 
+impl GetQuotaInfoResp {
+    pub const HAS_MORE_ENTRIES_COMPATFLAG: u8 = 1;
+}
+
 impl Msg for GetQuotaInfoResp {
     const ID: MsgId = 2098;
+    // Generously increase the response timeout since querying the maximum of ~167k quota entries
+    // can take some seconds on slow systems.
+    const RESPONSE_TIME_LIMIT: Duration = Duration::from_mins(1);
 }
 
 /// Sets exceeded quota information on server nodes.

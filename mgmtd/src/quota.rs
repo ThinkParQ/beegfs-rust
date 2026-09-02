@@ -5,7 +5,7 @@ mod system_id;
 use crate::app::*;
 use crate::license::LicensedFeature;
 use crate::types::SqliteEnumExt;
-use anyhow::{Context as AnyhowContext, Result};
+use anyhow::{Context as AnyhowContext, Result, bail};
 use rusqlite::params;
 use shared::bee_msg::OpsErr;
 use shared::bee_msg::quota::{
@@ -14,9 +14,13 @@ use shared::bee_msg::quota::{
 use shared::types::{NodeType, PoolId, QuotaId, QuotaIdType, QuotaType, TargetId, Uid};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::ops::RangeInclusive;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 struct TargetToQuery {
@@ -39,8 +43,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
                 sql!(
                     "SELECT target_id, pool_id, node_uid
                     FROM storage_targets
-                    INNER JOIN nodes USING(node_type, node_id)
-                    WHERE node_id IS NOT NULL"
+                    INNER JOIN nodes USING(node_type, node_id)"
                 ),
                 [],
                 |row| {
@@ -59,67 +62,84 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
         return Ok(());
     }
 
-    log::info!(
-        "Fetching quota information for {} storage targets",
-        targets_to_query.len()
-    );
+    let targets_to_query_count = targets_to_query.len();
+    let start_time = Instant::now();
 
     let tasks = create_and_send_requests(app, targets_to_query).await?;
 
     // Await all the responses
-    for t in tasks {
-        let (target, entries) = t.await?;
+    let mut entry_counter = 0;
+    for (target, jh) in tasks {
+        let res = async {
+            let entries = jh.await?;
 
-        // Only process that target if there were not errors when fetching for this target
-        if let Some(entries) = entries {
-            app.write_tx(move |tx| {
-                // Always delete all the old entries for that target to make sure entries for no
-                // longer queried ids are removed. We always get the complete list from the
-                // storages and we only update if there was no fetch error.
-                tx.execute_cached(
-                    sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
-                    [target.target_id],
-                )?;
+            // Only process that target if there were not errors when fetching for this target
+            if let Some(entries) = entries {
+                entry_counter += entries.len();
 
-                let mut insert_stmt = tx.prepare_cached(sql!(
-                    "INSERT OR IGNORE
-                    INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
-                    VALUES (?1, ?2, ?3 ,?4 ,?5)"
-                ))?;
+                app.write_tx(move |tx| {
+                    // Always delete all the old entries for that target to make sure entries for no
+                    // longer queried ids are removed. We always get the complete list from the
+                    // storages and we only update if there was no fetch error.
+                    // There is one task per target with merged results from multiple queries, so no
+                    // accidental override here.
+                    tx.execute_cached(
+                        sql!("DELETE FROM quota_usage WHERE target_id = ?1"),
+                        [target.target_id],
+                    )?;
 
-                log::debug!(
-                    "Setting {} quota usage entries for target {}",
-                    entries.len(),
-                    target.target_id
-                );
+                    // The entry list can contain duplicated entries if both range and list mode
+                    // are configured as they use two separate requests, thus the OR IGNORE.
+                    let mut insert_stmt = tx.prepare_cached(sql!(
+                        "INSERT OR IGNORE
+                        INTO quota_usage (quota_id, id_type, quota_type, target_id, value)
+                        VALUES (?1, ?2, ?3 ,?4 ,?5)"
+                    ))?;
 
-                for e in entries {
-                    if e.space > 0 {
-                        insert_stmt.execute(params![
-                            e.id,
-                            e.id_type.sql_variant(),
-                            QuotaType::Space.sql_variant(),
-                            target.target_id,
-                            e.space
-                        ])?;
+                    for e in entries {
+                        if e.space > 0 {
+                            insert_stmt.execute(params![
+                                e.id,
+                                e.id_type.sql_variant(),
+                                QuotaType::Space.sql_variant(),
+                                target.target_id,
+                                e.space
+                            ])?;
+                        }
+
+                        if e.inodes > 0 {
+                            insert_stmt.execute(params![
+                                e.id,
+                                e.id_type.sql_variant(),
+                                QuotaType::Inode.sql_variant(),
+                                target.target_id,
+                                e.inodes
+                            ])?;
+                        }
                     }
 
-                    if e.inodes > 0 {
-                        insert_stmt.execute(params![
-                            e.id,
-                            e.id_type.sql_variant(),
-                            QuotaType::Inode.sql_variant(),
-                            target.target_id,
-                            e.inodes
-                        ])?;
-                    }
-                }
+                    Ok(())
+                })
+                .await?;
+            }
 
-                Ok(())
-            })
-            .await?;
+            Ok(()) as Result<_>
+        }
+        .await;
+
+        if let Err(err) = res {
+            log::error!(
+                "Receiving and storing quota info from storage target {} failed: {err:#}",
+                target.target_id
+            );
         }
     }
+
+    log::info!(
+        "Fetched and stored {entry_counter} quota entries from {} targets in {:?}",
+        targets_to_query_count,
+        start_time.elapsed()
+    );
 
     Ok(())
 }
@@ -129,7 +149,7 @@ pub(crate) async fn fetch_and_update(app: &impl App) -> Result<()> {
 async fn create_and_send_requests(
     app: &impl App,
     targets: Vec<TargetToQuery>,
-) -> Result<Vec<JoinHandle<(TargetToQuery, Option<Vec<QuotaEntry>>)>>> {
+) -> Result<Vec<(TargetToQuery, JoinHandle<Option<Vec<QuotaEntry>>>)>> {
     let config = &app.static_info().user_config;
 
     // The to-be-queried IDs
@@ -177,41 +197,84 @@ async fn create_and_send_requests(
         && config.quota_group_ids_file.is_none()
         && config.quota_group_ids_range.is_none();
 
-    let mut tasks = vec![];
+    if !user_use_all && user_list.is_empty() && config.quota_user_ids_range.is_none() {
+        bail!("User quota ID selection is configured but resolved to no IDs");
+    }
+    if !group_use_all && group_list.is_empty() && config.quota_group_ids_range.is_none() {
+        bail!("Group quota ID selection is configured but resolved to no IDs");
+    }
+
+    let mut tasks: Vec<(TargetToQuery, JoinHandle<Option<_>>)> = vec![];
+
+    // These bound the concurrent requests going on to one node so these potentially long-running
+    // requests don't block all available connections
+    let mut semaphores = HashMap::new();
 
     // Sends one request per (target, id_type, list|range|all) to the respective owner node
     // Requesting is done concurrently for multiple targets but serialized for the different fetch
-    // modes.
-    for t in targets {
+    // modes and multiple chunks.
+    for target in targets {
         let app = app.clone();
         let user_list = user_list.clone();
         let group_list = group_list.clone();
         let user_range = config.quota_user_ids_range.clone();
         let group_range = config.quota_group_ids_range.clone();
+        let semaphore = semaphores
+            .entry(target.node_uid)
+            .or_insert_with(|| Arc::new(Semaphore::new((config.connection_limit / 2).max(1))))
+            .clone();
 
-        tasks.push(tokio::spawn(async move {
+        tasks.push((target, tokio::spawn(async move {
             let mut responses = vec![];
 
-            if user_use_all {
-                // Request all entries if no specific ids are configured
-                let resp: Result<GetQuotaInfoResp> = app
-                    .request(
-                        t.node_uid,
-                        &GetQuotaInfo::with_all(QuotaIdType::User, t.target_id, t.pool_id),
-                    )
-                    .await;
+            let _permit = match semaphore.acquire().await {
+                Ok(p) => p,
+                Err(err) => {
+                    log::error!(
+                        "Acquiring permit for fetching quota info for storage target {} from node \
+                            with uid {} failed: {err:#}",
+                        target.target_id,
+                        target.node_uid
+                    );
 
-                responses.push(("User all", resp));
+                    return None;
+                }
+            };
+
+            if user_use_all {
+                // If configured, query the whole id space
+                range_requests(
+                    app.clone(),
+                    target.node_uid,
+                    QuotaIdType::User,
+                    &target,
+                    &(0..=QuotaId::MAX),
+                    "User id all",
+                    &mut responses,
+                )
+                .await;
             } else {
                 // Otherwise query the configured ids via list and range
+                if let Some(ref range) = user_range {
+                    range_requests(
+                        app.clone(),
+                        target.node_uid,
+                        QuotaIdType::User,
+                        &target,
+                        range,
+                        "User id range",
+                        &mut responses,
+                    )
+                    .await;
+                }
                 if !user_list.is_empty() {
                     let resp: Result<GetQuotaInfoResp> = app
                         .request(
-                            t.node_uid,
+                            target.node_uid,
                             &GetQuotaInfo::with_list(
                                 QuotaIdType::User,
-                                t.target_id,
-                                t.pool_id,
+                                target.target_id,
+                                target.pool_id,
                                 user_list,
                             ),
                         )
@@ -219,43 +282,41 @@ async fn create_and_send_requests(
 
                     responses.push(("User id list", resp));
                 }
-                if let Some(ref range) = user_range {
-                    let resp: Result<GetQuotaInfoResp> = app
-                        .request(
-                            t.node_uid,
-                            &GetQuotaInfo::with_range(
-                                QuotaIdType::User,
-                                t.target_id,
-                                t.pool_id,
-                                range,
-                            ),
-                        )
-                        .await;
-
-                    responses.push(("User id range", resp));
-                }
             }
 
             if group_use_all {
-                // Request all entries if no specific ids are configured
-                let resp: Result<GetQuotaInfoResp> = app
-                    .request(
-                        t.node_uid,
-                        &GetQuotaInfo::with_all(QuotaIdType::Group, t.target_id, t.pool_id),
-                    )
-                    .await;
-
-                responses.push(("Group all", resp));
+                range_requests(
+                    app.clone(),
+                    target.node_uid,
+                    QuotaIdType::Group,
+                    &target,
+                    &(0..=QuotaId::MAX),
+                    "Group id all",
+                    &mut responses,
+                )
+                .await;
             } else {
                 // Otherwise query the configured ids via list and range
+                if let Some(ref range) = group_range {
+                    range_requests(
+                        app.clone(),
+                        target.node_uid,
+                        QuotaIdType::Group,
+                        &target,
+                        range,
+                        "Group id range",
+                        &mut responses,
+                    )
+                    .await;
+                }
                 if !group_list.is_empty() {
                     let resp: Result<GetQuotaInfoResp> = app
                         .request(
-                            t.node_uid,
+                            target.node_uid,
                             &GetQuotaInfo::with_list(
                                 QuotaIdType::Group,
-                                t.target_id,
-                                t.pool_id,
+                                target.target_id,
+                                target.pool_id,
                                 group_list,
                             ),
                         )
@@ -263,29 +324,59 @@ async fn create_and_send_requests(
 
                     responses.push(("Group id list", resp));
                 }
-                if let Some(ref range) = group_range {
-                    let resp: Result<GetQuotaInfoResp> = app
-                        .request(
-                            t.node_uid,
-                            &GetQuotaInfo::with_range(
-                                QuotaIdType::Group,
-                                t.target_id,
-                                t.pool_id,
-                                range,
-                            ),
-                        )
-                        .await;
-
-                    responses.push(("Group id range", resp));
-                }
             }
 
-            let results = extract_results(&t, responses);
-            (t, results)
-        }));
+            extract_results(&target, responses)
+        })));
     }
 
     Ok(tasks)
+}
+
+async fn range_requests(
+    app: impl App,
+    node_uid: Uid,
+    id_type: QuotaIdType,
+    target: &TargetToQuery,
+    range: &RangeInclusive<QuotaId>,
+    log_str: &'static str,
+    responses: &mut Vec<(&str, Result<GetQuotaInfoResp>)>,
+) {
+    let mut range_start = *range.start();
+    let range_end = *range.end();
+    let mut has_more = true;
+
+    while has_more && range_start <= range_end {
+        let resp = app
+            .request_with_header::<_, GetQuotaInfoResp>(
+                node_uid,
+                &GetQuotaInfo::with_range(
+                    id_type,
+                    target.target_id,
+                    target.pool_id,
+                    &(range_start..=range_end),
+                ),
+            )
+            .await;
+
+        (has_more, range_start) = resp
+            .as_ref()
+            .map(|e| {
+                let range_start =
+                    e.0.quota_entry
+                        .last()
+                        .map(|s| s.id.saturating_add(1))
+                        .unwrap_or_default();
+                let has_more = range_start > 0
+                    && e.1.msg_compat_feature_flags & GetQuotaInfoResp::HAS_MORE_ENTRIES_COMPATFLAG
+                        != 0;
+
+                (has_more, range_start)
+            })
+            .unwrap_or_default();
+
+        responses.push((log_str, resp.map(|e| e.0)));
+    }
 }
 
 /// Extracts the quota entries from the response message or log the errors
@@ -312,7 +403,7 @@ fn extract_results(
     } else {
         log::error!(
             "Fetching quota info for storage target {} from node with uid \
-{} failed:{errs}",
+            {} failed:{errs}",
             target.target_id,
             target.node_uid
         );
@@ -321,12 +412,36 @@ fn extract_results(
     }
 }
 
+/// Finds exceeded quota ids
+///
+/// The three parameters can be set to filter the data put into the result (before grouping) or set
+/// to `None` to get everything. This uses a hardcoded `2 = both` for the quota accounting mode -
+/// usage on a secondary is only counted when set to that mode.
+///
+/// Note that `quota_usage` is scanned either way: its primary key starts with `quota_id`, so
+/// neither the fixed nor the optional form of the id type / quota type filters can seek on it (thus
+/// no difference in performance).
+pub(crate) const EXCEEDED_QUOTA_IDS_SQL: &str = sql!(
+    "SELECT e.quota_id, e.id_type, e.quota_type, st.pool_id
+    FROM quota_usage AS e
+    INNER JOIN targets AS st USING(node_type, target_id)
+    LEFT JOIN buddy_groups AS bg ON st.target_id = bg.s_target_id
+        AND st.node_type = bg.node_type
+    LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
+    LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
+    WHERE (?1 IS NULL OR e.id_type = ?1)
+        AND (?2 IS NULL OR e.quota_type = ?2)
+        AND (?3 IS NULL OR st.pool_id = ?3)
+        AND (bg.quota_accounting IS NULL OR bg.quota_accounting = 2)
+    GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
+    HAVING SUM(e.value) > COALESCE(l.value, d.value)"
+);
+
 /// Calculates and pushes exceeded quota info to the nodes
 pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
     if !app.static_info().user_config.quota_enforce {
         return Ok(());
     }
-    log::info!("Calculating and pushing exceeded quota");
 
     let quota_licensed = app.verify_licensed_feature(LicensedFeature::Quota).is_ok();
 
@@ -354,16 +469,8 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
 
             if quota_licensed {
                 // Fill the prepared messages with matching exceeded quota ids
-                let mut stmt = tx.prepare_cached(sql!(
-                    "SELECT DISTINCT e.quota_id, e.id_type, e.quota_type, st.pool_id
-                    FROM quota_usage AS e
-                    INNER JOIN targets AS st USING(node_type, target_id)
-                    LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
-                    LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
-                    GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
-                    HAVING SUM(e.value) > COALESCE(l.value, d.value)"
-                ))?;
-                let mut rows = stmt.query([])?;
+                let mut stmt = tx.prepare_cached(EXCEEDED_QUOTA_IDS_SQL)?;
+                let mut rows = stmt.query(params![None::<i64>, None::<i64>, None::<i64>])?;
                 while let Some(row) = rows.next()? {
                     for m in &mut msges {
                         if row.get::<_, PoolId>(3)? == m.pool_id
@@ -376,11 +483,13 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
                     }
                 }
             } else {
+                // If quota is unlicensed, make sure the exceeding ids are removed from the servers.
+                // Otherwise exceeded ids could stay exceeded forever if quota was used before.
                 log::info!(
-                    "Quota enforcement enabled but feature not licensed. Removing quota limits from nodes"
+                    "Quota enforcement enabled but feature not licensed. Removing quota limits \
+                    from nodes"
                 );
             }
-
 
             // Get all node uids to send the messages to
             let nodes: Vec<Uid> = tx.query_map_collect(
@@ -396,20 +505,22 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
         })
         .await?;
 
+    let start_time = Instant::now();
+    let mut id_counter = 0;
+
     // Send all messages with exceeded quota information to all meta and storage nodes
     // Since there is one message for each combination of (pool x (user, group) x (space, inode)),
     // this might be very demanding, but can't do anything about that without changing meta and
     // storage too.
     // If this shows as a bottleneck, the requests could be done concurrently though.
-    for msg in msges {
+    for msg in &msges {
         let mut request_fails = 0;
         let mut non_success_count = 0;
 
+        id_counter += msg.exceeded_quota_ids.len();
+
         for node_uid in &nodes {
-            match app
-                .request::<_, SetExceededQuotaResp>(*node_uid, &msg)
-                .await
-            {
+            match app.request::<_, SetExceededQuotaResp>(*node_uid, msg).await {
                 Ok(resp) => {
                     if resp.result != OpsErr::SUCCESS {
                         non_success_count += 1;
@@ -429,6 +540,14 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
         }
     }
 
+    log::info!(
+        "Pushed {} exceeded quota ids to {} nodes using {} messages in {:?}",
+        id_counter,
+        nodes.len(),
+        msges.len(),
+        start_time.elapsed()
+    );
+
     Ok(())
 }
 
@@ -436,9 +555,10 @@ pub(crate) async fn distribute_exceeded(app: &impl App) -> Result<()> {
 ///
 /// IDs must be in numerical form and separated by any whitespace.
 fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaId>) -> Result<()> {
-    let data = std::fs::read_to_string(path)?;
+    let data = std::fs::read_to_string(path)
+        .with_context(|| format!("Could not read quota id file {path:?}"))?;
     for id in data.split_whitespace().map(|e| e.parse()) {
-        read_into.insert(id.context("Invalid syntax in quota file {path}")?);
+        read_into.insert(id.with_context(|| format!("Invalid syntax in quota id file {path:?}"))?);
     }
 
     Ok(())
@@ -448,13 +568,15 @@ fn try_read_quota_ids(path: &Path, read_into: &mut HashSet<QuotaId>) -> Result<(
 mod test {
     use crate::Config;
     use crate::app::test::*;
-    use crate::types::SqliteEnumExt;
+    use crate::types::{BuddyGroupQuotaAccounting, SqliteEnumExt};
     use shared::bee_msg::OpsErr;
     use shared::bee_msg::quota::{
         GetQuotaInfo, GetQuotaInfoResp, QuotaEntry, QuotaInodeSupport, QuotaQueryType,
         SetExceededQuota, SetExceededQuotaResp,
     };
     use shared::types::{QuotaIdType, QuotaType};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
     async fn update() {
@@ -628,15 +750,27 @@ mod test {
 
     #[tokio::test]
     async fn distribute_exceeded() {
-        // This fn doesn't need special config
-        let app = TestApp::new().await;
+        // EXCEEDED_QUOTA_IDS_SQL hardcodes this value, it must not silently change
+        assert_eq!(BuddyGroupQuotaAccounting::Both.sql_variant(), 2);
+
+        // Without both of these, distribute_exceeded() returns early and nothing is asserted
+        let app = TestApp::with_config(Config {
+            quota_enable: true,
+            quota_enforce: true,
+            ..Default::default()
+        })
+        .await;
+
+        let msg_count = Arc::new(AtomicUsize::new(0));
+        let handler_count = msg_count.clone();
 
         app.set_request_handler(move |req| {
+            handler_count.fetch_add(1, Ordering::SeqCst);
             let r = req.downcast_ref::<SetExceededQuota>().unwrap();
 
             match (r.pool_id, r.id_type, r.quota_type) {
                 (1, QuotaIdType::User, QuotaType::Space) => {
-                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10])
+                    assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 10, 51])
                 }
                 (1, QuotaIdType::Group, QuotaType::Space) => {
                     assert_eq!(r.exceeded_quota_ids.as_slice(), &[2, 4, 11])
@@ -661,5 +795,11 @@ mod test {
         });
 
         super::distribute_exceeded(&app).await.unwrap();
+
+        // Guards against the assertions above silently not running at all
+        assert!(
+            msg_count.load(Ordering::SeqCst) > 0,
+            "no SetExceededQuota messages were sent"
+        );
     }
 }

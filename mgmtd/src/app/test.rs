@@ -127,6 +127,14 @@ impl App for TestApp {
         Connections::conn(&self.db, op).await
     }
 
+    async fn request_with_header<M: Msg + Serializable, R: Msg + Deserializable>(
+        &self,
+        node_uid: Uid,
+        msg: &M,
+    ) -> Result<(R, Header)> {
+        Ok((self.request(node_uid, msg).await?, Header::default()))
+    }
+
     async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
         _node_uid: Uid,

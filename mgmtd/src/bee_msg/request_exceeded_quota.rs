@@ -30,20 +30,13 @@ impl HandleWithResponse for RequestExceededQuota {
                     )?
                 };
 
+                // Query the exceeded ids matching the request
                 let exceeded_quota_ids = tx.query_map_collect(
-                    sql!(
-                        "SELECT DISTINCT e.quota_id FROM quota_usage AS e
-                        INNER JOIN targets AS st USING(node_type, target_id)
-                        LEFT JOIN quota_default_limits AS d USING(id_type, quota_type, pool_id)
-                        LEFT JOIN quota_limits AS l USING(quota_id, id_type, quota_type, pool_id)
-                        WHERE e.id_type = ?1 AND e.quota_type = ?2 AND st.pool_id = ?3
-                        GROUP BY e.quota_id, e.id_type, e.quota_type, st.pool_id
-                        HAVING SUM(e.value) > COALESCE(l.value, d.value)"
-                    ),
+                    crate::quota::EXCEEDED_QUOTA_IDS_SQL,
                     params![
                         self.id_type.sql_variant(),
                         self.quota_type.sql_variant(),
-                        pool_id
+                        pool_id,
                     ],
                     |row| row.get(0),
                 )?;
@@ -84,7 +77,7 @@ mod test {
                     pool_id: 1,
                     target_id: 0,
                 },
-                &[2, 4, 10],
+                &[2, 4, 10, 51],
             ),
             (
                 RequestExceededQuota {

@@ -177,14 +177,14 @@ mod test {
         .await
         .unwrap();
 
-        assert_eq!(res.nodes.len(), 14);
+        assert_eq!(res.nodes.len(), 16);
         assert!(res.nodes.iter().all(|e| e.nics.is_empty()));
 
         let res = super::get_nodes(&app, pm::GetNodesRequest { include_nics: true })
             .await
             .unwrap();
 
-        assert_eq!(res.nodes.len(), 14);
+        assert_eq!(res.nodes.len(), 16);
         assert_eq!(
             res.nodes
                 .iter()

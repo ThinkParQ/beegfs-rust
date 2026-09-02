@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc;
@@ -216,10 +216,37 @@ pub fn process_grpc_handler_error(err: anyhow::Error) -> Status {
     Status::new(resp_code, err_string)
 }
 
-/// Unwraps an optional proto message field . If `None`, errors out providing the fields name in the
-/// error message.
+/// Unwraps an optional protobuf message field while converting it to a local output type. If
+/// `None`, errors out providing the fields name in the error message.
 ///
 /// Meant for unwrapping optional protobuf fields that are actually mandatory.
-pub fn required_field<T>(f: Option<T>) -> Result<T> {
-    f.ok_or_else(|| ::anyhow::anyhow!("missing required {} field", std::any::type_name::<T>()))
+pub fn required_field<T, R>(f: Option<T>) -> Result<R>
+where
+    R: TryFrom<T>,
+    <R as TryFrom<T>>::Error: Display,
+{
+    optional_field(f)?
+        .ok_or_else(|| anyhow::anyhow!("missing required {} field", std::any::type_name::<T>()))
+}
+
+/// Converts an optional protobuf message field into a local output type.
+///
+/// Meant for unwrapping optional protobuf field that are actually optional (as defined in the
+/// fields definition comment). If T is an enum, an error is thrown on the `unspecified` variant
+/// which should never be set.
+pub fn optional_field<T, R>(f: Option<T>) -> Result<Option<R>>
+where
+    R: TryFrom<T>,
+    <R as TryFrom<T>>::Error: Display,
+{
+    f.map(|v| {
+        v.try_into().map_err(|err| {
+            anyhow::anyhow!(
+                "conversion of protobuf value of type {} to {} failed: {err:#}",
+                std::any::type_name::<T>(),
+                std::any::type_name::<R>(),
+            )
+        })
+    })
+    .transpose()
 }

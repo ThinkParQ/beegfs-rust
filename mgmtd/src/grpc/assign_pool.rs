@@ -9,7 +9,7 @@ pub(crate) async fn assign_pool(
     fail_on_missing_license(app, LicensedFeature::Storagepool)?;
     fail_on_pre_shutdown(app)?;
 
-    let pool: EntityId = required_field(req.pool)?.try_into()?;
+    let pool: EntityId = required_field(req.pool)?;
 
     let pool = app
         .write_tx(move |tx| {

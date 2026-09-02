@@ -11,6 +11,8 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (101002, 1, "meta_node_2"),
     (101003, 1, "meta_node_3"),
     (101004, 1, "meta_node_4"),
+    (101005, 1, "meta_node_5"),
+    (101013, 1, "meta_node_13"),
     (101099, 1, "meta_node_no_target"),
     (102001, 1, "storage_node_1"),
     (102002, 1, "storage_node_2"),
@@ -27,6 +29,8 @@ INSERT INTO nodes (node_uid, node_id, node_type, port, last_contact) VALUES
     (101002, 2, 1, 8005, DATETIME("NOW")),
     (101003, 3, 1, 8005, DATETIME("NOW")),
     (101004, 4, 1, 8005, DATETIME("NOW")),
+    (101005, 5, 1, 8005, DATETIME("NOW")),
+    (101013, 13, 1, 8005, DATETIME("NOW")),
 
     (101099, 99, 1, 8005, DATETIME("NOW")),
 
@@ -83,6 +87,8 @@ INSERT INTO entities (uid, entity_type, alias) VALUES
     (201002, 2, "meta_target_2"),
     (201003, 2, "meta_target_3"),
     (201004, 2, "meta_target_4"),
+    (201005, 2, "meta_target_5"),
+    (201013, 2, "meta_target_13"),
 
     (202001, 2, "storage_target_1"),
     (202002, 2, "storage_target_2"),
@@ -110,6 +116,8 @@ free_space, free_inodes, consistency, last_update) VALUES
     (201002, 1, 2, 2, NULL, 1000000, 1000000, 550000, 550000, 1, DATETIME("NOW")),
     (201003, 1, 3, 3, NULL, 1000000, 1000000, 550000, 550000, 1, DATETIME("NOW")),
     (201004, 1, 4, 4, NULL, 1000000, 1000000, 450000, 450000, 1, DATETIME("NOW")),
+    (201005, 1, 5, 3, NULL, 1000000, 1000000, 550000, 550000, 1, DATETIME("NOW")),
+    (201013, 1, 13, 4, NULL, 1000000, 1000000, 450000, 450000, 1, DATETIME("NOW")),
 
     (202001, 2, 1, 1, 1, 1000000, 1000000, 450000, 450000, 1, DATETIME("NOW")),
     (202002, 2, 2, 1, 2, 1000000, 1000000, 500000, 500000, 1, DATETIME("NOW")),
@@ -133,14 +141,17 @@ free_space, free_inodes, consistency, last_update) VALUES
 
 INSERT INTO entities (uid, entity_type, alias) VALUES
     (301001, 4, "meta_buddy_group_1"),
+    (301002, 4, "meta_buddy_group_2"),
     (302001, 4, "storage_buddy_group_1"),
     (302002, 4, "storage_buddy_group_2")
 ;
 
-INSERT INTO buddy_groups (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id) VALUES
-    (301001, 1, 1, 1, 2, NULL),
-    (302001, 2, 1, 1, 5, 1),
-    (302002, 2, 2, 9, 13, 1)
+INSERT INTO buddy_groups (group_uid, node_type, group_id, p_target_id, s_target_id, pool_id, quota_accounting) VALUES
+    (301001, 1, 1, 1, 2, NULL, NULL),
+    -- this meta buddy group tests target id separation from storage buddy groups
+    (301002, 1, 2, 5, 13, NULL, NULL),
+    (302001, 2, 1, 1, 5, 1, 1),
+    (302002, 2, 2, 9, 13, 1, 2)
 ;
 
 
@@ -192,5 +203,13 @@ INSERT INTO quota_usage (quota_id, id_type, quota_type, target_id, value) VALUES
     (10, 2, 1, 2, 999999999),
     (10, 1, 2, 2, 999999999),
     (10, 2, 2, 2, 999999999),
-    (20, 1, 1, 2, 101)
+    (20, 1, 1, 2, 101),
+    -- 1 + 5 has quota accounting mode "primary", counted once, not exceeeded
+    (50, 1, 1, 1, 800),
+    (50, 1, 1, 5, 800),
+    -- 9 + 13 has quota accounting mode "both", counted twice, exceeded
+    (51, 1, 1, 9, 800),
+    (51, 1, 1, 13, 800),
+    -- target 13 exists both as meta and storage, this tests their correct separation - not exceeded
+    (52, 1, 1, 13, 800)
 ;

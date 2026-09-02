@@ -14,8 +14,8 @@ pub(crate) async fn create_pool(
         bail!("node type must be storage");
     }
 
-    let alias: Alias = required_field(req.alias)?.try_into()?;
-    let num_id: PoolId = req.num_id.unwrap_or_default().try_into()?;
+    let alias: Alias = required_field(req.alias)?;
+    let num_id: PoolId = optional_field(req.num_id)?.unwrap_or_default();
 
     let (pool_uid, alias, pool_id) = app
         .write_tx(move |tx| {

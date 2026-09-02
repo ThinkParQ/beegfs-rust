@@ -139,9 +139,11 @@ async fn read_stream(
     stream_authentication_required: bool,
 ) -> Result<()> {
     // Read header
-    stream.read_exact(&mut buf[0..Header::LEN]).await?;
+    stream
+        .read_exact(&mut buf[0..Header::LEN], GENERIC_STREAM_TIME_LIMIT)
+        .await?;
 
-    let header = deserialize_header(&buf[0..Header::LEN])?;
+    let header = deserialize_header(buf)?;
 
     // check authentication
     if stream_authentication_required
@@ -156,7 +158,10 @@ async fn read_stream(
 
     // Read body
     stream
-        .read_exact(&mut buf[Header::LEN..header.msg_len()])
+        .read_exact(
+            &mut buf[Header::LEN..header.msg_len()],
+            GENERIC_STREAM_TIME_LIMIT,
+        )
         .await?;
 
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to
@@ -230,7 +235,7 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // immediately
     tokio::spawn(async move {
         if let Err(err) = async {
-            let header = deserialize_header(&buf[0..Header::LEN])?;
+            let header = deserialize_header(&buf)?;
 
             let req = SocketRequest {
                 sock,

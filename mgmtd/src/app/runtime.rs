@@ -116,12 +116,20 @@ impl App for RuntimeApp {
         Connections::conn(&self.db, op).await
     }
 
+    async fn request_with_header<M: Msg + Serializable, R: Msg + Deserializable>(
+        &self,
+        node_uid: Uid,
+        msg: &M,
+    ) -> Result<(R, Header)> {
+        Pool::request(&self.conn, node_uid, msg).await
+    }
+
     async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
         node_uid: Uid,
         msg: &M,
     ) -> Result<R> {
-        Pool::request(&self.conn, node_uid, msg).await
+        Pool::request(&self.conn, node_uid, msg).await.map(|e| e.0)
     }
 
     async fn send_notifications<M: Msg + Serializable>(

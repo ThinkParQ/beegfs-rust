@@ -59,6 +59,7 @@ macro_rules! impl_enum_user_str {
 }
 
 #[cfg(feature = "grpc")]
+#[macro_export]
 macro_rules! impl_enum_protobuf_traits {
     ($type:ty => $proto_type:ty, unspecified => $proto_unspec_variant:path, $($variant:path => $proto_variant:path),+ $(,)?) => {
         impl TryFrom<$proto_type> for $type {
@@ -66,13 +67,23 @@ macro_rules! impl_enum_protobuf_traits {
 
             fn try_from(value: $proto_type) -> std::result::Result<Self, Self::Error> {
                 let nt = match value {
-                    $proto_unspec_variant => ::anyhow::bail!("$type is unspecified"),
+                    $proto_unspec_variant => ::anyhow::bail!("{} is unspecified", stringify!($proto_type)),
                     $(
                         $proto_variant => $variant,
                     )+
                 };
 
                 Ok(nt)
+            }
+        }
+
+        impl TryFrom<i32> for $type {
+            type Error = ::anyhow::Error;
+
+            fn try_from(value: i32) -> std::result::Result<Self, Self::Error> {
+                <$proto_type>::try_from(value)
+                    .map_err(|_| {::anyhow::anyhow!( "{value} is not a valid {} value", stringify!($proto_type))})?
+                    .try_into()
             }
         }
 

@@ -16,7 +16,7 @@ pub(crate) async fn start_resync(
     fail_on_missing_license(app, LicensedFeature::Mirroring)?;
     fail_on_pre_shutdown(app)?;
 
-    let buddy_group: EntityId = required_field(req.buddy_group)?.try_into()?;
+    let buddy_group: EntityId = required_field(req.buddy_group)?;
     let timestamp: i64 = required_field(req.timestamp)?;
     let restart: bool = required_field(req.restart)?;
 

@@ -132,7 +132,7 @@ mod test {
             // New max id
             let new_id =
                 super::find_new_id(tx, "targets", "target_id", NodeType::Meta, 1..=100).unwrap();
-            assert_eq!(new_id, 5);
+            assert_eq!(new_id, 6);
             // New min ID in a non-empty range
             let new_id =
                 super::find_new_id(tx, "targets", "target_id", NodeType::Meta, 0..=4).unwrap();

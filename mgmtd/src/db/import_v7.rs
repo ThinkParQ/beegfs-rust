@@ -255,6 +255,7 @@ fn buddy_groups(tx: &Transaction, f: &Path, nt: NodeTypeServer) -> Result<()> {
             nt,
             BuddyGroupId::from_str_radix(p_id.trim(), 16)?,
             BuddyGroupId::from_str_radix(s_id.trim(), 16)?,
+            matches!(nt, NodeTypeServer::Storage).then_some(BuddyGroupQuotaAccounting::Both),
         )?;
     }
 

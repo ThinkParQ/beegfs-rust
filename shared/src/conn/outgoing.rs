@@ -3,9 +3,9 @@ use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
 use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
-use crate::conn::TCP_BUF_LEN;
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
+use crate::conn::{CONNECT_STREAM_TIME_LIMIT, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
 use crate::types::{AuthSecret, Uid};
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
@@ -47,25 +47,27 @@ impl Pool {
         }
     }
 
-    /// Sends a [Msg] to a node and receives the response.
+    /// Send a [Msg] to a node, receive the response and return it together with its header.
     pub async fn request<M: Msg + Serializable, R: Msg + Deserializable>(
         &self,
         node_uid: Uid,
         msg: &M,
-    ) -> Result<R> {
+    ) -> Result<(R, Header)> {
         log::trace!("REQUEST to {node_uid:?}: {msg:?}");
 
         let mut buf = self.store.pop_buf_or_create();
 
         let msg_len = serialize(msg, &mut buf)?;
-        let resp_header = self.comm_stream(node_uid, &mut buf, msg_len, true).await?;
+        let resp_header = self
+            .comm_stream(node_uid, &mut buf, msg_len, Some(R::RESPONSE_TIME_LIMIT))
+            .await?;
         let resp_msg = deserialize_body(&resp_header, &buf[Header::LEN..])?;
 
         self.store.push_buf(buf);
 
         log::trace!("RESPONSE RECEIVED from {node_uid:?}: {resp_msg:?}");
 
-        Ok(resp_msg)
+        Ok((resp_msg, resp_header))
     }
 
     /// Sends a [Msg] to a node and does **not** receive a response.
@@ -75,7 +77,7 @@ impl Pool {
         let mut buf = self.store.pop_buf_or_create();
 
         let msg_len = serialize(msg, &mut buf)?;
-        self.comm_stream(node_uid, &mut buf, msg_len, false).await?;
+        self.comm_stream(node_uid, &mut buf, msg_len, None).await?;
 
         self.store.push_buf(buf);
 
@@ -94,19 +96,21 @@ impl Pool {
     /// 2. Get a permit that allows opening a new stream. Try to open a new stream using the
     ///    available addresses.
     /// 3. Pop an open stream from the store, waiting until one gets available.
+    ///
+    /// If `response_time_limit` is set to `Some(t)`, a response is expected.
     async fn comm_stream(
         &self,
         node_uid: Uid,
         buf: &mut [u8],
         send_len: usize,
-        expect_response: bool,
+        response_time_limit: Option<Duration>,
     ) -> Result<Header> {
         debug_assert_eq!(buf.len(), TCP_BUF_LEN);
 
         // 1. Pop open streams until communication succeeds or none are left
         while let Some(stream) = self.store.try_pop_stream(node_uid) {
             match self
-                .write_and_read_stream(buf, stream, send_len, expect_response)
+                .write_and_read_stream(buf, stream, send_len, response_time_limit)
                 .await
             {
                 Ok(header) => return Ok(header),
@@ -132,7 +136,7 @@ impl Pool {
                     continue;
                 }
 
-                match Stream::connect_tcp(addr).await {
+                match Stream::connect_tcp(addr, CONNECT_STREAM_TIME_LIMIT).await {
                     Ok(stream) => {
                         let mut stream = StoredStream::from_stream(stream, permit);
 
@@ -152,7 +156,7 @@ impl Pool {
 
                             stream
                                 .as_mut()
-                                .write_all(&auth_buf[0..msg_len])
+                                .write_all(&auth_buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
                                 .await
                                 .with_context(err_context)?;
 
@@ -162,7 +166,7 @@ impl Pool {
                         // Communication using the newly opened stream should usually not fail. If
                         // it does, abort. It might be better to just try the next address though.
                         let resp_header = self
-                            .write_and_read_stream(buf, stream, send_len, expect_response)
+                            .write_and_read_stream(buf, stream, send_len, response_time_limit)
                             .await
                             .with_context(err_context)?;
 
@@ -181,15 +185,19 @@ impl Pool {
             )
         }
 
-        // 3. Wait for an already open stream becoming available
-        let stream = timeout(Duration::from_secs(2), self.store.pop_stream(node_uid))
+        // 3. Wait for an already open stream becoming available. The timeout is intentionally
+        // chosen short to avoid big pile up of waiting requests but rather fail quickly. The
+        // user can always increase the connection limit to work around it. It's also in the
+        // responsibility of requesters to limit potentially long running requests (e.g. quota
+        // queries) to not block the whole pool.
+        let stream = timeout(GENERIC_STREAM_TIME_LIMIT, self.store.pop_stream(node_uid))
             .await
             .map_err(|_| {
                 anyhow::anyhow!("Popping a stream for node with uid {node_uid:?} timed out")
             })?;
 
         let resp_header = self
-            .write_and_read_stream(buf, stream, send_len, expect_response)
+            .write_and_read_stream(buf, stream, send_len, response_time_limit)
             .await
             .with_context(|| {
                 format!("Communication using existing stream to node with uid {node_uid} failed")
@@ -199,26 +207,36 @@ impl Pool {
     }
 
     /// Writes data to the given stream, optionally receives a response and pushes the stream to
-    /// the store
+    /// the store. Receives a response if `response_time_limit` is `Some(t)`.
     async fn write_and_read_stream(
         &self,
         buf: &mut [u8],
         mut stream: StoredStream<Uid>,
         send_len: usize,
-        expect_response: bool,
+        response_time_limit: Option<Duration>,
     ) -> Result<Header> {
-        stream.as_mut().write_all(&buf[0..send_len]).await?;
+        stream
+            .as_mut()
+            .write_all(&buf[0..send_len], GENERIC_STREAM_TIME_LIMIT)
+            .await?;
 
-        let header = if expect_response {
-            // Read header
-            stream.as_mut().read_exact(&mut buf[0..Header::LEN]).await?;
-            let header = deserialize_header(&buf[0..Header::LEN])?;
-
-            // Read body
+        let header = if let Some(tl) = response_time_limit {
+            // Read header - wait for the per-message defined time limit.
             stream
                 .as_mut()
-                .read_exact(&mut buf[Header::LEN..header.msg_len()])
+                .read_exact(&mut buf[0..Header::LEN], tl)
                 .await?;
+            let header = deserialize_header(buf)?;
+
+            // Read body - the header has already been received, so the body should follow
+            // immediately as currently nodes serialize whole messages before sending. Still
+            // choosing the (potentially higher) per-message limit in case that changes at some
+            // point.
+            stream
+                .as_mut()
+                .read_exact(&mut buf[Header::LEN..header.msg_len()], tl)
+                .await?;
+
             header
         } else {
             Header::default()
