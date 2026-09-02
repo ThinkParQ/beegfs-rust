@@ -92,7 +92,7 @@ impl ClientHello {
             .ok_or_else(|| anyhow!("ClientHello is too short to contain a prologue"))
     }
 
-    fn decode(payload: &[u8]) -> Result<Self> {
+    pub(super) fn decode(payload: &[u8]) -> Result<Self> {
         ensure!(
             payload.len() == Self::PAYLOAD_LEN,
             "A ClientHello is {} bytes, got {}",
@@ -129,7 +129,7 @@ impl ServerHello {
         buf[8..].copy_from_slice(&self.noise_msg_2);
     }
 
-    fn decode(payload: &[u8]) -> Result<Self> {
+    pub(super) fn decode(payload: &[u8]) -> Result<Self> {
         ensure!(
             payload.len() == Self::PAYLOAD_LEN,
             "A ServerHello is {} bytes, got {}",
@@ -166,7 +166,7 @@ impl Reject {
         Self::HEADER_LEN + detail.len()
     }
 
-    fn decode(payload: &[u8]) -> Result<Self> {
+    pub(super) fn decode(payload: &[u8]) -> Result<Self> {
         ensure!(
             payload.len() >= Self::HEADER_LEN,
             "A Reject is at least {} bytes, got {}",
