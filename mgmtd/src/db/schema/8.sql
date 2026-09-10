@@ -1,6 +1,6 @@
 CREATE TABLE identities (
     identity_id INTEGER PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL
+    name TEXT UNIQUE
         CHECK(LENGTH(name) > 0)
 ) STRICT;
 CREATE INDEX index_identities_1 ON identities(name);
