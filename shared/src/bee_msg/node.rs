@@ -1,4 +1,5 @@
 use super::*;
+use crate::conn::protocol::StaticPubKey;
 use anyhow::bail;
 use std::net::{IpAddr, Ipv4Addr};
 
@@ -230,4 +231,32 @@ pub struct RemoveNodeResp {
 
 impl Msg for RemoveNodeResp {
     const ID: MsgId = 1014;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct Identity {
+    #[bee_serde(as = CStr<0>)]
+    pub name: Vec<u8>,
+    pub identity_type: u8, // Node or other, currently always node
+    #[bee_serde(as = Int<u8>)]
+    pub node_type: NodeType,
+    pub node_id: NodeId,
+    pub public_key: StaticPubKey,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetIdentities {}
+
+impl Msg for GetIdentities {
+    const ID: MsgId = 1080;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetIdentitiesResp {
+    #[bee_serde(as = Seq<true, _>)]
+    pub identities: Vec<Identity>,
+}
+
+impl Msg for GetIdentitiesResp {
+    const ID: MsgId = 1081;
 }

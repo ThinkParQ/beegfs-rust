@@ -23,6 +23,7 @@ mod common;
 mod ack;
 mod authenticate_channel;
 mod change_target_consistency_states;
+mod get_identities;
 mod get_mirror_buddy_groups;
 mod get_node_capacity_pools;
 mod get_nodes;
@@ -163,6 +164,7 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
         {misc::PeerInfo => _, "PeerInfo"}
         {misc::RefreshCapacityPools => R, "Refresh capacity pools"}
         {misc::SetChannelDirect => _, "SetChannelDirect"}
+        {node::GetIdentities => R, "Get identities"}
         {node::GetNodes => R, "Get nodes"}
         {node::Heartbeat => R, "Heartbeat"}
         {node::HeartbeatRequest => R, "Request heartbeat"}

@@ -5,6 +5,7 @@ use crate::bee_serde::{
 };
 use crate::types::AuthSecret;
 use anyhow::{Context, Result, anyhow, ensure};
+use bee_serde_derive::BeeSerde;
 use snow::Builder;
 use snow::params::DHChoice;
 use snow::resolvers::{CryptoResolver, DefaultResolver};
@@ -222,7 +223,7 @@ impl FrameHeader {
 }
 
 /// A nodes static X25519 public key.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, BeeSerde)]
 pub struct StaticPubKey([u8; Self::LEN]);
 
 impl StaticPubKey {
