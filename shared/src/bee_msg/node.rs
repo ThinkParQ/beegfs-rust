@@ -233,15 +233,25 @@ impl Msg for RemoveNodeResp {
     const ID: MsgId = 1014;
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Identity {
-    #[bee_serde(as = CStr<0>)]
     pub name: Vec<u8>,
     pub identity_type: u8, // Node or other, currently always node
-    #[bee_serde(as = Int<u8>)]
-    pub node_type: NodeType,
-    pub node_id: NodeId,
+    pub node_type: Option<u8>,
+    pub node_id: Option<NodeId>,
     pub public_key: StaticPubKey,
+}
+
+impl Serializable for Identity {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        ser.cstr(&self.name, 0)?;
+        ser.u8(self.identity_type)?;
+        ser.u8(self.node_type.unwrap_or(0))?;
+        ser.u32(self.node_id.unwrap_or(0))?;
+        self.public_key.serialize(ser)?;
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
@@ -251,12 +261,19 @@ impl Msg for GetIdentities {
     const ID: MsgId = 1080;
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GetIdentitiesResp {
-    #[bee_serde(as = Seq<true, _>)]
     pub identities: Vec<Identity>,
 }
 
 impl Msg for GetIdentitiesResp {
     const ID: MsgId = 1081;
+}
+
+impl Serializable for GetIdentitiesResp {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        ser.seq(&self.identities, true, |ser, e| e.serialize(ser))?;
+
+        Ok(())
+    }
 }

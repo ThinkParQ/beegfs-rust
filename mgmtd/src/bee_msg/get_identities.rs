@@ -10,16 +10,16 @@ impl HandleWithResponse for GetIdentities {
                 let identities = tx.query_map_collect(
                     sql!(
                         "SELECT name, node_type, node_id, key FROM identities
-                        INNER JOIN identity_to_node USING (identity_id)
-                        INNER JOIN keys USING (identity_id)"
+                        INNER JOIN keys USING (identity_id)
+                        LEFT JOIN identity_to_node USING (identity_id)"
                     ),
                     [],
                     |row| {
                         Ok(Identity {
                             name: row.get_ref(0)?.as_bytes()?.to_owned(),
                             identity_type: 1,
-                            node_type: NodeType::from_row(row, 1)?,
-                            node_id: row.get(2)?,
+                            node_type: row.get::<_, Option<u8>>(1)?,
+                            node_id: row.get::<_, Option<NodeId>>(2)?,
                             public_key: row.get_ref(3)?.as_str()?.parse().map_err(
                                 |err: anyhow::Error| {
                                     rusqlite::Error::FromSqlConversionFailure(
