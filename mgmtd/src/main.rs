@@ -4,10 +4,12 @@ use mgmtd::config::{BeeMsgProtocol, LogTarget};
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
+use rusqlite::params;
 use shared::conn::protocol::{ProtectedProtocol, Protocol, StaticKeypair, TransportProtectionMode};
 use shared::journald_logger;
 use shared::nic::check_ipv6;
 use shared::types::AuthSecret;
+use sqlite_check::sql;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -33,6 +35,24 @@ fn inner_main() -> Result<()> {
     panic::set_hook(Box::new(panic_handler));
 
     let (user_config, info_log) = mgmtd::config::load_and_parse()?;
+
+    if user_config.temp_gen_identity {
+        let keypair = StaticKeypair::generate()?;
+
+        let mut db = sqlite::open(&user_config.db_file)?;
+        let tx = db.transaction()?;
+        tx.execute(sql!("INSERT INTO identities DEFAULT VALUES"), [])?;
+        let id = tx.last_insert_rowid();
+        tx.execute(
+            sql!("INSERT INTO keys (key, identity_id) VALUES (?1, ?2)"),
+            params![hex(keypair.public().as_bytes()), id],
+        )?;
+        tx.commit()?;
+
+        println!("{}", hex(keypair.secret_bytes().as_ref()));
+
+        return Ok(());
+    }
 
     if user_config.gen_key {
         gen_key(&user_config.beemsg_key_file)?;

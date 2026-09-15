@@ -118,7 +118,6 @@ impl Stream {
     }
 
     /// The identity proven by the key exchange.
-    #[allow(dead_code)]
     pub fn peer(&self) -> Option<&AuthenticatedPeer> {
         self.peer.as_ref()
     }

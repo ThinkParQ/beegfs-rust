@@ -5,14 +5,25 @@ use protobuf::license::VerifyResult;
 use rusqlite::{Transaction, params};
 use shared::bee_msg::node::*;
 use shared::bee_msg::target::*;
+use shared::conn::protocol::StaticPubKey;
 use shared::types::{NodeId, TargetId};
 use std::time::Duration;
 
 // Maximum number of clients that can register if license verification fails or license is invalid
 const MAX_NUM_CLIENTS: u32 = 5;
 
-/// Processes incoming node information. Registers new nodes if config allows it
-pub(super) async fn update_node(msg: RegisterNode, app: &impl App, reject: bool) -> Result<NodeId> {
+/// Processes incoming node information. Registers new nodes if config allows it.
+///
+/// `peer_key` is the public key the requester proved possession of during the key exchange, or
+/// `None` if the request came in without one (legacy protocol or UDP). A server node registering
+/// for the first time is bound to the identity owning that key, so an admin only has to register
+/// the key and not the node to identity mapping.
+pub(super) async fn update_node(
+    msg: RegisterNode,
+    app: &impl App,
+    reject: bool,
+    peer_key: Option<StaticPubKey>,
+) -> Result<NodeId> {
     let nics = msg.nics.clone();
     let requested_node_id = msg.node_id;
     let registration_disable = app.static_info().user_config.registration_disable;
@@ -205,6 +216,32 @@ client version < 8.0)"
                         sql!("INSERT OR IGNORE INTO root_inode (target_id) VALUES (?1)"),
                         [target_id],
                     )?;
+                }
+
+                // Bind the identity owning the presented key to the new node, which spares the
+                // admin the manual mapping step. An identity that is already bound is left alone:
+                // a key must resolve to at most one node, and a shared identity must not be
+                // claimed by whichever node registered first.
+                if let Some(key) = peer_key
+                    && NodeTypeServer::try_from(node.node_type()).is_ok()
+                {
+                    let bound = tx.execute(
+                        sql!(
+                            "INSERT INTO identity_to_node (identity_id, node_type, node_id)
+                            SELECT identity_id, ?2, ?3 FROM keys
+                            WHERE key = ?1
+                                AND identity_id NOT IN (SELECT identity_id FROM identity_to_node)"
+                        ),
+                        params![
+                            key.to_string(),
+                            node.node_type().sql_variant(),
+                            node.num_id()
+                        ],
+                    )?;
+
+                    if bound > 0 {
+                        log::info!("Bound the identity of public key {key} to node {node}");
+                    }
                 }
 
                 (node, true)

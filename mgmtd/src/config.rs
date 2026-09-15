@@ -141,6 +141,26 @@ generate_structs! {
     #[serde(skip)]
     import_from_v7: Option<PathBuf> = None,
 
+    /// Generates a new BeeMsg keypair, writes it to --beemsg-key-file, prints the public key and
+    /// exits.
+    ///
+    /// Refuses to overwrite an existing key file: replacing a nodes key makes every peer reject it
+    /// until the new public key is registered.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    #[serde(skip)]
+    gen_key: bool = false,
+
+    /// Generates a new BeeMsg identity keypair to be used by a peer. Inserts the public key
+    /// into the database.
+    ///
+    /// The new identity is not bound to a node. When a meta or storage server registers for the
+    /// first time using this key, it is bound to the registering node automatically.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    #[serde(skip)]
+    temp_gen_identity: bool = false,
+
     /// Loads additional configuration from the given file. [default = "/etc/beegfs/beegfs-mgmtd.toml"]
     ///
     /// Config file settings overwrite the default settings and command line settings
@@ -285,16 +305,6 @@ generate_structs! {
     #[arg(long)]
     #[arg(value_name = "PATH")]
     beemsg_key_file: PathBuf = "/etc/beegfs/beemsg.key".into(),
-
-    /// Generates a new BeeMsg keypair, writes it to --beemsg-key-file, prints the public key and
-    /// exits.
-    ///
-    /// Refuses to overwrite an existing key file: replacing a nodes key makes every peer reject it
-    /// until the new public key is registered.
-    #[arg(long)]
-    #[arg(num_args = 0..=1, default_missing_value = "true")]
-    #[serde(skip)]
-    gen_key: bool = false,
 
     /// General
 

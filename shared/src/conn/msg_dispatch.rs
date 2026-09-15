@@ -4,6 +4,7 @@ use super::stream::Stream;
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize_body};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::GENERIC_STREAM_TIME_LIMIT;
+use crate::conn::protocol::StaticPubKey;
 use anyhow::Result;
 use std::fmt::Debug;
 use std::future::Future;
@@ -28,6 +29,13 @@ pub trait Request: Send + Sync {
     fn addr(&self) -> SocketAddr;
     fn header(&self) -> &Header;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
+
+    /// The static public key the peer proved possession of during the key exchange.
+    ///
+    /// `None` means the request arrived on a path without a key exchange: the legacy protocol or
+    /// UDP. A handler must therefore treat `None` as "unknown peer", not as "not allowed" - the
+    /// access decision has already been made when the connection was accepted.
+    fn peer_key(&self) -> Option<StaticPubKey>;
 }
 
 /// Represents a request made via a TCP stream
@@ -67,6 +75,10 @@ impl Request for StreamRequest<'_> {
     fn header(&self) -> &Header {
         self.header
     }
+
+    fn peer_key(&self) -> Option<StaticPubKey> {
+        self.stream.peer().map(|p| p.static_pub)
+    }
 }
 
 /// Represents a request made via a UDP datagram
@@ -104,6 +116,11 @@ impl Request for SocketRequest<'_> {
     fn header(&self) -> &Header {
         self.header
     }
+
+    fn peer_key(&self) -> Option<StaticPubKey> {
+        // Datagrams are not part of a key exchange.
+        None
+    }
 }
 
 pub mod test {
@@ -114,6 +131,7 @@ pub mod test {
     pub struct TestRequest {
         pub header: Header,
         pub authenticate_connection: bool,
+        pub peer_key: Option<StaticPubKey>,
     }
 
     impl TestRequest {
@@ -121,6 +139,7 @@ pub mod test {
             Self {
                 header,
                 authenticate_connection: false,
+                peer_key: None,
             }
         }
     }
@@ -145,6 +164,10 @@ pub mod test {
 
         fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
             unimplemented!()
+        }
+
+        fn peer_key(&self) -> Option<StaticPubKey> {
+            self.peer_key
         }
     }
 }

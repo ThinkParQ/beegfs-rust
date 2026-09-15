@@ -13,7 +13,7 @@ impl HandleWithResponse for RegisterNode {
         let reject =
             (req.header().msg_compat_feature_flags & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
 
-        let node_id = update_node(self, app, reject).await?;
+        let node_id = update_node(self, app, reject, req.peer_key()).await?;
 
         let fs_uuid: String = app
             .read_tx(|tx| db::config::get(tx, db::config::Config::FsUuid))
