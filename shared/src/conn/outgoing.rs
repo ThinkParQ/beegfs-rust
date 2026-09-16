@@ -131,7 +131,7 @@ impl Pool {
 
             log::debug!("Connecting new stream to node with uid {node_uid}");
 
-            for addr in addrs.iter() {
+            for addr in addrs.iter().copied() {
                 if addr.is_ipv6() && !self.use_ipv6 {
                     continue;
                 }
