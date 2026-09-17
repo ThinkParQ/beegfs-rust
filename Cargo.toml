@@ -33,7 +33,7 @@ snow = { version = "0.10", default-features = false, features = [
     "use-sha2",
 ] }
 thiserror = "~2"
-tokio = { version = "1", features = ["rt", "sync", "macros"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"] }
 tokio-stream = { version = "0" }
 tonic = { version = "0.14", features = ["tls-ring"] }
 uuid = { version = "1", features = ["v4"] }

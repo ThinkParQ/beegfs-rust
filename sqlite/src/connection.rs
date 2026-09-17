@@ -117,7 +117,7 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(SyncMode::Full, move |conn| {
+        self.run_op_async(SyncMode::Full, move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let res = op(&tx)?;
             tx.commit()?;
@@ -137,7 +137,7 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(SyncMode::Normal, move |conn| {
+        self.run_op_async(SyncMode::Normal, move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let res = op(&tx)?;
             tx.commit()?;
@@ -159,7 +159,7 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(SyncMode::Full, move |conn| {
+        self.run_op_async(SyncMode::Full, move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
             let res = op(&tx)?;
             tx.commit()?;
@@ -167,6 +167,27 @@ impl Connections {
             Ok(res)
         })
         .await
+    }
+
+    /// Start a new read (deferred) transaction. Same as [`read_tx()`] but runs synchronously
+    /// on the current thread while informing the executor so no tasks are blocked. Meant for quick
+    /// lookups in sync contexts.
+    pub fn read_tx_blocking<
+        T: Send + 'static + FnOnce(&Transaction) -> Result<R>,
+        R: Send + 'static,
+    >(
+        &self,
+        op: T,
+    ) -> Result<R> {
+        tokio::task::block_in_place(move || {
+            self.run_op(SyncMode::Full, move |conn| {
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+                let res = op(&tx)?;
+                tx.commit()?;
+
+                Ok(res)
+            })
+        })
     }
 
     /// Execute code using a connection handle. This requires the caller to start a transaction
@@ -180,59 +201,67 @@ impl Connections {
         &self,
         op: T,
     ) -> Result<R> {
-        self.run_op(SyncMode::Full, op).await
+        self.run_op_async(SyncMode::Full, op).await
     }
 
-    async fn run_op<T: Send + 'static + FnOnce(&mut Connection) -> Result<R>, R: Send + 'static>(
+    async fn run_op_async<
+        T: Send + 'static + FnOnce(&mut Connection) -> Result<R>,
+        R: Send + 'static,
+    >(
         &self,
         sync_mode: SyncMode,
         op: T,
     ) -> Result<R> {
         let this = self.clone();
-        tokio::task::spawn_blocking(move || {
-            // Pop a connection from the stack
-            let conn = this.conns.lock().unwrap().pop();
+        tokio::task::spawn_blocking(move || this.run_op(sync_mode, op)).await?
+    }
 
-            // If there wasn't one left, open a new one.
-            // There is currently no explicit limit set to the number of parallel opens.
-            // There is an implicit limit though defined by the max number of parallel blocking
-            // threads spawned by tokio which can be set by configuring `max_blocking_threads` on
-            // the runtime.
-            let mut conn = if let Some(conn) = conn {
-                conn
-            } else {
-                open(this.db_file.as_path())?
-            };
+    fn run_op<T: Send + 'static + FnOnce(&mut Connection) -> Result<R>, R: Send + 'static>(
+        &self,
+        sync_mode: SyncMode,
+        op: T,
+    ) -> Result<R> {
+        // Pop a connection from the stack
+        let conn = self.conns.lock().unwrap().pop();
 
-            match sync_mode {
-                SyncMode::Full => {
-                    let res = op(&mut conn);
-                    // Push the connection to the stack
-                    // We assume that sqlite connections never invalidate on errors, so there is no
-                    // need to drop them. There might be severe cases where
-                    // connections don't work anymore (e.g. one removing or
-                    // corrupting the database file, the file system breaks, ...), but these
-                    // are unrecoverable anyway and new connections won't fix anything there.
-                    this.conns.lock().unwrap().push(conn);
+        // If there wasn't one left, open a new one.
+        // There is currently no explicit limit set to the number of parallel opens.
+        // There is an implicit limit though defined by the max number of parallel blocking
+        // threads spawned by tokio which can be set by configuring `max_blocking_threads` on
+        // the runtime.
+        let mut conn = if let Some(conn) = conn {
+            conn
+        } else {
+            open(self.db_file.as_path())?
+        };
 
-                    res
-                }
-                SyncMode::Normal => {
-                    conn.pragma_update(None, "synchronous", "normal")?;
-                    let res = op(&mut conn);
-                    // If the sync mode could not be reset (should most likely never happen), we
-                    // don't error out as the transaction already completed.
-                    // Instead we just dorop it to prevent future usage with FULL mode.
-                    if conn.pragma_update(None, "synchronous", "full").is_ok() {
-                        this.conns.lock().unwrap().push(conn);
-                    } else {
-                        log::error!("Failed to change db connection sync mode back to full");
-                    }
+        match sync_mode {
+            SyncMode::Full => {
+                let res = op(&mut conn);
+                // Push the connection to the stack
+                // We assume that sqlite connections never invalidate on errors, so there is no
+                // need to drop them. There might be severe cases where
+                // connections don't work anymore (e.g. one removing or
+                // corrupting the database file, the file system breaks, ...), but these
+                // are unrecoverable anyway and new connections won't fix anything there.
+                self.conns.lock().unwrap().push(conn);
 
-                    res
-                }
+                res
             }
-        })
-        .await?
+            SyncMode::Normal => {
+                conn.pragma_update(None, "synchronous", "normal")?;
+                let res = op(&mut conn);
+                // If the sync mode could not be reset (should most likely never happen), we
+                // don't error out as the transaction already completed.
+                // Instead we just dorop it to prevent future usage with FULL mode.
+                if conn.pragma_update(None, "synchronous", "full").is_ok() {
+                    self.conns.lock().unwrap().push(conn);
+                } else {
+                    log::error!("Failed to change db connection sync mode back to full");
+                }
+
+                res
+            }
+        }
     }
 }
