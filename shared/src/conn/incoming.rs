@@ -93,7 +93,7 @@ async fn stream_loop(
     if let Protocol::Protected(ref p) = protocol {
         match handshake::respond(&mut stream, p, &lookup).await {
             Ok(peer) => log::debug!(
-                "Stream from {:?} authenticated as identity {}",
+                "Stream from {:?} authenticated as identity {:?}",
                 stream.addr(),
                 peer.identity.name
             ),

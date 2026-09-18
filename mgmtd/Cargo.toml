@@ -20,6 +20,7 @@ sqlite = { path = "../sqlite" }
 [dependencies]
 shared = { path = "../shared", features = ["grpc"] }
 protobuf = { workspace = true }
+ring = { workspace = true }
 sqlite = { path = "../sqlite" }
 sqlite_check = { path = "../sqlite_check" }
 

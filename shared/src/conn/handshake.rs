@@ -5,7 +5,7 @@
 //! per message authentication check of the legacy protocol needs no counterpart here.
 
 use super::GENERIC_STREAM_TIME_LIMIT;
-use super::noise::{Initiator, NOISE_MSG_1_LEN, NOISE_MSG_2_LEN, Responder};
+use super::noise::{Initiator, NOISE_MSG_1_LEN, NOISE_MSG_2_LEN, Responder, Transport};
 use super::protocol::{FrameHeader, FrameType, ProtectedProtocol, StaticPubKey};
 use super::stream::Stream;
 use crate::bee_serde::{BeeSerdeConversion, Deserializer, Serializer};
@@ -54,9 +54,15 @@ const INIT_PROLOGUE_LEN: usize = 40;
 const INIT_PROLOGUE_END_POS: usize = FrameHeader::END_POS + INIT_PROLOGUE_LEN;
 const INIT_END_POS: usize = INIT_PROLOGUE_END_POS + NOISE_MSG_1_LEN;
 
+/// A complete HandshakeInit payload, without the frame header.
+pub const INIT_LEN: usize = INIT_PROLOGUE_LEN + NOISE_MSG_1_LEN;
+
 const RESP_PAYLOAD_LEN: usize = 2;
 const RESP_PAYLOAD_END_POS: usize = FrameHeader::END_POS + RESP_PAYLOAD_LEN;
 const RESP_END_POS: usize = RESP_PAYLOAD_END_POS + NOISE_MSG_2_LEN;
+
+/// A complete HandshakeResponse payload, without the frame header.
+pub const RESP_LEN: usize = RESP_PAYLOAD_LEN + NOISE_MSG_2_LEN;
 
 const REJECT_PAYLOAD_LEN: usize = 2;
 const REJECT_END_POS: usize = FrameHeader::END_POS + REJECT_PAYLOAD_LEN;
@@ -71,29 +77,7 @@ pub(super) async fn initiate(
     peer_key: StaticPubKey,
 ) -> Result<()> {
     let mut init_buf = [0u8; INIT_END_POS];
-
-    // Write the prologue
-    let prologue_written = {
-        let mut ser = Serializer::new(&mut init_buf[FrameHeader::END_POS..INIT_PROLOGUE_END_POS]);
-        ser.u16(HANDSHAKE_VERSION)?;
-        ser.u16(protocol.transport_protection.modes())?;
-        ser.u32(0)?; // Reserved for later
-        ser.bytes(protocol.key_pair.public().as_bytes())?;
-        ser.bytes_written()
-    };
-    ensure!(prologue_written == INIT_PROLOGUE_LEN);
-
-    let mut initiator = Initiator::start(
-        &protocol.key_pair,
-        peer_key,
-        &init_buf[FrameHeader::END_POS..INIT_PROLOGUE_END_POS],
-    )?;
-
-    // Rest of HandshakeInit appended by noise
-
-    let msg_1_written =
-        initiator.write_msg_1(&mut init_buf[INIT_PROLOGUE_END_POS..INIT_END_POS])?;
-    ensure!(msg_1_written == NOISE_MSG_1_LEN);
+    let initiator = init_payload(&mut init_buf[FrameHeader::END_POS..], protocol, peer_key)?;
 
     stream
         .write_control_frame(
@@ -124,23 +108,10 @@ pub(super) async fn initiate(
             );
         }
         FrameType::HandshakeResponse => {
-            let mut des = Deserializer::new(&resp_buf[FrameHeader::END_POS..RESP_PAYLOAD_END_POS]);
-            let hs_version = des.u16()?;
-            ensure!(
-                hs_version == HANDSHAKE_VERSION,
-                "Expected handshake version is {HANDSHAKE_VERSION}, got {hs_version}"
-            );
-            des.finish()?;
-
-            let agreed = initiator.read_msg_2(&resp_buf[RESP_PAYLOAD_END_POS..RESP_END_POS])?;
-            ensure!(
-                agreed == protocol.transport_protection.modes(),
-                "Peer agreed to protection modes {agreed:#06x} but {:#06x} were requested",
-                protocol.transport_protection.modes()
-            );
+            let transport = finish_payload(&resp_buf[FrameHeader::END_POS..], initiator, protocol)?;
 
             if protocol.transport_protection != TransportProtectionMode::Plain {
-                stream.install_transport(initiator.into_transport()?);
+                stream.install_transport(transport);
             }
 
             Ok(())
@@ -199,17 +170,156 @@ async fn respond_inner(
     lookup: &impl Lookup,
 ) -> Result<AuthenticatedPeer> {
     use RejectReason::*;
+
     let mut init_buf = [0u8; INIT_END_POS];
-
-    // Process init
-
     let frame_type = stream
         .read_control_frame(&mut init_buf, GENERIC_STREAM_TIME_LIMIT)
         .await?;
 
     ensure!(frame_type == FrameType::HandshakeInit);
 
-    let mut des = Deserializer::new(&init_buf[FrameHeader::END_POS..INIT_PROLOGUE_END_POS]);
+    let mut resp_buf = [0u8; RESP_END_POS];
+    let (peer, responder) = respond_core(
+        &init_buf[FrameHeader::END_POS..],
+        &mut resp_buf[FrameHeader::END_POS..],
+        protocol,
+        lookup,
+    )
+    .await?;
+
+    stream
+        .write_control_frame(
+            FrameType::HandshakeResponse,
+            &mut resp_buf,
+            GENERIC_STREAM_TIME_LIMIT,
+        )
+        .await?;
+
+    // Only after the reply is out - it is still unprotected.
+    if protocol.transport_protection != TransportProtectionMode::Plain {
+        stream.install_transport(responder.into_transport().context(CryptoFailure)?);
+    }
+
+    Ok(peer)
+}
+
+/// Builds a HandshakeInit payload, for transports that do their own framing.
+///
+/// Writes [`INIT_LEN`] bytes into `init`. The caller sends them and passes the responder's reply to
+/// [`Initiator::read_msg_2`], then to [`Initiator::into_transport`] to open whatever the responder
+/// sealed.
+///
+/// # Return value
+/// The initiator state needed to finish the exchange.
+pub fn init_payload(
+    init: &mut [u8],
+    protocol: &ProtectedProtocol,
+    peer_key: StaticPubKey,
+) -> Result<Initiator> {
+    ensure!(init.len() >= INIT_LEN, "HandshakeInit buffer is too small");
+
+    let prologue_written = {
+        let mut ser = Serializer::new(&mut init[..INIT_PROLOGUE_LEN]);
+        ser.u16(HANDSHAKE_VERSION)?;
+        ser.u16(protocol.transport_protection.modes())?;
+        ser.u32(0)?; // Reserved for later
+        ser.bytes(protocol.key_pair.public().as_bytes())?;
+        ser.bytes_written()
+    };
+    ensure!(prologue_written == INIT_PROLOGUE_LEN);
+
+    let mut initiator = Initiator::start(&protocol.key_pair, peer_key, &init[..INIT_PROLOGUE_LEN])?;
+
+    // Rest of HandshakeInit appended by noise
+    let msg_1_written = initiator.write_msg_1(&mut init[INIT_PROLOGUE_LEN..INIT_LEN])?;
+    ensure!(msg_1_written == NOISE_MSG_1_LEN);
+
+    Ok(initiator)
+}
+
+/// Finishes the initiator side from a HandshakeResponse payload, for transports that do their own
+/// framing.
+///
+/// `resp` must start with the [`RESP_LEN`] byte payload. Anything the responder appended after it
+/// is sealed with the returned [`Transport`].
+pub fn finish_payload(
+    resp: &[u8],
+    mut initiator: Initiator,
+    protocol: &ProtectedProtocol,
+) -> Result<Transport> {
+    ensure!(
+        resp.len() >= RESP_LEN,
+        "HandshakeResponse payload is too short"
+    );
+
+    let mut des = Deserializer::new(&resp[..RESP_PAYLOAD_LEN]);
+    let hs_version = des.u16()?;
+    ensure!(
+        hs_version == HANDSHAKE_VERSION,
+        "Expected handshake version is {HANDSHAKE_VERSION}, got {hs_version}"
+    );
+    des.finish()?;
+
+    let agreed = initiator.read_msg_2(&resp[RESP_PAYLOAD_LEN..RESP_LEN])?;
+    ensure!(
+        agreed == protocol.transport_protection.modes(),
+        "Peer agreed to protection modes {agreed:#06x} but {:#06x} were requested",
+        protocol.transport_protection.modes()
+    );
+
+    initiator.into_transport()
+}
+
+/// Runs the responder side of the key exchange for transports that do their own framing, for
+/// example gRPC.
+///
+/// `init` is a [`INIT_LEN`] byte HandshakeInit payload, `resp` a [`RESP_LEN`] byte buffer receiving
+/// the HandshakeResponse payload.
+///
+/// **Anything the caller hands back to the initiator on the strength of this exchange must be
+/// sealed with the returned [`Transport`].** Noise message 1 carries no freshness from the
+/// responder, so a captured `init` replayed here completes the handshake again. Only the original
+/// initiator holds the ephemeral private key needed to open the reply, which is what makes the
+/// replay useless.
+///
+/// # Return value
+/// The proven identity and the established Noise session.
+pub async fn respond_to_payload(
+    init: &[u8],
+    resp: &mut [u8],
+    protocol: &ProtectedProtocol,
+    lookup: &impl Lookup,
+) -> Result<(AuthenticatedPeer, Transport)> {
+    let (peer, responder) = respond_core(init, resp, protocol, lookup).await?;
+
+    Ok((peer, responder.into_transport()?))
+}
+
+/// Runs the responder side of the key exchange over raw payloads, for transports that do their own
+/// framing. The identity lookup *is* the authentication decision.
+///
+/// `init` is a [`INIT_LEN`] byte HandshakeInit payload, `resp` a [`RESP_LEN`] byte buffer the
+/// HandshakeResponse payload is written to. Returns the proven identity and the finished Noise
+/// session, which the caller either installs or drops.
+///
+/// Errors carry a [`RejectReason`] as context so the caller can tell the peer why.
+async fn respond_core(
+    init: &[u8],
+    resp: &mut [u8],
+    protocol: &ProtectedProtocol,
+    lookup: &impl Lookup,
+) -> Result<(AuthenticatedPeer, Responder)> {
+    use RejectReason::*;
+
+    ensure!(init.len() >= INIT_LEN, "HandshakeInit payload is too short");
+    ensure!(
+        resp.len() >= RESP_LEN,
+        "HandshakeResponse buffer is too small"
+    );
+
+    let prologue = &init[..INIT_PROLOGUE_LEN];
+
+    let mut des = Deserializer::new(prologue);
     let hs_version = des.u16()?;
     if hs_version != HANDSHAKE_VERSION {
         return Err(anyhow!(
@@ -233,15 +343,11 @@ async fn respond_inner(
         .context(ModeNotPermitted);
     }
 
-    let mut responder = Responder::start(
-        &protocol.key_pair,
-        init_static_pub,
-        &init_buf[FrameHeader::END_POS..INIT_PROLOGUE_END_POS],
-    )
-    .context(CryptoFailure)?;
+    let mut responder =
+        Responder::start(&protocol.key_pair, init_static_pub, prologue).context(CryptoFailure)?;
 
     responder
-        .read_msg_1(&init_buf[INIT_PROLOGUE_END_POS..INIT_END_POS])
+        .read_msg_1(&init[INIT_PROLOGUE_LEN..INIT_LEN])
         .context(CryptoFailure)?;
 
     let identity = lookup
@@ -255,12 +361,8 @@ async fn respond_inner(
             .context(UnknownIdentity)
         })?;
 
-    // Send response
-
-    let mut resp_buf = [0u8; RESP_END_POS];
-
     let pre_written = {
-        let mut ser = Serializer::new(&mut resp_buf[FrameHeader::END_POS..RESP_PAYLOAD_END_POS]);
+        let mut ser = Serializer::new(&mut resp[..RESP_PAYLOAD_LEN]);
         ser.u16(HANDSHAKE_VERSION)?;
         ser.bytes_written()
     };
@@ -270,29 +372,19 @@ async fn respond_inner(
     let noise_msg_written = responder
         .write_msg_2(
             protocol.transport_protection.modes(),
-            &mut resp_buf[RESP_PAYLOAD_END_POS..RESP_END_POS],
+            &mut resp[RESP_PAYLOAD_LEN..RESP_LEN],
         )
         .context(CryptoFailure)?;
 
     ensure!(noise_msg_written == NOISE_MSG_2_LEN);
 
-    stream
-        .write_control_frame(
-            FrameType::HandshakeResponse,
-            &mut resp_buf,
-            GENERIC_STREAM_TIME_LIMIT,
-        )
-        .await?;
-
-    // Only after the reply is out - it is still unprotected.
-    if protocol.transport_protection != TransportProtectionMode::Plain {
-        stream.install_transport(responder.into_transport().context(CryptoFailure)?);
-    }
-
-    Ok(AuthenticatedPeer {
-        static_pub: init_static_pub,
-        identity,
-    })
+    Ok((
+        AuthenticatedPeer {
+            static_pub: init_static_pub,
+            identity,
+        },
+        responder,
+    ))
 }
 #[cfg(any())] // TEMP-DISABLED-TESTS: re-enable by restoring #[cfg(test)]
 mod test {

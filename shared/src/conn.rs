@@ -39,7 +39,8 @@ const CONNECT_STREAM_TIME_LIMIT: Duration = Duration::from_secs(2);
 /// entry, for example.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Identity {
-    pub name: Arc<str>,
+    /// Optional: `identities.name` is nullable, a node identity is named by its alias instead.
+    pub name: Option<Arc<str>>,
     pub node_uid: Option<Uid>,
 }
 

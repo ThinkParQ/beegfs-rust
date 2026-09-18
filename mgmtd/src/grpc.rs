@@ -7,6 +7,7 @@ use crate::types::{ResolveEntityId, SqliteEnumExt};
 use anyhow::{Context as AContext, Result, anyhow, bail};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, named_params, params};
+use shared::conn::Identity as PeerIdentity;
 use shared::conn::protocol::Protocol;
 use shared::grpc::*;
 use shared::impl_grpc_handler;
@@ -18,9 +19,11 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
+use std::sync::Arc;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 
+mod auth;
 mod common;
 
 mod assign_pool;
@@ -203,31 +206,93 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
         builder
     };
 
+    // Signs the tokens the Authentication service hands out. Process local, so a restart
+    // invalidates every token in circulation.
+    let token_key = Arc::new(auth::new_token_key()?);
+
     let app2 = app.clone();
+    let interceptor_key = token_key.clone();
     let service = pm::management_server::ManagementServer::with_interceptor(
         ManagementService { app: app.clone() },
-        move |req: Request<()>| {
-            // If authentication is enabled, require the secret passed with every request
-            // TODO: For now this is only checked on legacy protocol. If one uses the new one,
-            // we need a way to couple identities to gRPC communication as well.
-            if let Protocol::Legacy(Some(required_secret)) = app2.info.protocol {
-                let check = || -> Result<()> {
-                    let Some(request_secret) = req.metadata().get("auth-secret") else {
-                        bail!("Request requires authentication but no secret was provided")
+        move |mut req: Request<()>| {
+            match app2.info.protocol {
+                // The legacy protocol authenticates every request with one shared secret.
+                Protocol::Legacy(Some(required_secret)) => {
+                    let check = || -> Result<()> {
+                        let Some(request_secret) = req.metadata().get("auth-secret") else {
+                            bail!("Request requires authentication but no secret was provided")
+                        };
+
+                        let request_secret = AuthSecret::try_from_bytes(request_secret.as_bytes())?;
+
+                        if request_secret != required_secret {
+                            bail!(
+                                "Request requires authentication but provided secret doesn't match",
+                            );
+                        }
+
+                        Ok(())
                     };
 
-                    let request_secret = AuthSecret::try_from_bytes(request_secret.as_bytes())?;
-
-                    if request_secret != required_secret {
-                        bail!("Request requires authentication but provided secret doesn't match",);
+                    if let Err(err) = check() {
+                        return Err(Status::unauthenticated(err.to_string()));
                     }
-
-                    Ok(())
-                };
-
-                if let Err(err) = check() {
-                    return Err(Status::unauthenticated(err.to_string()));
                 }
+
+                // The new protocols carry a token issued by the Authentication service.
+                Protocol::Protected(_) => {
+                    let resolve = || -> Result<PeerIdentity> {
+                        let token = req
+                            .metadata()
+                            .get(auth::TOKEN_HEADER)
+                            .ok_or_else(|| {
+                                anyhow!("Request requires authentication but no token was provided")
+                            })?
+                            .to_str()
+                            .context("Token is not valid ASCII")?;
+
+                        let key = auth::verify_token(&interceptor_key, token)?;
+
+                        // Resolved on every request rather than trusted from the token, so
+                        // revoking a key takes effect immediately.
+                        app2.db
+                            .read_tx_blocking(move |tx| {
+                                Ok(tx
+                                    .query_row(
+                                        sql!(
+                                            "SELECT name, node_uid FROM keys
+                                            INNER JOIN identities USING(identity_id)
+                                            LEFT JOIN identity_to_node USING(identity_id)
+                                            LEFT JOIN nodes USING(node_id, node_type)
+                                            WHERE key = ?1"
+                                        ),
+                                        [key.to_string()],
+                                        |row| {
+                                            Ok(PeerIdentity {
+                                                name: row.get(0)?,
+                                                node_uid: row.get(1)?,
+                                            })
+                                        },
+                                    )
+                                    .optional()?)
+                            })?
+                            .ok_or_else(|| {
+                                anyhow!(
+                                    "The token was issued for a key that is no longer registered"
+                                )
+                            })
+                    };
+
+                    match resolve() {
+                        // The hook for per identity authorization, which is not implemented yet.
+                        Ok(identity) => {
+                            req.extensions_mut().insert(identity);
+                        }
+                        Err(err) => return Err(Status::unauthenticated(err.to_string())),
+                    }
+                }
+
+                Protocol::Legacy(None) | Protocol::Plain => {}
             }
 
             Ok(req)
@@ -245,9 +310,20 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
 
     log::info!("Serving gRPC requests on {serve_addr}");
 
+    let mut router = builder.add_service(service);
+
+    // No interceptor: this is the service that issues the tokens the interceptor checks.
+    if matches!(app.info.protocol, Protocol::Protected(_)) {
+        router = router.add_service(pm::authentication_server::AuthenticationServer::new(
+            auth::AuthenticationService {
+                app: app.clone(),
+                token_key,
+            },
+        ));
+    }
+
     tokio::spawn(async move {
-        builder
-            .add_service(service)
+        router
             // Provide our shutdown handle to automatically shutdown the server gracefully when
             // requested
             .serve_with_shutdown(serve_addr, shutdown.wait_for_shutdown())
