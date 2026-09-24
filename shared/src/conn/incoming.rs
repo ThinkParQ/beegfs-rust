@@ -45,7 +45,7 @@ pub async fn listen_tcp(
         loop {
             tokio::select! {
                 res = listener.accept() => {
-                    let (stream, _) = match res {
+                    let (stream, peer_addr) = match res {
                         Ok(res) => res,
                         Err(err) => {
                             log::error!("Accepting TCP connection failed: {err:#}");
@@ -59,7 +59,7 @@ pub async fn listen_tcp(
                     // reading from each stream in a separate task that is also used for
                     // (de-)serializing, processing the request and sending the response.
                     tokio::spawn(stream_loop(
-                        stream.into(),
+                        Stream::from_tcp_stream(stream, peer_addr),
                         dispatch.clone(),
                         stream_authentication_required,
                         run_state.clone(),

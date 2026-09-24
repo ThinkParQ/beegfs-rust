@@ -84,9 +84,11 @@ ifneq ($(GLIBC_VERSION),)
     RELEASE_BUILD_CMD := cargo zigbuild --target=$(CARGO_TARGET).$(GLIBC_VERSION)
 endif
 
-# We want to include the full debug info so it can be split off
+# We want to include the full debug info so it can be split off.
+# We also force a build ID as zigs linker does not emit one by default.
 RELEASE_BUILD_CMD := VERSION="$(VERSION)" $(RELEASE_BUILD_CMD) \
-	--release --locked --config='profile.release.debug = "full"'
+	--release --locked --config='profile.release.debug = "full"' \
+	--config='build.rustflags = ["-Clink-arg=-Wl,--build-id=sha1"]'
 
 # Build release binaries and package them.
 # In addition to all environment variables accepted by cargo, this target reads the following:
@@ -125,10 +127,14 @@ package:
 	cargo clean --locked $(TARGET_FLAG) --release -p mgmtd
 	$(RELEASE_BUILD_CMD)
 
-	# Post process binaries
+	# Split the debug info off into its own file, which the debuginfo package ships.
 	$(BIN_UTIL_PREFIX)objcopy --only-keep-debug \
 		$(TARGET_DIR)/beegfs-mgmtd $(TARGET_DIR)/beegfs-mgmtd.debug
 	$(BIN_UTIL_PREFIX)strip -s $(TARGET_DIR)/beegfs-mgmtd
+	# Point the stripped binary at the debug file, required for gdb and Rust backtrace to find it.
+	# objcopy stores only the base name in the link, so $(TARGET_DIR) does not leak into the binary.
+	$(BIN_UTIL_PREFIX)objcopy --add-gnu-debuglink=$(TARGET_DIR)/beegfs-mgmtd.debug \
+		$(TARGET_DIR)/beegfs-mgmtd
 
 	# Build packages
 	# These don't respect CARGO_BUILD_TARGET, so we need to add --target manually using $(TARGET_FLAG)

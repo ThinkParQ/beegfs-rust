@@ -17,6 +17,7 @@ use tokio::time::timeout;
 pub struct Stream {
     stream: InnerStream,
     pub authenticated: bool,
+    peer_addr: SocketAddr,
 }
 
 #[derive(Debug)]
@@ -25,28 +26,29 @@ enum InnerStream {
     Tcp(TcpStream),
 }
 
-impl From<TcpStream> for Stream {
-    fn from(stream: TcpStream) -> Self {
+impl Stream {
+    /// Create the stream object from a TcpStream
+    pub fn from_tcp_stream(stream: TcpStream, peer_addr: SocketAddr) -> Self {
         Self {
             stream: InnerStream::Tcp(stream),
             authenticated: false,
+            peer_addr,
         }
     }
-}
 
-impl Stream {
     /// Connect to peer using TCP and obtain a [Stream] object.
     ///
     /// Times out after `time_limit`.
-    pub async fn connect_tcp(addr: &SocketAddr, time_limit: Duration) -> Result<Self> {
-        let stream = match timeout(time_limit, TcpStream::connect(addr)).await {
+    pub async fn connect_tcp(peer_addr: SocketAddr, time_limit: Duration) -> Result<Self> {
+        let stream = match timeout(time_limit, TcpStream::connect(peer_addr)).await {
             Ok(res) => res?,
-            Err(_) => bail!("Connecting a TCP stream to {addr} timed out"),
+            Err(_) => bail!("Connecting a TCP stream to {peer_addr} timed out"),
         };
 
         Ok(Self {
             stream: InnerStream::Tcp(stream),
             authenticated: false,
+            peer_addr,
         })
     }
 
@@ -115,9 +117,6 @@ impl Stream {
 
     /// The connected remote peers [SocketAddr]
     pub fn addr(&self) -> SocketAddr {
-        // TODO unwrap ?
-        match self.stream {
-            InnerStream::Tcp(ref s) => s.peer_addr().unwrap(),
-        }
+        self.peer_addr
     }
 }
