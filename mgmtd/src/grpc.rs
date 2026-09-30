@@ -38,6 +38,7 @@ mod get_quota_usage;
 mod get_targets;
 mod mirror_root_inode;
 mod modify_buddy_group;
+mod reset_target_registration_token;
 mod set_alias;
 mod set_default_quota_limits;
 mod set_quota_limits;
@@ -94,6 +95,11 @@ impl pm::management_server::Management for ManagementService {
         set_target_state,
         pm::SetTargetStateRequest => pm::SetTargetStateResponse,
         "Set target state"
+    }
+    impl_grpc_handler! {
+        reset_target_registration_token,
+        pm::ResetTargetRegistrationTokenRequest => pm::ResetTargetRegistrationTokenResponse,
+        "Reset target registration token"
     }
 
     impl_grpc_handler! {
