@@ -243,12 +243,12 @@ async fn create_and_send_requests(
 
             if user_use_all {
                 // If configured, query the whole id space
-                range_requests(
+                paginated_requests(
                     app.clone(),
                     target.node_uid,
                     QuotaIdType::User,
                     &target,
-                    &(0..=QuotaId::MAX),
+                    None,
                     "User id all",
                     &mut responses,
                 )
@@ -256,12 +256,12 @@ async fn create_and_send_requests(
             } else {
                 // Otherwise query the configured ids via list and range
                 if let Some(ref range) = user_range {
-                    range_requests(
+                    paginated_requests(
                         app.clone(),
                         target.node_uid,
                         QuotaIdType::User,
                         &target,
-                        range,
+                        Some(range),
                         "User id range",
                         &mut responses,
                     )
@@ -285,12 +285,12 @@ async fn create_and_send_requests(
             }
 
             if group_use_all {
-                range_requests(
+                paginated_requests(
                     app.clone(),
                     target.node_uid,
                     QuotaIdType::Group,
                     &target,
-                    &(0..=QuotaId::MAX),
+                    None,
                     "Group id all",
                     &mut responses,
                 )
@@ -298,12 +298,12 @@ async fn create_and_send_requests(
             } else {
                 // Otherwise query the configured ids via list and range
                 if let Some(ref range) = group_range {
-                    range_requests(
+                    paginated_requests(
                         app.clone(),
                         target.node_uid,
                         QuotaIdType::Group,
                         &target,
-                        range,
+                        Some(range),
                         "Group id range",
                         &mut responses,
                     )
@@ -333,29 +333,39 @@ async fn create_and_send_requests(
     Ok(tasks)
 }
 
-async fn range_requests(
+async fn paginated_requests(
     app: impl App,
     node_uid: Uid,
     id_type: QuotaIdType,
     target: &TargetToQuery,
-    range: &RangeInclusive<QuotaId>,
+    range: Option<&RangeInclusive<QuotaId>>,
     log_str: &'static str,
     responses: &mut Vec<(&str, Result<GetQuotaInfoResp>)>,
 ) {
-    let mut range_start = *range.start();
-    let range_end = *range.end();
+    let mut range_start = range.map(|e| *e.start()).unwrap_or(QuotaId::MIN);
+    let range_end = range.map(|e| *e.end()).unwrap_or(QuotaId::MAX);
     let mut has_more = true;
+    let mut first = true;
 
     while has_more && range_start <= range_end {
         let resp = app
             .request_with_header::<_, GetQuotaInfoResp>(
                 node_uid,
-                &GetQuotaInfo::with_range(
-                    id_type,
-                    target.target_id,
-                    target.pool_id,
-                    &(range_start..=range_end),
-                ),
+                &if range.is_none() && first {
+                    // No range means the whole id space. The first request uses the All query type
+                    // to prevent old storage servers from querying the max range. They will just
+                    // return empty instead, not triggering additional range requests.
+                    // New ones return entries up to the page limit and set the has_more flag if
+                    // there is more.
+                    GetQuotaInfo::all(id_type, target.target_id, target.pool_id)
+                } else {
+                    GetQuotaInfo::with_range(
+                        id_type,
+                        target.target_id,
+                        target.pool_id,
+                        &(range_start..=range_end),
+                    )
+                },
             )
             .await;
 
@@ -365,7 +375,7 @@ async fn range_requests(
                 let range_start =
                     e.0.quota_entry
                         .last()
-                        .map(|s| s.id.saturating_add(1))
+                        .map(|s| s.id.wrapping_add(1))
                         .unwrap_or_default();
                 let has_more = range_start > 0
                     && e.1.msg_compat_feature_flags & GetQuotaInfoResp::HAS_MORE_ENTRIES_COMPATFLAG
@@ -376,6 +386,8 @@ async fn range_requests(
             .unwrap_or_default();
 
         responses.push((log_str, resp.map(|e| e.0)));
+
+        first = false;
     }
 }
 

@@ -58,6 +58,19 @@ impl GetQuotaInfo {
             pool_id,
         }
     }
+
+    pub fn all(id_type: QuotaIdType, target_id: TargetId, pool_id: PoolId) -> Self {
+        Self {
+            query_type: QuotaQueryType::All,
+            id_type,
+            id_range_start: 0,
+            id_range_end: 0,
+            id_list: vec![],
+            transfer_method: GetQuotaInfoTransferMethod::AllTargetsOneRequestPerTarget,
+            target_id,
+            pool_id,
+        }
+    }
 }
 
 impl Msg for GetQuotaInfo {
