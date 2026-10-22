@@ -459,6 +459,10 @@ impl Config {
             bail!("Quota enforcement requires quota being enabled");
         }
 
+        if self.client_auto_remove_timeout < Duration::from_mins(5) {
+            bail!("Client auto remove timeout must not be lower than 5 minutes");
+        }
+
         self.cap_pool_meta_limits
             .check()
             .context("Capacity pool meta limits")?;
