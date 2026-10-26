@@ -270,6 +270,11 @@ generate_structs! {
     node_offline_timeout: Duration = Duration::from_secs(180),
 
     /// Defines after which time without contact a client is considered gone and will be removed.
+    ///
+    /// The value is parsed as a duration using a suffix for the time unit. The allowed minimum
+    /// is five minutes (5m) to prevent issues with operations on open files when clients are
+    /// erroneously removed while still active. Expiration can't be disabled, set a long duration
+    /// instead.
     /// [default: 30m]
     #[arg(long)]
     #[arg(value_name = "DURATION")]
@@ -457,6 +462,10 @@ impl Config {
 
         if self.quota_enforce && !self.quota_enable {
             bail!("Quota enforcement requires quota being enabled");
+        }
+
+        if self.client_auto_remove_timeout < Duration::from_mins(5) {
+            bail!("Client auto remove timeout must not be lower than 5 minutes");
         }
 
         self.cap_pool_meta_limits
