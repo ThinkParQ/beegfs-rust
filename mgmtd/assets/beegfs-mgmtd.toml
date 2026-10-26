@@ -77,6 +77,10 @@
 
 
 ### General ###
+#
+# Some options in this section define durations and use suffixes like "s" (seconds), "m" (minutes)
+# and "h" (hours) for better readability. A missing suffix is interpreted as "s", so a value of "30"
+# means 30 seconds.
 
 # Disables registration of new nodes and targets (clients excluded).
 # registration-disable = false
@@ -88,12 +92,9 @@
 # node-offline-timeout = "180s"
 
 # Defines after which time without contact a client is considered gone and will be removed.
-# The value is parsed as a duration and uses suffixes like "s" (seconds), "m" (minutes) and "h"
-# (hours) for better readability. A missing suffix is interpreted as "s", so a value of "30" means
-# 30 seconds. There is no special "0" value to disable expiration. If really needed, configure a
-# very long duration instead.
-# Minimal allowed timeout is "5m" because erroneous expirations of clients that are still active
-# expire their server sessions and trigger issues with operations on open files.
+# The value is parsed as a duration, using a suffix for the time unit. The allowed minimum is five
+# minutes (5m) to prevent issues with operations on open files when clients are erroneously removed
+# while still active. Expiration can't be disabled, set a long duration instead.
 # client-auto-remove-timeout = "30m"
 
 # The BeeGFS license certificate file.
