@@ -43,6 +43,12 @@ impl TestApp {
 
     pub async fn with_config(user_config: Config) -> Self {
         let db = crate::db::test::setup_with_test_data().await;
+        db.write_tx(|tx| {
+            crate::db::config::set(tx, crate::db::config::Config::FsUuid, uuid::Uuid::new_v4())
+        })
+        .await
+        .unwrap();
+
         Self {
             db,
             info: Arc::new(StaticInfo {

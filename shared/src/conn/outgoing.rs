@@ -1,7 +1,7 @@
 //! Outgoing communication functionality
 use super::store::Store;
 use crate::bee_msg::misc::AuthenticateChannel;
-use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize, serialize_legacy};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
@@ -60,11 +60,12 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, &mut buf)?;
+        let msg_len = self.serialize_msg(msg, &mut buf)?;
         let resp_header = self
             .comm_stream(node_uid, &mut buf, msg_len, Some(R::RESPONSE_TIME_LIMIT))
             .await?;
-        let resp_msg = deserialize_body(&resp_header, &buf[Header::LEN..])?;
+        let resp_msg =
+            deserialize_body(&resp_header, &buf[self.header_len()..resp_header.msg_len()])?;
 
         self.store.push_buf(buf);
 
@@ -79,7 +80,7 @@ impl Pool {
 
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, &mut buf)?;
+        let msg_len = self.serialize_msg(msg, &mut buf)?;
         self.comm_stream(node_uid, &mut buf, msg_len, None).await?;
 
         self.store.push_buf(buf);
@@ -162,12 +163,14 @@ impl Pool {
                             // The provided buffer contains the actual message to be sent later -
                             // obtain an additional one for the auth message
                             let mut auth_buf = self.store.pop_buf_or_create();
-                            let msg_len =
-                                serialize(&AuthenticateChannel { auth_secret }, &mut auth_buf)?;
+                            let msg_len = stream.as_ref().serialize_msg(
+                                &AuthenticateChannel { auth_secret },
+                                &mut auth_buf,
+                            )?;
 
                             stream
                                 .as_mut()
-                                .write_all(&auth_buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
+                                .write_msg(&auth_buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
                                 .await
                                 .with_context(err_context)?;
 
@@ -228,27 +231,11 @@ impl Pool {
     ) -> Result<Header> {
         stream
             .as_mut()
-            .write_all(&buf[0..send_len], GENERIC_STREAM_TIME_LIMIT)
+            .write_msg(&buf[0..send_len], GENERIC_STREAM_TIME_LIMIT)
             .await?;
 
         let header = if let Some(tl) = response_time_limit {
-            // Read header - wait for the per-message defined time limit.
-            stream
-                .as_mut()
-                .read_exact(&mut buf[0..Header::LEN], tl)
-                .await?;
-            let header = deserialize_header(buf)?;
-
-            // Read body - the header has already been received, so the body should follow
-            // immediately as currently nodes serialize whole messages before sending. Still
-            // choosing the (potentially higher) per-message limit in case that changes at some
-            // point.
-            stream
-                .as_mut()
-                .read_exact(&mut buf[Header::LEN..header.msg_len()], tl)
-                .await?;
-
-            header
+            stream.as_mut().read_msg(buf, tl).await?
         } else {
             Header::default()
         };
@@ -269,7 +256,7 @@ impl Pool {
     ) -> Result<()> {
         let mut buf = self.store.pop_buf_or_create();
 
-        let msg_len = serialize(msg, &mut buf)?;
+        let msg_len = serialize_legacy(msg, &mut buf)?;
 
         for node_uid in peers {
             let addrs = self.store.get_node_addrs(node_uid).unwrap_or_default();
@@ -305,6 +292,22 @@ impl Pool {
         self.store.push_buf(buf);
 
         Ok(())
+    }
+
+    fn serialize_msg<M: Msg + Serializable>(&self, msg: &M, buf: &mut [u8]) -> Result<usize> {
+        if self.crypto.is_some() {
+            serialize(msg, buf)
+        } else {
+            serialize_legacy(msg, buf)
+        }
+    }
+
+    fn header_len(&self) -> usize {
+        if self.crypto.is_some() {
+            Header::LEN
+        } else {
+            Header::LEGACY_LEN
+        }
     }
 
     pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {

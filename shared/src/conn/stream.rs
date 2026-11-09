@@ -1,6 +1,10 @@
 //! Stream communication functionality
 
 use super::{ConnCrypto, PeerIdentity};
+use crate::bee_msg::{
+    Header, Msg, deserialize_header, deserialize_legacy_header, serialize, serialize_legacy,
+};
+use crate::bee_serde::Serializable;
 use anyhow::{Result, anyhow, bail};
 use beecrypt::{
     AUTH_TAG_LEN, FRAME_HDR_LEN, FrameType, Handshake, KeyPairId, MAX_HANDSHAKE_FRAME_LEN,
@@ -39,15 +43,11 @@ struct Framing {
     transport: Transport,
     send_buf: Vec<u8>,
     recv_buf: Vec<u8>,
-    recv_pos: usize,
-    recv_end: usize,
 }
 
 impl Debug for Framing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Framing")
-            .field("recv_pending", &(self.recv_end - self.recv_pos))
-            .finish_non_exhaustive()
+        f.debug_struct("Framing").finish_non_exhaustive()
     }
 }
 
@@ -109,8 +109,6 @@ impl Stream {
             transport: hs.into_transport()?,
             send_buf: vec![],
             recv_buf: vec![],
-            recv_pos: 0,
-            recv_end: 0,
         });
 
         Ok(peer_id)
@@ -174,14 +172,6 @@ impl Stream {
     ///
     /// This is the method to use to wait for incoming data. Waits indefinitely, no timeout.
     pub async fn readable(&self) -> Result<()> {
-        if self
-            .framing
-            .as_ref()
-            .is_some_and(|f| f.recv_pos < f.recv_end)
-        {
-            return Ok(());
-        }
-
         match &self.stream {
             InnerStream::Tcp(s) => loop {
                 s.readable().await?;
@@ -197,94 +187,102 @@ impl Stream {
         }
     }
 
-    /// Reads from the stream into the provided buffer.
+    pub fn uses_legacy_header(&self) -> bool {
+        self.framing.is_none()
+    }
+
+    pub fn serialize_msg<M: Msg + Serializable>(&self, msg: &M, buf: &mut [u8]) -> Result<usize> {
+        if self.uses_legacy_header() {
+            serialize_legacy(msg, buf)
+        } else {
+            serialize(msg, buf)
+        }
+    }
+
+    /// Reads one complete BeeMsg from the stream into the provided buffer.
     ///
-    /// The buffer will be filled completely before the future completes. Times out after
-    /// `time_limit`.
+    /// Times out after `time_limit`.
     ///
     /// **Important**: Not cancel safe. If a timeout occurs, the stream may not be reused.
-    pub async fn read_exact(&mut self, buf: &mut [u8], time_limit: Duration) -> Result<()> {
-        match timeout(time_limit, self.read_framed(buf)).await {
+    pub async fn read_msg(&mut self, buf: &mut [u8], time_limit: Duration) -> Result<Header> {
+        match timeout(time_limit, self.read_msg_inner(buf)).await {
             Ok(res) => res,
             Err(_) => Err(anyhow!("Reading from stream to {} timed out", self.addr())),
         }
     }
 
-    /// Writes to the stream from the provided buffer.
+    /// Writes one complete serialized BeeMsg to the stream.
     ///
-    /// The buffer will be written completely before the future completes. Times out after
-    /// `time_limit`.
+    /// Times out after `time_limit`.
     ///
     /// **Important**: Not cancel safe. If a timeout occurs, the stream may not be reused.
-    pub async fn write_all(&mut self, buf: &[u8], time_limit: Duration) -> Result<()> {
-        match timeout(time_limit, self.write_framed(buf)).await {
+    pub async fn write_msg(&mut self, buf: &[u8], time_limit: Duration) -> Result<()> {
+        match timeout(time_limit, self.write_msg_inner(buf)).await {
             Ok(res) => res,
             Err(_) => Err(anyhow!("Writing to stream to {} timed out", self.addr())),
         }
     }
 
-    async fn read_framed(&mut self, buf: &mut [u8]) -> Result<()> {
-        if self.framing.is_none() {
-            return self.read_raw(buf).await;
-        }
+    async fn read_msg_inner(&mut self, buf: &mut [u8]) -> Result<Header> {
+        let Some(mut framing) = self.framing.take() else {
+            self.read_raw(&mut buf[..Header::LEGACY_LEN]).await?;
+            let header = deserialize_legacy_header(buf)?;
+            self.read_raw(&mut buf[Header::LEGACY_LEN..header.msg_len()])
+                .await?;
+            return Ok(header);
+        };
 
-        let mut filled = 0;
-        while filled < buf.len() {
-            let framing = self.framing.as_mut().unwrap();
-            if framing.recv_pos == framing.recv_end {
-                self.recv_frame().await?;
-                continue;
-            }
-
-            let n = (framing.recv_end - framing.recv_pos).min(buf.len() - filled);
-            buf[filled..filled + n]
-                .copy_from_slice(&framing.recv_buf[framing.recv_pos..framing.recv_pos + n]);
-            framing.recv_pos += n;
-            filled += n;
-        }
-
-        Ok(())
-    }
-
-    async fn recv_frame(&mut self) -> Result<()> {
-        let mut framing = self.framing.take().unwrap();
-        let res = self.recv_frame_into(&mut framing).await;
+        let res = self.recv_frames(&mut framing, buf).await;
         self.framing = Some(framing);
-        res
+
+        deserialize_header(&buf[..res?])
     }
 
-    async fn recv_frame_into(&mut self, framing: &mut Framing) -> Result<()> {
-        framing.recv_pos = 0;
-        framing.recv_end = 0;
+    async fn recv_frames(&mut self, framing: &mut Framing, buf: &mut [u8]) -> Result<usize> {
+        let mut len = 0;
+        loop {
+            if framing.recv_buf.len() < FRAME_HDR_LEN {
+                framing.recv_buf.resize(FRAME_HDR_LEN, 0);
+            }
+            self.read_raw(&mut framing.recv_buf[..FRAME_HDR_LEN])
+                .await?;
 
-        if framing.recv_buf.len() < FRAME_HDR_LEN {
-            framing.recv_buf.resize(FRAME_HDR_LEN, 0);
+            let frame_len = peek_frame(&framing.recv_buf[..FRAME_HDR_LEN])?.len;
+            if framing.recv_buf.len() < frame_len {
+                framing.recv_buf.resize(frame_len, 0);
+            }
+            self.read_raw(&mut framing.recv_buf[FRAME_HDR_LEN..frame_len])
+                .await?;
+
+            let (plain_len, is_final) =
+                framing.transport.open(&mut framing.recv_buf[..frame_len])?;
+
+            let buf_len = buf.len();
+            buf.get_mut(len..len + plain_len)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Received BeeMsg doesn't fit into the provided buffer of size {buf_len}"
+                    )
+                })?
+                .copy_from_slice(&framing.recv_buf[FRAME_HDR_LEN..FRAME_HDR_LEN + plain_len]);
+            len += plain_len;
+
+            if is_final {
+                return Ok(len);
+            }
         }
-        self.read_raw(&mut framing.recv_buf[..FRAME_HDR_LEN])
-            .await?;
-
-        let len = peek_frame(&framing.recv_buf[..FRAME_HDR_LEN])?.len;
-        if framing.recv_buf.len() < len {
-            framing.recv_buf.resize(len, 0);
-        }
-        self.read_raw(&mut framing.recv_buf[FRAME_HDR_LEN..len])
-            .await?;
-
-        let (plain_len, _) = framing.transport.open(&mut framing.recv_buf[..len])?;
-        framing.recv_pos = FRAME_HDR_LEN;
-        framing.recv_end = FRAME_HDR_LEN + plain_len;
-
-        Ok(())
     }
 
-    async fn write_framed(&mut self, buf: &[u8]) -> Result<()> {
+    async fn write_msg_inner(&mut self, buf: &[u8]) -> Result<()> {
         let Some(mut framing) = self.framing.take() else {
             return self.write_raw(buf).await;
         };
 
         let res = async {
             let chunks = buf.len().div_ceil(MAX_PLAINTEXT_LEN).max(1);
-            for (i, chunk) in buf.chunks(MAX_PLAINTEXT_LEN).enumerate() {
+            for i in 0..chunks {
+                let chunk = &buf[(i * MAX_PLAINTEXT_LEN).min(buf.len())
+                    ..((i + 1) * MAX_PLAINTEXT_LEN).min(buf.len())];
                 let frame_len = FRAME_HDR_LEN + chunk.len() + AUTH_TAG_LEN;
                 if framing.send_buf.len() < frame_len {
                     framing.send_buf.resize(frame_len, 0);
@@ -332,6 +330,8 @@ impl Stream {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::bee_msg::deserialize_body;
+    use crate::bee_msg::misc::{Ack, GenericResponse};
     use beecrypt::{KeyPair, Mode};
     use tokio::net::TcpListener;
 
@@ -367,25 +367,37 @@ mod test {
         assert_eq!(client_res.unwrap(), server_crypto.key_id());
         assert_eq!(server_res.unwrap(), client_crypto.key_id());
 
-        let msg: Vec<u8> = (0..MAX_PLAINTEXT_LEN + 1000)
-            .map(|i| (i * 7 + 3) as u8)
-            .collect();
-        let mut recv = vec![0; msg.len()];
+        let msg = GenericResponse {
+            code: 7,
+            description: (0..MAX_PLAINTEXT_LEN + 1000)
+                .map(|i| (i % 255 + 1) as u8)
+                .collect(),
+        };
+        let mut send_buf = vec![0; 2 * MAX_PLAINTEXT_LEN];
+        let mut recv_buf = vec![0; 2 * MAX_PLAINTEXT_LEN];
 
+        let len = client.serialize_msg(&msg, &mut send_buf).unwrap();
         let (w, r) = tokio::join!(
-            client.write_all(&msg, TL),
-            server.read_exact(&mut recv[..10], TL)
+            client.write_msg(&send_buf[..len], TL),
+            server.read_msg(&mut recv_buf, TL)
         );
         w.unwrap();
-        r.unwrap();
-        server.readable().await.unwrap();
-        server.read_exact(&mut recv[10..], TL).await.unwrap();
+        let header = r.unwrap();
+        assert_eq!(header.msg_id(), GenericResponse::ID);
+        assert_eq!(header.msg_len(), len);
+        let recv: GenericResponse =
+            deserialize_body(&header, &recv_buf[Header::LEN..header.msg_len()]).unwrap();
         assert_eq!(recv, msg);
 
-        server.write_all(b"response", TL).await.unwrap();
-        let mut resp = [0; 8];
-        client.read_exact(&mut resp, TL).await.unwrap();
-        assert_eq!(&resp, b"response");
+        let resp = Ack {
+            ack_id: b"response".to_vec(),
+        };
+        let len = server.serialize_msg(&resp, &mut send_buf).unwrap();
+        server.write_msg(&send_buf[..len], TL).await.unwrap();
+        let header = client.read_msg(&mut recv_buf, TL).await.unwrap();
+        let recv: Ack =
+            deserialize_body(&header, &recv_buf[Header::LEN..header.msg_len()]).unwrap();
+        assert_eq!(recv, resp);
     }
 
     #[tokio::test]

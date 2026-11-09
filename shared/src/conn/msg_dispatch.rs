@@ -2,7 +2,7 @@
 
 use super::stream::Stream;
 use super::{IdentityId, PeerIdentity};
-use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
+use crate::bee_msg::{Header, Msg, deserialize_body, serialize_legacy};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::GENERIC_STREAM_TIME_LIMIT;
 use anyhow::Result;
@@ -49,9 +49,9 @@ pub struct StreamRequest<'a> {
 
 impl Request for StreamRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, self.buf)?;
+        let msg_len = self.stream.serialize_msg(msg, self.buf)?;
         self.stream
-            .write_all(&self.buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
+            .write_msg(&self.buf[0..msg_len], GENERIC_STREAM_TIME_LIMIT)
             .await
     }
 
@@ -82,7 +82,12 @@ impl Request for StreamRequest<'_> {
     }
 
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
-        deserialize_body(self.header, &self.buf[Header::LEN..])
+        let header_len = if self.stream.uses_legacy_header() {
+            Header::LEGACY_LEN
+        } else {
+            Header::LEN
+        };
+        deserialize_body(self.header, &self.buf[header_len..self.header.msg_len()])
     }
 
     fn header(&self) -> &Header {
@@ -105,7 +110,7 @@ pub struct SocketRequest<'a> {
 
 impl Request for SocketRequest<'_> {
     async fn respond<M: Msg + Serializable>(self, msg: &M) -> Result<()> {
-        let msg_len = serialize(msg, self.buf)?;
+        let msg_len = serialize_legacy(msg, self.buf)?;
         self.sock
             .send_to(&self.buf[0..msg_len], &self.peer_addr)
             .await?;
@@ -127,7 +132,10 @@ impl Request for SocketRequest<'_> {
     }
 
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
-        deserialize_body(self.header, &self.buf[Header::LEN..])
+        deserialize_body(
+            self.header,
+            &self.buf[Header::LEGACY_LEN..self.header.msg_len()],
+        )
     }
 
     fn header(&self) -> &Header {

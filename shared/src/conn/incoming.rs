@@ -4,7 +4,7 @@ use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::*;
 use crate::bee_msg::misc::{AuthenticateChannel, RegisterIdentity};
-use crate::bee_msg::{Header, Msg, deserialize_header};
+use crate::bee_msg::{Msg, deserialize_legacy_header};
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
 use beecrypt::Role;
@@ -183,12 +183,7 @@ async fn read_stream(
     dispatch: &impl DispatchRequest,
     stream_authentication_required: bool,
 ) -> Result<()> {
-    // Read header
-    stream
-        .read_exact(&mut buf[0..Header::LEN], GENERIC_STREAM_TIME_LIMIT)
-        .await?;
-
-    let header = deserialize_header(buf)?;
+    let header = stream.read_msg(buf, GENERIC_STREAM_TIME_LIMIT).await?;
 
     // check authentication
     if stream_authentication_required
@@ -209,14 +204,6 @@ async fn read_stream(
             header.msg_id()
         );
     }
-
-    // Read body
-    stream
-        .read_exact(
-            &mut buf[Header::LEN..header.msg_len()],
-            GENERIC_STREAM_TIME_LIMIT,
-        )
-        .await?;
 
     // Forward to the dispatcher. The dispatcher is responsible for deserializing, dispatching to
     // msg handlers and sending a response using the [`StreamRequest`] handle.
@@ -289,7 +276,7 @@ async fn recv_datagram(sock: Arc<UdpSocket>, msg_handler: impl DispatchRequest) 
     // immediately
     tokio::spawn(async move {
         if let Err(err) = async {
-            let header = deserialize_header(&buf)?;
+            let header = deserialize_legacy_header(&buf)?;
 
             let req = SocketRequest {
                 sock,
