@@ -18,7 +18,6 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
-use tokio_rustls::TlsAcceptor;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 use tower::util::MapRequestLayer;
@@ -304,7 +303,7 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
         let incoming = conn::listen(
             app.clone(),
             listener,
-            TlsAcceptor::from(config),
+            conn::TlsSetup::new(config, crypto.mode()),
             shutdown.clone(),
         );
 

@@ -1,7 +1,9 @@
 use crate::app::RuntimeApp;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use shared::conn::PeerIdentity;
-use shared::conn::beecrypt::KeyPairId;
+use shared::conn::beecrypt::rustls::ServerConfig;
+use shared::conn::beecrypt::rustls::server::Acceptor;
+use shared::conn::beecrypt::{KeyPairId, Mode, grpc_mode_alpn};
 use shared::conn::msg_dispatch::DispatchRequest;
 use shared::run_state::RunStateHandle;
 use std::io;
@@ -14,12 +16,14 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use tokio_rustls::TlsAcceptor;
+use tokio_rustls::LazyConfigAcceptor;
 use tokio_rustls::server::TlsStream;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::server::Connected;
 
 const HANDSHAKE_TIME_LIMIT: Duration = Duration::from_secs(5);
+const TLS_HANDSHAKE_RECORD: u8 = 0x16;
+const GRPC_MODE_ALPN_PREFIX: &[u8] = b"beegfs-grpc/1/";
 
 #[derive(Clone, Debug)]
 pub(crate) struct ConnInfo {
@@ -80,10 +84,37 @@ impl AsyncWrite for Conn {
     }
 }
 
+#[derive(Clone)]
+pub(crate) struct TlsSetup {
+    config: Arc<ServerConfig>,
+    mismatch: Arc<ServerConfig>,
+    mode: Mode,
+}
+
+impl TlsSetup {
+    pub(crate) fn new(config: Arc<ServerConfig>, mode: Mode) -> Self {
+        let mut mismatch = (*config).clone();
+        mismatch.alpn_protocols = vec![grpc_mode_alpn(mode).to_vec()];
+
+        Self {
+            config,
+            mismatch: Arc::new(mismatch),
+            mode,
+        }
+    }
+}
+
+fn mode_name(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Plain => "plain",
+        Mode::Encrypted => "encrypted",
+    }
+}
+
 pub(crate) fn listen(
     app: RuntimeApp,
     listener: TcpListener,
-    acceptor: TlsAcceptor,
+    tls: TlsSetup,
     mut run_state: RunStateHandle,
 ) -> ReceiverStream<io::Result<Conn>> {
     let (tx, rx) = mpsc::channel(16);
@@ -100,9 +131,9 @@ pub(crate) fn listen(
                         }
                     };
 
-                    let (app, acceptor, tx) = (app.clone(), acceptor.clone(), tx.clone());
+                    let (app, tls, tx) = (app.clone(), tls.clone(), tx.clone());
                     tokio::spawn(async move {
-                        match accept(&app, &acceptor, stream, addr).await {
+                        match accept(&app, &tls, stream, addr).await {
                             Ok(conn) => {
                                 let _ = tx.send(Ok(conn)).await;
                             }
@@ -119,16 +150,65 @@ pub(crate) fn listen(
     ReceiverStream::new(rx)
 }
 
+async fn handshake(tls: &TlsSetup, stream: TcpStream) -> Result<TlsStream<TcpStream>> {
+    let mut first = [0u8; 1];
+    if stream.peek(&mut first).await? == 0 {
+        bail!("Client closed the connection before the TLS handshake");
+    }
+    if first[0] != TLS_HANDSHAKE_RECORD {
+        bail!(
+            "Client did not start a TLS handshake. It probably uses the legacy connection \
+            protocol with TLS disabled, management uses {}",
+            mode_name(tls.mode)
+        );
+    }
+
+    let start = LazyConfigAcceptor::new(Acceptor::default(), stream)
+        .await
+        .context("Reading the TLS ClientHello failed")?;
+
+    let expected = grpc_mode_alpn(tls.mode);
+    let offered: Vec<Vec<u8>> = start
+        .client_hello()
+        .alpn()
+        .map(|protocols| protocols.map(<[u8]>::to_vec).collect())
+        .unwrap_or_default();
+
+    if offered.iter().any(|p| p.as_slice() == expected) {
+        return start
+            .into_stream(tls.config.clone())
+            .await
+            .context("TLS handshake failed");
+    }
+
+    let _ = start.into_stream(tls.mismatch.clone()).await;
+
+    let client_mode = offered.iter().find_map(|p| {
+        p.strip_prefix(GRPC_MODE_ALPN_PREFIX)
+            .map(|m| String::from_utf8_lossy(m).into_owned())
+    });
+
+    match client_mode {
+        Some(m) => bail!(
+            "Client uses the {m} connection protocol, management uses {}",
+            mode_name(tls.mode)
+        ),
+        None => bail!(
+            "Client uses the legacy connection protocol, management uses {}",
+            mode_name(tls.mode)
+        ),
+    }
+}
+
 async fn accept(
     app: &RuntimeApp,
-    acceptor: &TlsAcceptor,
+    tls: &TlsSetup,
     stream: TcpStream,
     addr: SocketAddr,
 ) -> Result<Conn> {
-    let inner = timeout(HANDSHAKE_TIME_LIMIT, acceptor.accept(stream))
+    let inner = timeout(HANDSHAKE_TIME_LIMIT, handshake(tls, stream))
         .await
-        .context("TLS handshake timed out")?
-        .context("TLS handshake failed")?;
+        .context("TLS handshake timed out")??;
 
     let cert = inner
         .get_ref()
