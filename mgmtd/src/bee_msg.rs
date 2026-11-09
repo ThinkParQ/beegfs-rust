@@ -23,6 +23,7 @@ mod common;
 mod ack;
 mod authenticate_channel;
 mod change_target_consistency_states;
+mod get_identities;
 mod get_mirror_buddy_groups;
 mod get_node_capacity_pools;
 mod get_nodes;
@@ -169,6 +170,7 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
         {buddy_group::SetMirrorBuddyGroupResp => _, true, "SetMirrorBuddyGroupResp"}
         {misc::Ack => _, true, "Ack"}
         {misc::AuthenticateChannel => _, false, "Authenticate connection"}
+        {misc::GetIdentities => R, false, "Get identities"}
         {misc::GetNodeCapacityPools => R, false, "Get capacity pools"}
         {misc::PeerInfo => _, false, "PeerInfo"}
         {misc::RefreshCapacityPools => R, true, "Refresh capacity pools"}

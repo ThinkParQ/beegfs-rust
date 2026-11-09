@@ -155,3 +155,28 @@ pub struct RegisterIdentityResp {
 impl Msg for RegisterIdentityResp {
     const ID: MsgId = 1083;
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetIdentities {}
+
+impl Msg for GetIdentities {
+    const ID: MsgId = 1084;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct IdentityKey {
+    #[bee_serde(as = CStr<0>)]
+    pub key_id: Vec<u8>,
+    pub node_type: u8,
+    pub node_id: NodeId,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct GetIdentitiesResp {
+    #[bee_serde(as = Seq<true, _>)]
+    pub keys: Vec<IdentityKey>,
+}
+
+impl Msg for GetIdentitiesResp {
+    const ID: MsgId = 1085;
+}
