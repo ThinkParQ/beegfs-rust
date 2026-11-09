@@ -7,13 +7,29 @@ use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
 use crate::conn::{CONNECT_STREAM_TIME_LIMIT, ConnCrypto, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
 use crate::types::{AuthSecret, Uid};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use beecrypt::{KeyPairId, Role};
 use std::fmt::Debug;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
+
+pub trait PeerIdLookup: Debug + Send + Sync + 'static {
+    fn expected_peer_id(
+        &self,
+        node_uid: Uid,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<KeyPairId>>> + Send + '_>>;
+}
+
+#[derive(Debug, Clone)]
+pub struct OutgoingCrypto {
+    pub crypto: ConnCrypto,
+    pub peer_ids: Arc<dyn PeerIdLookup>,
+}
 
 /// The connection pool.
 ///
@@ -28,7 +44,7 @@ pub struct Pool {
     store: Store<Uid>,
     udp_socket: Arc<UdpSocket>,
     auth_secret: Option<AuthSecret>,
-    crypto: Option<ConnCrypto>,
+    crypto: Option<OutgoingCrypto>,
     use_ipv6: bool,
 }
 
@@ -38,7 +54,7 @@ impl Pool {
         udp_socket: Arc<UdpSocket>,
         connection_limit: usize,
         auth_secret: Option<AuthSecret>,
-        crypto: Option<ConnCrypto>,
+        crypto: Option<OutgoingCrypto>,
         use_ipv6: bool,
     ) -> Self {
         Self {
@@ -129,13 +145,18 @@ impl Pool {
 
         // 2. Obtain a permit and try to open a new stream on each available address
         if let Some(permit) = self.store.try_acquire_permit(node_uid) {
-            if let Some(ref crypto) = self.crypto {
-                bail!(
-                    "Opening a {:?} stream to node with uid {node_uid} is not supported yet: \
-                    No expected key pair ID is known for the peer",
-                    crypto.mode()
-                );
-            }
+            let expected_peer_id = match self.crypto {
+                Some(ref crypto) => Some(
+                    crypto
+                        .peer_ids
+                        .expected_peer_id(node_uid)
+                        .await?
+                        .ok_or_else(|| {
+                            anyhow!("No key pair ID is known for node with uid {node_uid}")
+                        })?,
+                ),
+                None => None,
+            };
 
             let Some(addrs) = self.store.get_node_addrs(node_uid) else {
                 bail!("No available addresses for node with uid {node_uid}");
@@ -159,7 +180,18 @@ impl Pool {
                         };
 
                         // Authenticate to the peer if required
-                        if let Some(auth_secret) = self.auth_secret {
+                        if let Some(ref crypto) = self.crypto {
+                            stream
+                                .as_mut()
+                                .handshake(
+                                    Role::Initiator,
+                                    &crypto.crypto,
+                                    expected_peer_id,
+                                    GENERIC_STREAM_TIME_LIMIT,
+                                )
+                                .await
+                                .with_context(err_context)?;
+                        } else if let Some(auth_secret) = self.auth_secret {
                             // The provided buffer contains the actual message to be sent later -
                             // obtain an additional one for the auth message
                             let mut auth_buf = self.store.pop_buf_or_create();
@@ -312,5 +344,120 @@ impl Pool {
 
     pub fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
         self.store.replace_node_addrs(node_uid, new_addrs)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bee_msg::misc::{GetIdentities, GetIdentitiesResp, IdentityKey};
+    use crate::conn::msg_dispatch::{DispatchRequest, Request};
+    use crate::conn::{IdentityId, incoming};
+    use crate::run_state;
+    use beecrypt::{KeyPair, Mode};
+    use std::net::Ipv4Addr;
+
+    #[derive(Clone, Debug)]
+    struct TestDispatch {
+        known: KeyPairId,
+    }
+
+    impl DispatchRequest for TestDispatch {
+        async fn dispatch_request(&self, req: impl Request) -> Result<()> {
+            req.respond(&GetIdentitiesResp {
+                keys: vec![IdentityKey {
+                    key_id: b"key".to_vec(),
+                    node_type: 2,
+                    node_id: 7,
+                }],
+            })
+            .await
+        }
+
+        async fn lookup_identity(&self, key_id: KeyPairId) -> Result<Option<IdentityId>> {
+            Ok((key_id == self.known).then_some(1))
+        }
+    }
+
+    #[derive(Debug)]
+    struct FixedPeerId(KeyPairId);
+
+    impl PeerIdLookup for FixedPeerId {
+        fn expected_peer_id(
+            &self,
+            _node_uid: Uid,
+        ) -> Pin<Box<dyn Future<Output = Result<Option<KeyPairId>>> + Send + '_>> {
+            Box::pin(async move { Ok(Some(self.0)) })
+        }
+    }
+
+    fn crypto() -> ConnCrypto {
+        let pem = KeyPair::generate().unwrap();
+        ConnCrypto::new(Mode::Encrypted, KeyPair::load(pem.as_bytes()).unwrap())
+    }
+
+    async fn request(
+        client: &ConnCrypto,
+        known_by_server: KeyPairId,
+        expected: Option<KeyPairId>,
+    ) -> Result<GetIdentitiesResp> {
+        let server = crypto();
+        let expected = expected.unwrap_or_else(|| server.key_id());
+
+        let addr = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let (run_state, _control) = run_state::new();
+        incoming::listen_tcp(
+            addr,
+            TestDispatch {
+                known: known_by_server,
+            },
+            false,
+            Some(server),
+            run_state,
+        )
+        .await
+        .unwrap();
+
+        let udp = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
+        let pool = Pool::new(
+            udp,
+            2,
+            None,
+            Some(OutgoingCrypto {
+                crypto: client.clone(),
+                peer_ids: Arc::new(FixedPeerId(expected)),
+            }),
+            false,
+        );
+        pool.replace_node_addrs(1, [addr]);
+
+        let (resp, _): (GetIdentitiesResp, Header) = pool.request(1, &GetIdentities {}).await?;
+        let (again, _): (GetIdentitiesResp, Header) = pool.request(1, &GetIdentities {}).await?;
+        assert_eq!(resp, again);
+        Ok(resp)
+    }
+
+    #[tokio::test]
+    async fn registered() {
+        let client = crypto();
+        let resp = request(&client, client.key_id(), None).await.unwrap();
+        assert_eq!(resp.keys[0].node_id, 7);
+    }
+
+    #[tokio::test]
+    async fn unregistered() {
+        let client = crypto();
+        request(&client, crypto().key_id(), None).await.unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn wrong_peer() {
+        let client = crypto();
+        request(&client, client.key_id(), Some(crypto().key_id()))
+            .await
+            .unwrap_err();
     }
 }

@@ -14,23 +14,26 @@ mod types;
 
 use crate::app::RuntimeApp;
 use crate::config::Config;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use app::App;
 use db::config::Config as dbConfig;
 use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use protobuf::license::CertType;
+use rusqlite::OptionalExtension;
 use shared::bee_msg::target::RefreshTargetStates;
-use shared::conn::outgoing::Pool;
+use shared::conn::beecrypt::KeyPairId;
+use shared::conn::outgoing::{OutgoingCrypto, PeerIdLookup, Pool};
 use shared::conn::{ConnCrypto, incoming};
 use shared::nic::Nic;
 use shared::run_state::{self, RunStateControl};
-use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType};
+use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType, Uid};
 use sqlite::TransactionExt;
 use sqlite_check::sql;
 use std::collections::HashSet;
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
@@ -77,16 +80,19 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     // UDP socket for in- and outgoing messages
     let udp_socket = Arc::new(UdpSocket::bind(beemsg_serve_addr).await?);
 
+    let db = sqlite::Connections::new(info.user_config.db_file.as_path());
+
     // Node address store and connection pool
     let conn_pool = Pool::new(
         udp_socket.clone(),
         info.user_config.connection_limit,
         info.auth_secret,
-        info.conn_crypto.clone(),
+        info.conn_crypto.clone().map(|crypto| OutgoingCrypto {
+            crypto,
+            peer_ids: Arc::new(DbPeerIds(db.clone())),
+        }),
         info.use_ipv6,
     );
-
-    let db = sqlite::Connections::new(info.user_config.db_file.as_path());
 
     let need_migration = db
         .read_tx(|tx| Ok(sqlite::check_schema(tx, db::MIGRATIONS)))
@@ -191,6 +197,43 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         run_state_control,
         shutdown_client_rx,
     })
+}
+
+#[derive(Debug)]
+struct DbPeerIds(sqlite::Connections);
+
+impl PeerIdLookup for DbPeerIds {
+    fn expected_peer_id(
+        &self,
+        node_uid: Uid,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<KeyPairId>>> + Send + '_>> {
+        Box::pin(async move {
+            let key: Option<String> = self
+                .0
+                .read_tx(move |tx| {
+                    Ok(tx
+                        .query_row(
+                            sql!(
+                                "SELECT k.key FROM nodes AS n
+                                INNER JOIN identity_to_node AS itn USING (node_type, node_id)
+                                INNER JOIN keys AS k USING (identity_id)
+                                WHERE n.node_uid = ?1
+                                ORDER BY k.key_id DESC LIMIT 1"
+                            ),
+                            [node_uid],
+                            |row| row.get(0),
+                        )
+                        .optional()?)
+                })
+                .await?;
+
+            key.map(|key| {
+                key.parse()
+                    .map_err(|err| anyhow!("Invalid key pair ID {key} in database: {err}"))
+            })
+            .transpose()
+        })
+    }
 }
 
 /// Db schema migration

@@ -22,7 +22,7 @@ impl HandleWithResponse for RegisterIdentity {
                 .and_then(|s| s.parse::<KeyPairId>().ok()),
         );
 
-        let Some((name, key_id)) = parsed.filter(|(name, _)| !name.is_empty()) else {
+        let Some((name, key_id)) = parsed else {
             log::warn!(
                 "Peer {:?} tried to register an identity with an invalid name or key pair ID",
                 req.addr()
@@ -32,21 +32,12 @@ impl HandleWithResponse for RegisterIdentity {
             });
         };
 
+        let name = Some(name).filter(|name| !name.is_empty());
+
         let identity_id: IdentityId = app
             .write_tx({
                 let name = name.clone();
                 move |tx| {
-                    tx.execute_cached(
-                        sql!("INSERT INTO identities (name) VALUES (?1) ON CONFLICT DO NOTHING"),
-                        [&name],
-                    )?;
-
-                    let identity_id = tx.query_row_cached(
-                        sql!("SELECT identity_id FROM identities WHERE name = ?1"),
-                        [&name],
-                        |row| row.get(0),
-                    )?;
-
                     let key = key_id.to_string();
                     let existing: Option<IdentityId> = tx
                         .query_row_cached(
@@ -55,6 +46,31 @@ impl HandleWithResponse for RegisterIdentity {
                             |row| row.get(0),
                         )
                         .optional()?;
+
+                    let identity_id = match (name, existing) {
+                        (None, Some(id)) => return Ok(id),
+                        (None, None) => {
+                            tx.execute_cached(
+                                sql!("INSERT INTO identities (name) VALUES (NULL)"),
+                                [],
+                            )?;
+                            tx.last_insert_rowid()
+                        }
+                        (Some(name), _) => {
+                            tx.execute_cached(
+                                sql!(
+                                    "INSERT INTO identities (name) VALUES (?1)
+                                    ON CONFLICT DO NOTHING"
+                                ),
+                                [&name],
+                            )?;
+                            tx.query_row_cached(
+                                sql!("SELECT identity_id FROM identities WHERE name = ?1"),
+                                [&name],
+                                |row| row.get(0),
+                            )?
+                        }
+                    };
 
                     match existing {
                         Some(id) if id == identity_id => {}
@@ -137,5 +153,34 @@ mod test {
         .handle(&app, &mut req)
         .await
         .unwrap_err();
+    }
+
+    #[tokio::test]
+    async fn register_anonymous() {
+        let app = TestApp::new().await;
+        let mut ids = vec![];
+
+        for c in ["a", "a", "b"] {
+            let key_id: KeyPairId = format!("sha256:{}", c.repeat(64)).parse().unwrap();
+            let mut req = TestRequest::new(Header::default());
+            req.identity = PeerIdentity::Unregistered(key_id);
+
+            let resp = RegisterIdentity {
+                name: vec![],
+                key_id: key_id.to_string().into_bytes(),
+            }
+            .handle(&app, &mut req)
+            .await
+            .unwrap();
+            assert_eq!(resp.result, OpsErr::SUCCESS);
+
+            let PeerIdentity::Registered { identity_id, .. } = req.identity else {
+                panic!("identity not registered");
+            };
+            ids.push(identity_id);
+        }
+
+        assert_eq!(ids[0], ids[1]);
+        assert_ne!(ids[0], ids[2]);
     }
 }
