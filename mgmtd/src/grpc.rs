@@ -7,6 +7,7 @@ use crate::types::{ResolveEntityId, SqliteEnumExt};
 use anyhow::{Context as AContext, Result, anyhow, bail};
 use protobuf::{beegfs as pb, management as pm};
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, named_params, params};
+use shared::conn::PeerIdentity;
 use shared::grpc::*;
 use shared::impl_grpc_handler;
 use shared::run_state::RunStateHandle;
@@ -17,10 +18,12 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
+use tokio_rustls::TlsAcceptor;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 
 mod common;
+mod conn;
 
 mod assign_pool;
 mod create_buddy_group;
@@ -184,34 +187,28 @@ impl pm::management_server::Management for ManagementService {
 
 /// Serve gRPC requests on the `grpc_port` extracted from the config
 pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()> {
-    let builder = Server::builder();
-
-    // If gRPC TLS is enabled, configure the server accordingly
-    let mut builder = if !app.info.user_config.tls_disable {
-        let tls_cert = std::fs::read(&app.info.user_config.tls_cert_file).with_context(|| {
-            format!(
-                "Could not read TLS certificate file {:?}",
-                &app.info.user_config.tls_cert_file
-            )
-        })?;
-        let tls_key = std::fs::read(&app.info.user_config.tls_key_file).with_context(|| {
-            format!(
-                "Could not read TLS key file {:?}",
-                &app.info.user_config.tls_key_file
-            )
-        })?;
-
-        builder
-            .tls_config(ServerTlsConfig::new().identity(Identity::from_pem(tls_cert, tls_key)))?
-    } else {
-        log::warn!("gRPC server running with TLS disabled");
-        builder
-    };
-
     let app2 = app.clone();
     let service = pm::management_server::ManagementServer::with_interceptor(
         ManagementService { app: app.clone() },
         move |req: Request<()>| {
+            if app2.info.conn_crypto.is_some() {
+                let Some(info) = req.extensions().get::<conn::ConnInfo>() else {
+                    return Err(Status::unauthenticated("Connection has no identity"));
+                };
+
+                if let PeerIdentity::Unregistered(key_id) = info.identity {
+                    log::warn!(
+                        "Denied gRPC request from {}: Key pair ID {key_id} is not registered",
+                        info.addr
+                    );
+                    return Err(Status::unauthenticated(format!(
+                        "Key pair ID {key_id} is not registered"
+                    )));
+                }
+
+                return Ok(req);
+            }
+
             // If authentication is enabled, require the secret passed with every request
             if let Some(required_secret) = app2.info.auth_secret {
                 let check = || -> Result<()> {
@@ -245,6 +242,63 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
         },
         app.info.user_config.grpc_port,
     );
+
+    if let Some(ref crypto) = app.info.conn_crypto {
+        let config = crypto
+            .grpc_server_config()
+            .map_err(|err| anyhow!("Creating gRPC TLS config failed: {err}"))?;
+
+        let listener = std::net::TcpListener::bind(serve_addr)
+            .with_context(|| format!("Could not bind gRPC listener to {serve_addr}"))?;
+        listener.set_nonblocking(true)?;
+        let listener = tokio::net::TcpListener::from_std(listener)?;
+
+        let incoming = conn::listen(
+            app.clone(),
+            listener,
+            TlsAcceptor::from(config),
+            shutdown.clone(),
+        );
+
+        log::info!(
+            "Serving gRPC requests on {serve_addr} using the {:?} connection key pair",
+            crypto.mode()
+        );
+
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(service)
+                .serve_with_incoming_shutdown(incoming, shutdown.wait_for_shutdown())
+                .await
+                .ok();
+        });
+
+        return Ok(());
+    }
+
+    let builder = Server::builder();
+
+    // If gRPC TLS is enabled, configure the server accordingly
+    let mut builder = if !app.info.user_config.tls_disable {
+        let tls_cert = std::fs::read(&app.info.user_config.tls_cert_file).with_context(|| {
+            format!(
+                "Could not read TLS certificate file {:?}",
+                &app.info.user_config.tls_cert_file
+            )
+        })?;
+        let tls_key = std::fs::read(&app.info.user_config.tls_key_file).with_context(|| {
+            format!(
+                "Could not read TLS key file {:?}",
+                &app.info.user_config.tls_key_file
+            )
+        })?;
+
+        builder
+            .tls_config(ServerTlsConfig::new().identity(Identity::from_pem(tls_cert, tls_key)))?
+    } else {
+        log::warn!("gRPC server running with TLS disabled");
+        builder
+    };
 
     log::info!("Serving gRPC requests on {serve_addr}");
 

@@ -53,6 +53,10 @@ impl ConnCrypto {
     pub fn key_id(&self) -> KeyPairId {
         self.keypair.id()
     }
+
+    pub fn grpc_server_config(&self) -> beecrypt::Result<Arc<beecrypt::rustls::ServerConfig>> {
+        self.keypair.grpc_server_config()
+    }
 }
 
 impl Debug for ConnCrypto {

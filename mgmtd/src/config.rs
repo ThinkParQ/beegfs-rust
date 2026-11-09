@@ -476,6 +476,10 @@ impl Config {
             bail!("Provided file system UUID is not a valid v4 UUID");
         }
 
+        if self.tls_disable && self.conn_protocol != ConnProtocol::Legacy {
+            bail!("gRPC TLS can only be disabled with the legacy connection protocol");
+        }
+
         if self.connection_limit < 1 {
             bail!("Connection limit cannot be smaller than 1");
         }

@@ -46,6 +46,7 @@ tokio = { workspace = true, features = [
     "io-util",
 ] }
 tokio-stream = { workspace = true }
+tokio-rustls = { version = "0.26", default-features = false }
 toml = "0"
 tonic = { workspace = true }
 uuid = { workspace = true }
