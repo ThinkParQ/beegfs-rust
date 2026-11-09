@@ -6,13 +6,13 @@ CREATE TABLE identities (
 CREATE INDEX index_identities_1 ON identities(name);
 
 CREATE TABLE identity_to_node (
-    identity_id INTEGER NOT NULL
+    identity_id INTEGER PRIMARY KEY
         REFERENCES identities (identity_id) ON DELETE CASCADE,
     node_type INTEGER NOT NULL
         REFERENCES node_types (node_type) ON DELETE RESTRICT,
     node_id INTEGER NOT NULL,
 
-    PRIMARY KEY (identity_id, node_type, node_id),
+    UNIQUE (node_type, node_id),
     FOREIGN KEY (node_type, node_id) REFERENCES nodes (node_type, node_id) ON DELETE CASCADE
 ) STRICT;
 

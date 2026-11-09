@@ -2,9 +2,10 @@ use super::*;
 use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
 use protobuf::license::VerifyResult;
-use rusqlite::{Transaction, params};
+use rusqlite::{OptionalExtension, Transaction, params};
 use shared::bee_msg::node::*;
 use shared::bee_msg::target::*;
+use shared::conn::IdentityId;
 use shared::types::{NodeId, TargetId};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -13,8 +14,57 @@ use std::time::Duration;
 // Maximum number of clients that can register if license verification fails or license is invalid
 const MAX_NUM_CLIENTS: u32 = 5;
 
+fn map_identity(
+    tx: &Transaction,
+    identity_id: IdentityId,
+    node_type: NodeType,
+    node_id: NodeId,
+) -> Result<()> {
+    let node_identity: Option<IdentityId> = tx
+        .query_row(
+            sql!("SELECT identity_id FROM identity_to_node WHERE node_type = ?1 AND node_id = ?2"),
+            params![node_type.sql_variant(), node_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    match node_identity {
+        Some(id) if id == identity_id => return Ok(()),
+        Some(id) => bail!(
+            "{node_type} node {node_id} is already mapped to identity {id}, not to {identity_id}"
+        ),
+        None => {}
+    }
+
+    let identity_node: Option<(NodeType, NodeId)> = tx
+        .query_row(
+            sql!("SELECT node_type, node_id FROM identity_to_node WHERE identity_id = ?1"),
+            [identity_id],
+            |row| Ok((NodeType::from_row(row, 0)?, row.get(1)?)),
+        )
+        .optional()?;
+
+    if let Some((t, n)) = identity_node {
+        bail!("Identity {identity_id} is already mapped to {t} node {n}");
+    }
+
+    tx.execute(
+        sql!("INSERT INTO identity_to_node (identity_id, node_type, node_id) VALUES (?1, ?2, ?3)"),
+        params![identity_id, node_type.sql_variant(), node_id],
+    )?;
+
+    log::info!("Mapped {node_type} node {node_id} to identity {identity_id}");
+
+    Ok(())
+}
+
 /// Processes incoming node information. Registers new nodes if config allows it
-pub(super) async fn update_node(msg: RegisterNode, app: &impl App, reject: bool) -> Result<NodeId> {
+pub(super) async fn update_node(
+    msg: RegisterNode,
+    app: &impl App,
+    reject: bool,
+    identity_id: Option<IdentityId>,
+) -> Result<NodeId> {
     let nics = msg.nics.clone();
     let requested_node_id = msg.node_id;
     let registration_disable = app.static_info().user_config.registration_disable;
@@ -211,6 +261,10 @@ client version < 8.0)"
 
                 (node, true)
             };
+
+            if let Some(identity_id) = identity_id {
+                map_identity(tx, identity_id, node.node_type(), node.num_id())?;
+            }
 
             // Update the corresponding nic lists
             db::node_nic::replace(

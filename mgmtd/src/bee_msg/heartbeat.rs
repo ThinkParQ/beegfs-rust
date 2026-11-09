@@ -25,6 +25,7 @@ impl HandleWithResponse for Heartbeat {
             },
             app,
             false,
+            None,
         )
         .await?;
 
