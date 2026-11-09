@@ -1,8 +1,55 @@
 use super::*;
-use rusqlite::OptionalExtension;
+use rusqlite::{OptionalExtension, Transaction};
 use shared::bee_msg::misc::*;
 use shared::conn::beecrypt::KeyPairId;
 use shared::conn::{IdentityId, PeerIdentity};
+
+pub(crate) fn register_key(
+    tx: &Transaction,
+    name: Option<String>,
+    key_id: &KeyPairId,
+) -> Result<IdentityId> {
+    let key = key_id.to_string();
+    let existing: Option<IdentityId> = tx
+        .query_row_cached(
+            sql!("SELECT identity_id FROM keys WHERE key = ?1"),
+            [&key],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let identity_id = match (name, existing) {
+        (None, Some(id)) => return Ok(id),
+        (None, None) => {
+            tx.execute_cached(sql!("INSERT INTO identities (name) VALUES (NULL)"), [])?;
+            tx.last_insert_rowid()
+        }
+        (Some(name), _) => {
+            tx.execute_cached(
+                sql!("INSERT INTO identities (name) VALUES (?1) ON CONFLICT DO NOTHING"),
+                [&name],
+            )?;
+            tx.query_row_cached(
+                sql!("SELECT identity_id FROM identities WHERE name = ?1"),
+                [&name],
+                |row| row.get(0),
+            )?
+        }
+    };
+
+    match existing {
+        Some(id) if id == identity_id => {}
+        Some(_) => bail!("Key pair ID {key} is already registered to another identity"),
+        None => {
+            tx.execute_cached(
+                sql!("INSERT INTO keys (key, identity_id) VALUES (?1, ?2)"),
+                rusqlite::params![key, identity_id],
+            )?;
+        }
+    }
+
+    Ok(identity_id)
+}
 
 impl HandleWithResponse for RegisterIdentity {
     type Response = RegisterIdentityResp;
@@ -34,59 +81,10 @@ impl HandleWithResponse for RegisterIdentity {
 
         let name = Some(name).filter(|name| !name.is_empty());
 
-        let identity_id: IdentityId = app
+        let identity_id = app
             .write_tx({
                 let name = name.clone();
-                move |tx| {
-                    let key = key_id.to_string();
-                    let existing: Option<IdentityId> = tx
-                        .query_row_cached(
-                            sql!("SELECT identity_id FROM keys WHERE key = ?1"),
-                            [&key],
-                            |row| row.get(0),
-                        )
-                        .optional()?;
-
-                    let identity_id = match (name, existing) {
-                        (None, Some(id)) => return Ok(id),
-                        (None, None) => {
-                            tx.execute_cached(
-                                sql!("INSERT INTO identities (name) VALUES (NULL)"),
-                                [],
-                            )?;
-                            tx.last_insert_rowid()
-                        }
-                        (Some(name), _) => {
-                            tx.execute_cached(
-                                sql!(
-                                    "INSERT INTO identities (name) VALUES (?1)
-                                    ON CONFLICT DO NOTHING"
-                                ),
-                                [&name],
-                            )?;
-                            tx.query_row_cached(
-                                sql!("SELECT identity_id FROM identities WHERE name = ?1"),
-                                [&name],
-                                |row| row.get(0),
-                            )?
-                        }
-                    };
-
-                    match existing {
-                        Some(id) if id == identity_id => {}
-                        Some(_) => {
-                            bail!("Key pair ID {key} is already registered to another identity")
-                        }
-                        None => {
-                            tx.execute_cached(
-                                sql!("INSERT INTO keys (key, identity_id) VALUES (?1, ?2)"),
-                                rusqlite::params![key, identity_id],
-                            )?;
-                        }
-                    }
-
-                    Ok(identity_id)
-                }
+                move |tx| register_key(tx, name, &key_id)
             })
             .await?;
 

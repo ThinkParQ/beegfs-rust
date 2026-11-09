@@ -38,6 +38,7 @@ mod map_targets_resp;
 mod peer_info;
 mod refresh_capacity_pools;
 mod register_identity;
+pub(crate) use register_identity::register_key;
 mod register_node;
 mod register_target;
 mod remove_node;

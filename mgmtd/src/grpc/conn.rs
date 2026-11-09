@@ -7,6 +7,7 @@ use shared::run_state::RunStateHandle;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -23,7 +24,7 @@ const HANDSHAKE_TIME_LIMIT: Duration = Duration::from_secs(5);
 #[derive(Clone, Debug)]
 pub(crate) struct ConnInfo {
     pub addr: SocketAddr,
-    pub identity: PeerIdentity,
+    pub identity: Arc<Mutex<PeerIdentity>>,
 }
 
 pub(crate) struct Conn {
@@ -153,6 +154,9 @@ async fn accept(
 
     Ok(Conn {
         inner,
-        info: ConnInfo { addr, identity },
+        info: ConnInfo {
+            addr,
+            identity: Arc::new(Mutex::new(identity)),
+        },
     })
 }

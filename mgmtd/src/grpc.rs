@@ -21,6 +21,7 @@ use std::pin::Pin;
 use tokio_rustls::TlsAcceptor;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
+use tower::util::MapRequestLayer;
 
 mod common;
 mod conn;
@@ -33,6 +34,7 @@ mod delete_node;
 mod delete_pool;
 mod delete_target;
 mod get_buddy_groups;
+mod get_identities;
 mod get_license;
 mod get_nodes;
 mod get_pools;
@@ -41,6 +43,7 @@ mod get_quota_usage;
 mod get_targets;
 mod mirror_root_inode;
 mod modify_buddy_group;
+mod register_identity;
 mod reset_target_registration_token;
 mod set_alias;
 mod set_default_quota_limits;
@@ -179,10 +182,50 @@ impl pm::management_server::Management for ManagementService {
     }
 
     impl_grpc_handler! {
+        get_identities,
+        pm::GetIdentitiesRequest => pm::GetIdentitiesResponse,
+        "Get identities"
+    }
+
+    impl_grpc_handler! {
         get_license,
         pm::GetLicenseRequest => pm::GetLicenseResponse,
         "Get license"
     }
+
+    fn register_identity<'a, 'async_trait>(
+        &'a self,
+        req: Request<pm::RegisterIdentityRequest>,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<Response<pm::RegisterIdentityResponse>, Status>>
+                + Send
+                + 'async_trait,
+        >,
+    >
+    where
+        'a: 'async_trait,
+        Self: 'async_trait,
+    {
+        Box::pin(async move {
+            let info = req.extensions().get::<conn::ConnInfo>().cloned();
+            register_identity::register_identity(&self.app, info, req.into_inner())
+                .await
+                .map(Response::new)
+                .map_err(|err| process_grpc_handler_error(err.context("Register identity")))
+        })
+    }
+}
+
+const REGISTER_IDENTITY_PATH: &str = "/management.Management/RegisterIdentity";
+
+#[derive(Clone, Debug)]
+struct GrpcPath(String);
+
+fn record_path<B>(mut req: tonic::codegen::http::Request<B>) -> tonic::codegen::http::Request<B> {
+    let path = GrpcPath(req.uri().path().to_owned());
+    req.extensions_mut().insert(path);
+    req
 }
 
 /// Serve gRPC requests on the `grpc_port` extracted from the config
@@ -196,7 +239,12 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
                     return Err(Status::unauthenticated("Connection has no identity"));
                 };
 
-                if let PeerIdentity::Unregistered(key_id) = info.identity {
+                let identity = *info.identity.lock().unwrap();
+                let path = req.extensions().get::<GrpcPath>().map(|p| p.0.as_str());
+
+                if let PeerIdentity::Unregistered(key_id) = identity
+                    && path != Some(REGISTER_IDENTITY_PATH)
+                {
                     log::warn!(
                         "Denied gRPC request from {}: Key pair ID {key_id} is not registered",
                         info.addr
@@ -267,6 +315,7 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
 
         tokio::spawn(async move {
             Server::builder()
+                .layer(MapRequestLayer::new(record_path))
                 .add_service(service)
                 .serve_with_incoming_shutdown(incoming, shutdown.wait_for_shutdown())
                 .await
