@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+aws-lc-rs = "1"
 beecrypt = { path = "../beegfs-crypto" }
 clap = { version = "4", features = ["derive"] }
 env_logger = "0"
@@ -20,11 +21,10 @@ log = { version = "0", features = ["std"] }
 prost = "0.14"
 protobuf = { path = "../protobuf" }
 regex = "1"
-ring = "0"
 rusqlite = { version = "0", features = ["bundled", "vtab", "array", "fallible_uint"] }
 serde = "1"
 thiserror = "~2"
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
 tokio-stream = { version = "0" }
-tonic = { version = "0.14", features = ["tls-ring"] }
+tonic = { version = "0.14", features = ["tls-aws-lc"] }
 uuid = { version = "1", features = ["v4"] }

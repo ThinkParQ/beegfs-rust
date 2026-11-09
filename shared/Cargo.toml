@@ -11,16 +11,13 @@ publish.workspace = true
 bee_serde_derive = { path = "../bee_serde_derive" }
 
 anyhow = { workspace = true }
+aws-lc-rs = { workspace = true }
 beecrypt = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "0"
 protobuf = { workspace = true, optional = true }
 regex = { workspace = true }
-# This is currently used to generate sha256 hashes, but only because tonic->rustls already depends
-# on it. Since this is annoying to have with its weird license, if tonic doesn't need this anymore
-# at some point, we should think about removing it.
-ring = { workspace = true}
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [

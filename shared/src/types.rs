@@ -293,7 +293,7 @@ impl AuthSecret {
     /// most significant bytes of the hash in little endian order. Matches the behavior of other
     /// implementations.
     pub fn hash_from_bytes(input: impl AsRef<[u8]>) -> Self {
-        let digest = ring::digest::digest(&ring::digest::SHA256, input.as_ref());
+        let digest = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, input.as_ref());
         let hash: [u8; 8] = digest
             .as_ref()
             .get(0..8)
