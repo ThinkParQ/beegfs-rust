@@ -1,18 +1,60 @@
 use anyhow::{Context, Result, anyhow};
 use log::LevelFilter;
-use mgmtd::config::LogTarget;
+use mgmtd::config::{Config, LogTarget};
 use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
+use shared::conn::ConnCrypto;
+use shared::conn::beecrypt::KeyPair;
 use shared::journald_logger;
 use shared::nic::check_ipv6;
 use shared::types::AuthSecret;
 use std::backtrace::{Backtrace, BacktraceStatus};
 use std::fmt::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::{fs, panic};
 use tokio::signal::unix::{SignalKind, signal};
 use uuid::Uuid;
+use zeroize::Zeroizing;
+
+fn load_conn_crypto(config: &Config) -> Result<Option<ConnCrypto>> {
+    let Some(mode) = config.conn_protocol.mode() else {
+        return Ok(None);
+    };
+
+    let path = &config.conn_key_file;
+
+    if config.conn_key_generate && !path.try_exists()? {
+        let pem = KeyPair::generate()
+            .map_err(|err| anyhow!("Generating connection key pair failed: {err}"))?;
+
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .with_context(|| format!("Could not create connection key file {path:?}"))?;
+        std::io::Write::write_all(&mut file, pem.as_bytes())
+            .with_context(|| format!("Could not write connection key file {path:?}"))?;
+
+        log::warn!("Generated new connection key file {path:?}");
+    }
+
+    let pem = Zeroizing::new(
+        fs::read(path).with_context(|| format!("Could not read connection key file {path:?}"))?,
+    );
+    let keypair = KeyPair::load(&pem)
+        .map_err(|err| anyhow!("Loading connection key file {path:?} failed: {err}"))?;
+
+    log::warn!(
+        "Using connection protocol {:?} with key pair ID {}",
+        config.conn_protocol,
+        keypair.id()
+    );
+
+    Ok(Some(ConnCrypto::new(mode, keypair)))
+}
 
 fn main() -> Result<(), i32> {
     inner_main().map_err(|err| {
@@ -108,6 +150,8 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
         None
     };
 
+    let conn_crypto = load_conn_crypto(&user_config)?;
+
     let use_ipv6 = check_ipv6(user_config.beemsg_port, !user_config.ipv6_disable);
     let network_addrs = shared::nic::query_nics(&user_config.interfaces, use_ipv6)?;
 
@@ -136,6 +180,7 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
                 use_ipv6,
                 user_config,
                 auth_secret,
+                conn_crypto,
                 network_addrs,
             },
             license,

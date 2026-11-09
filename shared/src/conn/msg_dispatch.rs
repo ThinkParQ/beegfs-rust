@@ -1,10 +1,12 @@
 //! Facilities for dispatching TCP and UDP messages to their message handlers
 
 use super::stream::Stream;
+use super::{IdentityId, PeerIdentity};
 use crate::bee_msg::{Header, Msg, deserialize_body, serialize};
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::GENERIC_STREAM_TIME_LIMIT;
 use anyhow::Result;
+use beecrypt::KeyPairId;
 use std::fmt::Debug;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -15,6 +17,10 @@ use tokio::net::UdpSocket;
 /// pool.
 pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
     fn dispatch_request(&self, chn: impl Request) -> impl Future<Output = Result<()>> + Send;
+    fn lookup_identity(
+        &self,
+        key_id: KeyPairId,
+    ) -> impl Future<Output = Result<Option<IdentityId>>> + Send;
 }
 
 /// Defines the required functionality of the object containing the request data (e.g. message and
@@ -25,6 +31,8 @@ pub trait DispatchRequest: Clone + Debug + Send + Sync + 'static {
 pub trait Request: Send + Sync {
     fn respond<M: Msg + Serializable>(self, msg: &M) -> impl Future<Output = Result<()>> + Send;
     fn authenticate_connection(&mut self);
+    fn peer_identity(&self) -> PeerIdentity;
+    fn set_peer_identity(&mut self, identity: PeerIdentity);
     fn addr(&self) -> SocketAddr;
     fn header(&self) -> &Header;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
@@ -55,6 +63,18 @@ impl Request for StreamRequest<'_> {
             );
             self.stream.authenticated = true;
         }
+    }
+
+    fn peer_identity(&self) -> PeerIdentity {
+        self.stream.identity
+    }
+
+    fn set_peer_identity(&mut self, identity: PeerIdentity) {
+        log::debug!(
+            "Setting identity of stream from {:?} to {identity:?}",
+            self.stream.addr()
+        );
+        self.stream.identity = identity;
     }
 
     fn addr(&self) -> SocketAddr {
@@ -96,6 +116,12 @@ impl Request for SocketRequest<'_> {
         // No authentication mechanism for sockets
     }
 
+    fn peer_identity(&self) -> PeerIdentity {
+        PeerIdentity::Legacy
+    }
+
+    fn set_peer_identity(&mut self, _identity: PeerIdentity) {}
+
     fn addr(&self) -> SocketAddr {
         self.peer_addr
     }
@@ -121,6 +147,7 @@ pub mod test {
     pub struct TestRequest {
         pub header: Header,
         pub authenticate_connection: bool,
+        pub identity: PeerIdentity,
     }
 
     impl TestRequest {
@@ -128,6 +155,7 @@ pub mod test {
             Self {
                 header,
                 authenticate_connection: false,
+                identity: PeerIdentity::Legacy,
             }
         }
     }
@@ -140,6 +168,14 @@ pub mod test {
 
         fn authenticate_connection(&mut self) {
             self.authenticate_connection = true;
+        }
+
+        fn peer_identity(&self) -> PeerIdentity {
+            self.identity
+        }
+
+        fn set_peer_identity(&mut self, identity: PeerIdentity) {
+            self.identity = identity;
         }
 
         fn addr(&self) -> SocketAddr {

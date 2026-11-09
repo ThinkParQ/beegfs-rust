@@ -5,7 +5,7 @@ use crate::bee_msg::{Header, Msg, deserialize_body, deserialize_header, serializ
 use crate::bee_serde::{Deserializable, Serializable};
 use crate::conn::store::StoredStream;
 use crate::conn::stream::Stream;
-use crate::conn::{CONNECT_STREAM_TIME_LIMIT, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
+use crate::conn::{CONNECT_STREAM_TIME_LIMIT, ConnCrypto, GENERIC_STREAM_TIME_LIMIT, TCP_BUF_LEN};
 use crate::types::{AuthSecret, Uid};
 use anyhow::{Context, Result, bail};
 use std::fmt::Debug;
@@ -28,6 +28,7 @@ pub struct Pool {
     store: Store<Uid>,
     udp_socket: Arc<UdpSocket>,
     auth_secret: Option<AuthSecret>,
+    crypto: Option<ConnCrypto>,
     use_ipv6: bool,
 }
 
@@ -37,11 +38,13 @@ impl Pool {
         udp_socket: Arc<UdpSocket>,
         connection_limit: usize,
         auth_secret: Option<AuthSecret>,
+        crypto: Option<ConnCrypto>,
         use_ipv6: bool,
     ) -> Self {
         Self {
             store: Store::new(connection_limit),
             auth_secret,
+            crypto,
             udp_socket,
             use_ipv6,
         }
@@ -125,6 +128,14 @@ impl Pool {
 
         // 2. Obtain a permit and try to open a new stream on each available address
         if let Some(permit) = self.store.try_acquire_permit(node_uid) {
+            if let Some(ref crypto) = self.crypto {
+                bail!(
+                    "Opening a {:?} stream to node with uid {node_uid} is not supported yet: \
+                    No expected key pair ID is known for the peer",
+                    crypto.mode()
+                );
+            }
+
             let Some(addrs) = self.store.get_node_addrs(node_uid) else {
                 bail!("No available addresses for node with uid {node_uid}");
             };

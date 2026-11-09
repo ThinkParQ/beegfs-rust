@@ -3,10 +3,11 @@
 use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::*;
-use crate::bee_msg::misc::AuthenticateChannel;
+use crate::bee_msg::misc::{AuthenticateChannel, RegisterIdentity};
 use crate::bee_msg::{Header, Msg, deserialize_header};
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
+use beecrypt::Role;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -35,6 +36,7 @@ pub async fn listen_tcp(
     listen_addr: SocketAddr,
     dispatch: impl DispatchRequest,
     stream_authentication_required: bool,
+    crypto: Option<ConnCrypto>,
     mut run_state: RunStateHandle,
 ) -> Result<()> {
     let listener = TcpListener::bind(listen_addr).await?;
@@ -62,6 +64,7 @@ pub async fn listen_tcp(
                         Stream::from_tcp_stream(stream, peer_addr),
                         dispatch.clone(),
                         stream_authentication_required,
+                        crypto.clone(),
                         run_state.clone(),
                     ));
                 }
@@ -81,9 +84,20 @@ async fn stream_loop(
     mut stream: Stream,
     dispatch: impl DispatchRequest,
     stream_authentication_required: bool,
+    crypto: Option<ConnCrypto>,
     mut run_state: RunStateHandle,
 ) {
     log::debug!("Accepted incoming stream from {:?}", stream.addr());
+
+    if let Some(crypto) = crypto
+        && let Err(err) = accept_identity(&mut stream, &dispatch, &crypto).await
+    {
+        log::error!(
+            "Establishing stream from {:?} failed: {err:#}",
+            stream.addr()
+        );
+        return;
+    }
 
     // Use one owned buffer for reading into and writing from.
     let mut buf = vec![0; TCP_BUF_LEN];
@@ -127,6 +141,37 @@ async fn stream_loop(
     }
 }
 
+async fn accept_identity(
+    stream: &mut Stream,
+    dispatch: &impl DispatchRequest,
+    crypto: &ConnCrypto,
+) -> Result<()> {
+    let key_id = stream
+        .handshake(Role::Responder, crypto, None, GENERIC_STREAM_TIME_LIMIT)
+        .await
+        .context("Handshake failed")?;
+
+    stream.identity = match dispatch
+        .lookup_identity(key_id)
+        .await
+        .context("Identity lookup failed")?
+    {
+        Some(identity_id) => PeerIdentity::Registered {
+            key_id,
+            identity_id,
+        },
+        None => PeerIdentity::Unregistered(key_id),
+    };
+
+    log::debug!(
+        "Established stream from {:?} with identity {:?}",
+        stream.addr(),
+        stream.identity
+    );
+
+    Ok(())
+}
+
 /// Reads in data from the given stream into the given buffer and forwards it to the dispatcher.
 /// Checks the authentication flag on the [`Stream`] if `stream_authentication_required` is set.
 ///
@@ -152,6 +197,15 @@ async fn read_stream(
     {
         bail!(
             "Stream is not authenticated and received message with id {}",
+            header.msg_id()
+        );
+    }
+
+    if let PeerIdentity::Unregistered(key_id) = stream.identity
+        && header.msg_id() != RegisterIdentity::ID
+    {
+        bail!(
+            "Stream peer with key pair ID {key_id} is not registered and sent message with id {}",
             header.msg_id()
         );
     }

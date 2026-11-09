@@ -21,8 +21,8 @@ use db::node_nic::ReplaceNic;
 use license::LicenseVerifier;
 use protobuf::license::CertType;
 use shared::bee_msg::target::RefreshTargetStates;
-use shared::conn::incoming;
 use shared::conn::outgoing::Pool;
+use shared::conn::{ConnCrypto, incoming};
 use shared::nic::Nic;
 use shared::run_state::{self, RunStateControl};
 use shared::types::{AuthSecret, MGMTD_UID, NicType, NodeId, NodeType};
@@ -42,6 +42,7 @@ use types::SqliteEnumExt;
 pub struct StaticInfo {
     pub user_config: Config,
     pub auth_secret: Option<AuthSecret>,
+    pub conn_crypto: Option<ConnCrypto>,
     pub network_addrs: Vec<Nic>,
     pub use_ipv6: bool,
 }
@@ -81,6 +82,7 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
         udp_socket.clone(),
         info.user_config.connection_limit,
         info.auth_secret,
+        info.conn_crypto.clone(),
         info.use_ipv6,
     );
 
@@ -169,7 +171,8 @@ pub async fn start(info: StaticInfo, license: LicenseVerifier) -> Result<RunCont
     incoming::listen_tcp(
         beemsg_serve_addr,
         app.clone(),
-        info.auth_secret.is_some(),
+        info.auth_secret.is_some() && info.conn_crypto.is_none(),
+        info.conn_crypto.clone(),
         run_state.clone(),
     )
     .await?;

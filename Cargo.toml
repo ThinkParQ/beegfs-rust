@@ -11,6 +11,7 @@ publish = false
 
 [workspace.dependencies]
 anyhow = "1"
+beecrypt = { path = "../beegfs-crypto" }
 clap = { version = "4", features = ["derive"] }
 env_logger = "0"
 itertools = "0"

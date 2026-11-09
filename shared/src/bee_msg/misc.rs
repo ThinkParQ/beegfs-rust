@@ -134,3 +134,24 @@ pub enum CapacityPoolQueryType {
 }
 
 impl_enum_bee_msg_traits!(CapacityPoolQueryType, Meta => 0, Storage => 1, MetaMirrored => 2, StorageMirrored => 3);
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct RegisterIdentity {
+    #[bee_serde(as = CStr<0>)]
+    pub name: Vec<u8>,
+    #[bee_serde(as = CStr<0>)]
+    pub key_id: Vec<u8>,
+}
+
+impl Msg for RegisterIdentity {
+    const ID: MsgId = 1082;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct RegisterIdentityResp {
+    pub result: OpsErr,
+}
+
+impl Msg for RegisterIdentityResp {
+    const ID: MsgId = 1083;
+}

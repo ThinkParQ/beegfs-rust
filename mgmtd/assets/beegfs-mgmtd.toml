@@ -75,6 +75,16 @@
 # The authentication file location.
 # auth-file = "/etc/beegfs/conn.auth"
 
+# The BeeMsg connection protocol: "legacy", "plain" or "encrypted". Must be set to the same value
+# on all nodes.
+# conn-protocol = "legacy"
+
+# The PKCS#8 PEM private key file identifying this node. Ignored with "legacy".
+# conn-key-file = "/etc/beegfs/conn-key.pem"
+
+# Generates a new key file at conn-key-file if it does not exist.
+# conn-key-generate = false
+
 
 ### General ###
 #

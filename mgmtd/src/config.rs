@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use log::LevelFilter;
 use serde::{Deserialize, Deserializer};
+use shared::conn::beecrypt::Mode;
 use shared::nic::{self, NicFilter};
 use shared::parser::{duration, integer_range};
 use shared::types::{Port, QuotaId};
@@ -251,6 +252,25 @@ generate_structs! {
     #[arg(long)]
     #[arg(value_name = "PATH")]
     auth_file: PathBuf = "/etc/beegfs/conn.auth".into(),
+
+    /// The BeeMsg connection protocol. [default: legacy]
+    ///
+    /// Must be set to the same value on all nodes. There is no negotiation or fallback.
+    #[arg(long)]
+    #[arg(value_name = "PROTOCOL")]
+    conn_protocol: ConnProtocol = ConnProtocol::Legacy,
+
+    /// The PKCS#8 PEM private key file identifying this node. [default: /etc/beegfs/conn-key.pem]
+    ///
+    /// Ignored with `conn-protocol = "legacy"`.
+    #[arg(long)]
+    #[arg(value_name = "PATH")]
+    conn_key_file: PathBuf = "/etc/beegfs/conn-key.pem".into(),
+
+    /// Generates a new key file at `conn-key-file` if it does not exist.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    conn_key_generate: bool = false,
 
     /// General
 
@@ -578,6 +598,25 @@ pub enum LogTarget {
     #[value(alias("std"))]
     #[serde(alias = "std")]
     Stderr,
+}
+
+/// Defines the BeeMsg connection protocol
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConnProtocol {
+    Legacy,
+    Plain,
+    Encrypted,
+}
+
+impl ConnProtocol {
+    pub fn mode(self) -> Option<Mode> {
+        match self {
+            ConnProtocol::Legacy => None,
+            ConnProtocol::Plain => Some(Mode::Plain),
+            ConnProtocol::Encrypted => Some(Mode::Encrypted),
+        }
+    }
 }
 
 /// Defines the log level

@@ -36,6 +36,7 @@ mod map_targets;
 mod map_targets_resp;
 mod peer_info;
 mod refresh_capacity_pools;
+mod register_identity;
 mod register_node;
 mod register_target;
 mod remove_node;
@@ -175,6 +176,7 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
         {node::GetNodes => R, false, "Get nodes"}
         {node::Heartbeat => R, true, "Heartbeat"}
         {node::HeartbeatRequest => R, true, "Request heartbeat"}
+        {misc::RegisterIdentity => R, false, "Register identity"}
         {node::RegisterNode => R, false, "Register node"}
         {node::RemoveNode => R, false, "Remove node"}
         {node::RemoveNodeResp => _, true, "RemoveNodeResp"}

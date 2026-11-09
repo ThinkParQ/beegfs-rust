@@ -48,6 +48,7 @@ impl TestApp {
             info: Arc::new(StaticInfo {
                 user_config,
                 auth_secret: Some(AuthSecret::hash_from_bytes("secret")),
+                conn_crypto: None,
                 network_addrs: query_nics(
                     &[NicFilter {
                         address: Some(Ipv4Addr::LOCALHOST.into()),

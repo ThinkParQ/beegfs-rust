@@ -49,6 +49,10 @@ tokio-stream = { workspace = true }
 toml = "0"
 tonic = { workspace = true }
 uuid = { workspace = true }
+zeroize = "1"
+
+[features]
+fips = ["shared/fips"]
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"

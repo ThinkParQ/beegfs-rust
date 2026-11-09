@@ -11,6 +11,7 @@ publish.workspace = true
 bee_serde_derive = { path = "../bee_serde_derive" }
 
 anyhow = { workspace = true }
+beecrypt = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
 pnet_datalink = "0"
@@ -33,6 +34,7 @@ tonic = { workspace = true, optional = true }
 
 [features]
 grpc = ["dep:protobuf", "dep:tonic", "dep:tokio-stream"]
+fips = ["beecrypt/fips"]
 
 [lints.clippy]
 undocumented_unsafe_blocks = "deny"

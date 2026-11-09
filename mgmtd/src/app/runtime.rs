@@ -5,7 +5,9 @@ use crate::license::LicenseVerifier;
 use crate::types::SqliteEnumExt;
 use anyhow::Result;
 use protobuf::license::GetCertDataResult;
-use rusqlite::{Connection, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction};
+use shared::conn::IdentityId;
+use shared::conn::beecrypt::KeyPairId;
 use shared::conn::msg_dispatch::{DispatchRequest, Request};
 use shared::conn::outgoing::Pool;
 use shared::peak_concurrency_tracker;
@@ -74,6 +76,19 @@ impl Deref for RuntimeApp {
 impl DispatchRequest for RuntimeApp {
     async fn dispatch_request(&self, req: impl Request) -> Result<()> {
         dispatch_request(self, req).await
+    }
+
+    async fn lookup_identity(&self, key_id: KeyPairId) -> Result<Option<IdentityId>> {
+        Connections::read_tx(&self.db, move |tx| {
+            Ok(tx
+                .query_row_cached(
+                    sql!("SELECT identity_id FROM keys WHERE key = ?1"),
+                    [key_id.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        })
+        .await
     }
 }
 
