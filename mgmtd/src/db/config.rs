@@ -18,6 +18,7 @@ pub(crate) enum Config {
     FsName,
     CounterLastClientID,
     TrialSerial,
+    IdentitiesVersion,
 }
 
 // Config entries that should not be changed after initially set. Note that this only controls the
@@ -33,6 +34,7 @@ impl Config {
             Config::FsName => "fs_name",
             Config::CounterLastClientID => "counter_last_client_id",
             Config::TrialSerial => "trial_serial",
+            Config::IdentitiesVersion => "identities_version",
         }
     }
 }

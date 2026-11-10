@@ -4,6 +4,7 @@ use super::msg_dispatch::{DispatchRequest, SocketRequest, StreamRequest};
 use super::stream::Stream;
 use super::*;
 use crate::bee_msg::misc::{AuthenticateChannel, RegisterIdentity};
+use crate::bee_msg::node::RegisterNodeV2;
 use crate::bee_msg::{Msg, deserialize_legacy_header};
 use crate::run_state::RunStateHandle;
 use anyhow::{Context, Result, bail};
@@ -198,6 +199,7 @@ async fn read_stream(
 
     if let PeerIdentity::Unregistered(key_id) = stream.identity
         && header.msg_id() != RegisterIdentity::ID
+        && header.msg_id() != RegisterNodeV2::ID
     {
         bail!(
             "Stream peer with key pair ID {key_id} is not registered and sent message with id {}",

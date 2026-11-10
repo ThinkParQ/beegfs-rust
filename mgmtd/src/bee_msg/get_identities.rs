@@ -6,9 +6,9 @@ impl HandleWithResponse for GetIdentities {
     type Response = GetIdentitiesResp;
 
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
-        let keys = app
+        let (version, keys) = app
             .read_tx(|tx| {
-                Ok(tx.query_map_collect(
+                let keys = tx.query_map_collect(
                     sql!(
                         "SELECT k.key, itn.node_type, itn.node_id FROM keys AS k
                         LEFT JOIN identity_to_node AS itn USING (identity_id)
@@ -27,11 +27,13 @@ impl HandleWithResponse for GetIdentities {
                             node_id: row.get::<_, Option<NodeId>>(2)?.unwrap_or_default(),
                         })
                     },
-                )?)
+                )?;
+
+                Ok((identities_version(tx)?, keys))
             })
             .await?;
 
-        Ok(GetIdentitiesResp { keys })
+        Ok(GetIdentitiesResp { version, keys })
     }
 }
 

@@ -207,6 +207,38 @@ impl Msg for RegisterNodeResp {
     const ID: MsgId = 1040;
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RegisterNodeV2(pub RegisterNode);
+
+impl Msg for RegisterNodeV2 {
+    const ID: MsgId = 1086;
+}
+
+impl Serializable for RegisterNodeV2 {
+    fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
+        self.0.serialize(ser)
+    }
+}
+
+impl Deserializable for RegisterNodeV2 {
+    fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
+        Ok(Self(RegisterNode::deserialize(des)?))
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct RegisterNodeV2Resp {
+    pub node_num_id: NodeId,
+    pub grpc_port: Port,
+    #[bee_serde(as = CStr<0>)]
+    pub fs_uuid: Vec<u8>,
+    pub identities_version: u64,
+}
+
+impl Msg for RegisterNodeV2Resp {
+    const ID: MsgId = 1087;
+}
+
 /// Remove a node from the system
 ///
 /// Used by old ctl, client, self

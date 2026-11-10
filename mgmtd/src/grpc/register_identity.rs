@@ -26,10 +26,18 @@ pub(crate) async fn register_identity(
 
     let name = req.name.filter(|name| !name.is_empty());
 
-    let identity_id = app
+    let (identity_id, version_before, version) = app
         .write_tx({
             let name = name.clone();
-            move |tx| crate::bee_msg::register_key(tx, name, &key_id)
+            move |tx| {
+                let version_before = crate::bee_msg::identities_version(tx)?;
+                let identity_id = crate::bee_msg::register_key(tx, name, &key_id)?;
+                Ok((
+                    identity_id,
+                    version_before,
+                    crate::bee_msg::identities_version(tx)?,
+                ))
+            }
         })
         .await?;
 
@@ -42,6 +50,10 @@ pub(crate) async fn register_identity(
         "Registered key pair ID {key_id} for identity {name:?} (ID {identity_id}) from {}",
         info.addr
     );
+
+    if version != version_before {
+        crate::bee_msg::notify_identities_changed(app, version).await;
+    }
 
     Ok(pm::RegisterIdentityResponse {
         identity_id: Some(identity_id),

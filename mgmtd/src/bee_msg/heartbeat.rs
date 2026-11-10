@@ -9,6 +9,10 @@ impl HandleWithResponse for Heartbeat {
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
+        if app.static_info().conn_crypto.is_some() {
+            bail!("Heartbeat requires the legacy connection protocol, use RegisterNodeV2");
+        }
+
         update_node(
             RegisterNode {
                 instance_version: self.instance_version,
@@ -32,5 +36,33 @@ impl HandleWithResponse for Heartbeat {
         Ok(Ack {
             ack_id: self.ack_id,
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::app::test::*;
+    use shared::bee_msg::Header;
+
+    fn msg() -> Heartbeat {
+        Heartbeat {
+            node_alias: b"storage_legacy".to_vec(),
+            node_type: NodeType::Storage,
+            port: 8003,
+            ack_id: b"ack".to_vec(),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn heartbeat() {
+        let app = TestApp::new().await;
+        let mut req = TestRequest::new(Header::default());
+        let resp = msg().handle(&app, &mut req).await.unwrap();
+        assert_eq!(resp.ack_id, b"ack");
+
+        let app = TestApp::non_legacy().await;
+        msg().handle(&app, &mut req).await.unwrap_err();
     }
 }

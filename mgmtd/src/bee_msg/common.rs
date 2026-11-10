@@ -6,6 +6,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use shared::bee_msg::node::*;
 use shared::bee_msg::target::*;
 use shared::conn::IdentityId;
+use shared::conn::beecrypt::KeyPairId;
 use shared::types::{NodeId, TargetId};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -58,13 +59,20 @@ fn map_identity(
     Ok(())
 }
 
+pub(super) struct NodeUpdate {
+    pub node_id: NodeId,
+    pub identity_id: Option<IdentityId>,
+    pub identities_version: u64,
+    pub identities_changed: bool,
+}
+
 /// Processes incoming node information. Registers new nodes if config allows it
 pub(super) async fn update_node(
     msg: RegisterNode,
     app: &impl App,
     reject: bool,
-    identity_id: Option<IdentityId>,
-) -> Result<NodeId> {
+    key_id: Option<KeyPairId>,
+) -> Result<NodeUpdate> {
     let nics = msg.nics.clone();
     let requested_node_id = msg.node_id;
     let registration_disable = app.static_info().user_config.registration_disable;
@@ -108,8 +116,10 @@ pub(super) async fn update_node(
         }
     };
 
-    let (node, meta_root, is_new) = app
+    let (node, meta_root, is_new, identity_id, version_before, version) = app
         .write_tx_no_sync(move |tx| {
+            let version_before = identities_version(tx)?;
+
             let node = if msg.node_id == 0 {
                 // No node ID given => new node
                 None
@@ -262,9 +272,14 @@ client version < 8.0)"
                 (node, true)
             };
 
-            if let Some(identity_id) = identity_id {
-                map_identity(tx, identity_id, node.node_type(), node.num_id())?;
-            }
+            let identity_id = match key_id {
+                Some(key_id) => {
+                    let identity_id = register_key(tx, None, &key_id)?;
+                    map_identity(tx, identity_id, node.node_type(), node.num_id())?;
+                    Some(identity_id)
+                }
+                None => None,
+            };
 
             // Update the corresponding nic lists
             db::node_nic::replace(
@@ -284,7 +299,9 @@ client version < 8.0)"
                 _ => MetaRoot::Unknown,
             };
 
-            Ok((node, meta_root, is_new))
+            let version = identities_version(tx)?;
+
+            Ok((node, meta_root, is_new, identity_id, version_before, version))
         })
         .await?;
 
@@ -341,7 +358,12 @@ client version < 8.0)"
         .await;
     });
 
-    Ok(node_num_id)
+    Ok(NodeUpdate {
+        node_id: node_num_id,
+        identity_id,
+        identities_version: version,
+        identities_changed: version != version_before,
+    })
 }
 
 pub(super) fn get_targets_with_states(

@@ -4,6 +4,20 @@ use shared::bee_msg::misc::*;
 use shared::conn::beecrypt::KeyPairId;
 use shared::conn::{IdentityId, PeerIdentity};
 
+pub(crate) fn identities_version(tx: &Transaction) -> Result<u64> {
+    Ok(db::config::get(tx, db::config::Config::IdentitiesVersion)?.unwrap_or(0))
+}
+
+pub(crate) async fn notify_identities_changed(app: &impl App, version: u64) {
+    log::info!("Identities changed, notifying nodes about version {version}");
+
+    app.send_notifications(
+        &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+        &RefreshIdentities { version },
+    )
+    .await;
+}
+
 pub(crate) fn register_key(
     tx: &Transaction,
     name: Option<String>,
@@ -63,6 +77,10 @@ impl HandleWithResponse for RegisterIdentity {
     async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
+        if req.peer_identity() == PeerIdentity::Legacy {
+            bail!("RegisterIdentity requires a non-legacy connection protocol");
+        }
+
         let parsed = String::from_utf8(self.name).ok().zip(
             std::str::from_utf8(&self.key_id)
                 .ok()
@@ -81,10 +99,14 @@ impl HandleWithResponse for RegisterIdentity {
 
         let name = Some(name).filter(|name| !name.is_empty());
 
-        let identity_id = app
+        let (identity_id, version_before, version) = app
             .write_tx({
                 let name = name.clone();
-                move |tx| register_key(tx, name, &key_id)
+                move |tx| {
+                    let version_before = identities_version(tx)?;
+                    let identity_id = register_key(tx, name, &key_id)?;
+                    Ok((identity_id, version_before, identities_version(tx)?))
+                }
             })
             .await?;
 
@@ -98,6 +120,10 @@ impl HandleWithResponse for RegisterIdentity {
                 key_id,
                 identity_id,
             });
+        }
+
+        if version != version_before {
+            notify_identities_changed(app, version).await;
         }
 
         Ok(RegisterIdentityResp {

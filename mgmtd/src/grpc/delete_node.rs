@@ -11,9 +11,10 @@ pub(crate) async fn delete_node(
     let node: EntityId = required_field(req.node)?;
     let execute: bool = required_field(req.execute)?;
 
-    let node = app
+    let (node, version_before, version) = app
         .db_conn(move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let version_before = crate::bee_msg::identities_version(&tx)?;
 
             let node = node.resolve(&tx, EntityType::Node)?;
 
@@ -64,16 +65,21 @@ pub(crate) async fn delete_node(
             }
 
             db::node::delete(&tx, node.uid)?;
+            let version = crate::bee_msg::identities_version(&tx)?;
 
             if execute {
                 tx.commit()?;
             }
-            Ok(node)
+            Ok((node, version_before, version))
         })
         .await?;
 
     if execute {
         log::info!("Node deleted: {node}");
+
+        if version != version_before {
+            crate::bee_msg::notify_identities_changed(app, version).await;
+        }
 
         app.send_notifications(
             match node.node_type() {

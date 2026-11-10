@@ -365,6 +365,7 @@ mod test {
     impl DispatchRequest for TestDispatch {
         async fn dispatch_request(&self, req: impl Request) -> Result<()> {
             req.respond(&GetIdentitiesResp {
+                version: 1,
                 keys: vec![IdentityKey {
                     key_id: b"key".to_vec(),
                     node_type: 2,

@@ -4,9 +4,9 @@ pub(crate) async fn get_identities(
     app: &impl App,
     _req: pm::GetIdentitiesRequest,
 ) -> Result<pm::GetIdentitiesResponse> {
-    let keys = app
+    let (version, keys) = app
         .read_tx(|tx| {
-            Ok(tx.query_map_collect(
+            let keys = tx.query_map_collect(
                 sql!(
                     "SELECT k.key, k.identity_id, n.node_uid, n.node_id, n.node_type, n.alias
                     FROM keys AS k
@@ -35,11 +35,16 @@ pub(crate) async fn get_identities(
                         node,
                     })
                 },
-            )?)
+            )?;
+
+            Ok((crate::bee_msg::identities_version(tx)?, keys))
         })
         .await?;
 
-    Ok(pm::GetIdentitiesResponse { keys })
+    Ok(pm::GetIdentitiesResponse {
+        keys,
+        version: Some(version),
+    })
 }
 
 #[cfg(test)]

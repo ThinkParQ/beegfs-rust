@@ -38,8 +38,9 @@ mod map_targets_resp;
 mod peer_info;
 mod refresh_capacity_pools;
 mod register_identity;
-pub(crate) use register_identity::register_key;
+pub(crate) use register_identity::{identities_version, notify_identities_changed, register_key};
 mod register_node;
+mod register_node_v2;
 mod register_target;
 mod remove_node;
 mod remove_node_resp;
@@ -181,6 +182,7 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
         {node::HeartbeatRequest => R, true, "Request heartbeat"}
         {misc::RegisterIdentity => R, false, "Register identity"}
         {node::RegisterNode => R, false, "Register node"}
+        {node::RegisterNodeV2 => R, false, "Register node V2"}
         {node::RemoveNode => R, false, "Remove node"}
         {node::RemoveNodeResp => _, true, "RemoveNodeResp"}
         {quota::RequestExceededQuota => R, false, "Request exceeded quota"}

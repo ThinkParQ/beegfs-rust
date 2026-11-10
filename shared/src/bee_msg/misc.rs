@@ -173,10 +173,20 @@ pub struct IdentityKey {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct GetIdentitiesResp {
+    pub version: u64,
     #[bee_serde(as = Seq<true, _>)]
     pub keys: Vec<IdentityKey>,
 }
 
 impl Msg for GetIdentitiesResp {
     const ID: MsgId = 1085;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
+pub struct RefreshIdentities {
+    pub version: u64,
+}
+
+impl Msg for RefreshIdentities {
+    const ID: MsgId = 1088;
 }

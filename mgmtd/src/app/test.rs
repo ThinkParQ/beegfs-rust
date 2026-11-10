@@ -1,6 +1,8 @@
 use super::*;
 use crate::config::Config;
 use shared::bee_msg::MsgId;
+use shared::conn::ConnCrypto;
+use shared::conn::beecrypt::{KeyPair, Mode};
 pub use shared::conn::msg_dispatch::test::TestRequest;
 use shared::nic::{NicFilter, query_nics};
 use shared::types::AuthSecret;
@@ -42,6 +44,16 @@ impl TestApp {
     }
 
     pub async fn with_config(user_config: Config) -> Self {
+        Self::build(user_config, None).await
+    }
+
+    pub async fn non_legacy() -> Self {
+        let pem = KeyPair::generate().unwrap();
+        let crypto = ConnCrypto::new(Mode::Encrypted, KeyPair::load(pem.as_bytes()).unwrap());
+        Self::build(Config::default(), Some(crypto)).await
+    }
+
+    async fn build(user_config: Config, conn_crypto: Option<ConnCrypto>) -> Self {
         let db = crate::db::test::setup_with_test_data().await;
         db.write_tx(|tx| {
             crate::db::config::set(tx, crate::db::config::Config::FsUuid, uuid::Uuid::new_v4())
@@ -54,7 +66,7 @@ impl TestApp {
             info: Arc::new(StaticInfo {
                 user_config,
                 auth_secret: Some(AuthSecret::hash_from_bytes("secret")),
-                conn_crypto: None,
+                conn_crypto,
                 network_addrs: query_nics(
                     &[NicFilter {
                         address: Some(Ipv4Addr::LOCALHOST.into()),
