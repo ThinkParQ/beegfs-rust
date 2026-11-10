@@ -179,7 +179,9 @@ pub(super) async fn update_node(
 
             let identity_id = match &key_req {
                 Some(key_req) => match admit_key(tx, modes, key_req)? {
-                    Admission::Registered(identity_id) => Some(identity_id),
+                    Admission::Known(identity_id) | Admission::Registered(identity_id) => {
+                        Some(identity_id)
+                    }
                     Admission::Pending => return Ok(Err(NodeRegistration::Pending)),
                     Admission::Rejected(reason) => {
                         return Ok(Err(NodeRegistration::Rejected(reason)));

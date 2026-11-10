@@ -65,8 +65,9 @@ impl HandleWithResponse for RegisterIdentity {
             })
             .await?;
 
-        let identity_id = match admission {
-            Admission::Registered(identity_id) => identity_id,
+        let (identity_id, known) = match admission {
+            Admission::Known(identity_id) => (identity_id, true),
+            Admission::Registered(identity_id) => (identity_id, false),
             Admission::Pending => {
                 log::info!(
                     "Key pair ID {key_id} from {:?} is pending approval",
@@ -87,11 +88,18 @@ impl HandleWithResponse for RegisterIdentity {
             }
         };
 
-        log::info!(
-            "Registered key pair ID {key_id} for identity {:?} (ID {identity_id}) from {:?}",
-            key_req.name,
-            req.addr()
-        );
+        if known {
+            log::debug!(
+                "Key pair ID {key_id} from {:?} is already registered as identity {identity_id}",
+                req.addr()
+            );
+        } else {
+            log::info!(
+                "Registered key pair ID {key_id} for identity {:?} (ID {identity_id}) from {:?}",
+                key_req.name,
+                req.addr()
+            );
+        }
 
         req.set_peer_identity(PeerIdentity::Registered {
             key_id,

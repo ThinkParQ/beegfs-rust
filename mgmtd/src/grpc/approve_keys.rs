@@ -110,7 +110,7 @@ mod test {
         .unwrap();
         assert!(matches!(
             register_storage(&app, "a").await.1,
-            Admission::Registered(_)
+            Admission::Known(_)
         ));
 
         reject_keys(

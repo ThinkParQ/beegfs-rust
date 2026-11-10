@@ -66,6 +66,7 @@ pub(crate) struct KeyRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Admission {
+    Known(IdentityId),
     Registered(IdentityId),
     Pending,
     Rejected(String),
@@ -87,7 +88,7 @@ pub(crate) fn admit_key(
         .optional()?;
 
     if let Some(identity_id) = known {
-        return Ok(Admission::Registered(identity_id));
+        return Ok(Admission::Known(identity_id));
     }
 
     let name = req.node.is_none().then_some(req.name.as_deref()).flatten();
@@ -388,7 +389,7 @@ mod test {
             assert!(!is_admin(tx, id));
             assert_eq!(
                 admit_key(tx, m, &client("a", Some("garbage"))).unwrap(),
-                Admission::Registered(id)
+                Admission::Known(id)
             );
 
             assert!(matches!(
@@ -478,7 +479,7 @@ mod test {
             let id = approve_pending_key(tx, &key("a")).unwrap();
             assert_eq!(
                 admit_key(tx, m, &server("a")).unwrap(),
-                Admission::Registered(id)
+                Admission::Known(id)
             );
 
             reject_pending_key(tx, &key("b")).unwrap();

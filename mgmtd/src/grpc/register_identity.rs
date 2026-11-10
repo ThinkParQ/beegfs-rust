@@ -43,7 +43,8 @@ pub(crate) async fn register_identity(
             let admission = bee_msg::admit_key(tx, modes, &key_req)?;
 
             let admin = match admission {
-                bee_msg::Admission::Registered(identity_id) => tx.query_row(
+                bee_msg::Admission::Known(identity_id)
+                | bee_msg::Admission::Registered(identity_id) => tx.query_row(
                     sql!("SELECT admin FROM identities WHERE identity_id = ?1"),
                     [identity_id],
                     |row| row.get(0),
@@ -60,8 +61,9 @@ pub(crate) async fn register_identity(
         })
         .await?;
 
-    let identity_id = match admission {
-        bee_msg::Admission::Registered(identity_id) => identity_id,
+    let (identity_id, known) = match admission {
+        bee_msg::Admission::Known(identity_id) => (identity_id, true),
+        bee_msg::Admission::Registered(identity_id) => (identity_id, false),
         bee_msg::Admission::Pending => {
             log::info!(
                 "Key pair ID {key_id} from {} is pending approval",
@@ -73,6 +75,7 @@ pub(crate) async fn register_identity(
                 message: Some(format!(
                     "Key pair ID {key_id} is pending approval by an admin"
                 )),
+                already_registered: Some(false),
             });
         }
         bee_msg::Admission::Rejected(reason) => {
@@ -81,6 +84,7 @@ pub(crate) async fn register_identity(
                 identity_id: None,
                 status: Some(Status::Rejected.into()),
                 message: Some(reason),
+                already_registered: Some(false),
             });
         }
     };
@@ -91,10 +95,17 @@ pub(crate) async fn register_identity(
     };
     info.admin.store(admin, Ordering::Relaxed);
 
-    log::info!(
-        "Registered key pair ID {key_id} for identity {name:?} (ID {identity_id}) from {}",
-        info.addr
-    );
+    if known {
+        log::debug!(
+            "Key pair ID {key_id} from {} is already registered as identity {identity_id}",
+            info.addr
+        );
+    } else {
+        log::info!(
+            "Registered key pair ID {key_id} for identity {name:?} (ID {identity_id}) from {}",
+            info.addr
+        );
+    }
 
     if version != version_before {
         bee_msg::notify_identities_changed(app, version).await;
@@ -104,5 +115,6 @@ pub(crate) async fn register_identity(
         identity_id: Some(identity_id),
         status: Some(Status::Ok.into()),
         message: None,
+        already_registered: Some(known),
     })
 }
