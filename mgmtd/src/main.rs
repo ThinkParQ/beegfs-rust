@@ -185,12 +185,16 @@ fn init_db(db_file: &Path, v7_path: Option<&Path>, fs_uuid: Option<Uuid>) -> Res
                 .ok_or_else(|| anyhow!("File does not have a parent folder"))?,
         )?;
         std::fs::File::create_new(db_file)?;
-        conn.backup(rusqlite::MAIN_DB, db_file, None)
-            .inspect_err(|_| {
-                if let Err(err) = std::fs::remove_file(db_file) {
-                    println!("Cleaning up {db_file:?} failed: {err}");
-                }
-            })?;
+        conn.backup(
+            rusqlite::MAIN_DB,
+            db_file,
+            None::<fn(rusqlite::backup::Progress)>,
+        )
+        .inspect_err(|_| {
+            if let Err(err) = std::fs::remove_file(db_file) {
+                println!("Cleaning up {db_file:?} failed: {err}");
+            }
+        })?;
 
         Ok(())
     })()
