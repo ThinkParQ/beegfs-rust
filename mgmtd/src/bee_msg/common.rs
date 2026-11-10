@@ -59,6 +59,33 @@ fn map_identity(
     Ok(())
 }
 
+fn delete_stale_client(tx: &Transaction, key_id: &KeyPairId) -> Result<()> {
+    let stale: Option<NodeId> = tx
+        .query_row(
+            sql!(
+                "SELECT itn.node_id FROM keys AS k
+                INNER JOIN identity_to_node AS itn ON itn.identity_id = k.identity_id
+                WHERE k.key = ?1 AND itn.node_type = ?2"
+            ),
+            params![key_id.to_string(), NodeType::Client.sql_variant()],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if let Some(num_id) = stale {
+        let node = LegacyId {
+            node_type: NodeType::Client,
+            num_id,
+        }
+        .resolve(tx, EntityType::Node)?;
+
+        db::node::delete(tx, node.uid)?;
+        log::info!("Deleted stale client node {node} that used the same identity");
+    }
+
+    Ok(())
+}
+
 pub(super) struct NodeUpdate {
     pub node_id: NodeId,
     pub identity_id: Option<IdentityId>,
@@ -144,6 +171,13 @@ pub(super) async fn update_node(
             }
 
             let new_alias_or_reg_token = String::from_utf8(msg.node_alias)?;
+
+            if node.is_none()
+                && msg.node_type == NodeType::Client
+                && let Some(key_id) = &key_id
+            {
+                delete_stale_client(tx, key_id)?;
+            }
 
             let (node, is_new) = if let Some(node) = node {
                 // Existing node, update data

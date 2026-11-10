@@ -185,4 +185,49 @@ mod test {
 
         assert_eq!(mapping(&app).await, vec![(id1, node1)]);
     }
+
+    #[tokio::test]
+    async fn replace_stale_client() {
+        let app = TestApp::new().await;
+        let key_id: KeyPairId = format!("sha256:{}", "a".repeat(64)).parse().unwrap();
+
+        let register = |node_id| {
+            let app = &app;
+            async move {
+                let mut req = TestRequest::new(Header::default());
+                req.identity = PeerIdentity::Unregistered(key_id);
+                RegisterNodeV2(RegisterNode {
+                    node_alias: b"client_v2".to_vec(),
+                    node_type: NodeType::Client,
+                    node_id,
+                    port: 8004,
+                    ..Default::default()
+                })
+                .handle(app, &mut req)
+                .await
+                .unwrap()
+                .node_num_id
+            }
+        };
+
+        let client_exists = |node_id: NodeId| {
+            app.read_tx(move |tx| {
+                Ok(tx.query_row(
+                    sql!("SELECT COUNT(*) FROM nodes WHERE node_type = ?1 AND node_id = ?2"),
+                    rusqlite::params![NodeType::Client.sql_variant(), node_id],
+                    |row| row.get::<_, i64>(0),
+                )? == 1)
+            })
+        };
+
+        let first = register(0).await;
+        let (identity_id, _) = mapping(&app).await[0];
+        assert_eq!(register(first).await, first);
+
+        let second = register(0).await;
+        assert_ne!(second, first);
+        assert!(!client_exists(first).await.unwrap());
+        assert!(client_exists(second).await.unwrap());
+        assert_eq!(mapping(&app).await, vec![(identity_id, second)]);
+    }
 }
