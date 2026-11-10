@@ -28,6 +28,7 @@ pub trait Request: Send + Sync {
     fn addr(&self) -> SocketAddr;
     fn header(&self) -> &Header;
     fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M>;
+    fn is_from_udp(&self) -> bool;
 }
 
 /// Represents a request made via a TCP stream
@@ -67,6 +68,10 @@ impl Request for StreamRequest<'_> {
     fn header(&self) -> &Header {
         self.header
     }
+
+    fn is_from_udp(&self) -> bool {
+        false
+    }
 }
 
 /// Represents a request made via a UDP datagram
@@ -101,6 +106,10 @@ impl Request for SocketRequest<'_> {
 
     fn header(&self) -> &Header {
         self.header
+    }
+
+    fn is_from_udp(&self) -> bool {
+        true
     }
 }
 
@@ -142,6 +151,10 @@ pub mod test {
         }
 
         fn deserialize_msg<M: Msg + Deserializable>(&self) -> Result<M> {
+            unimplemented!()
+        }
+
+        fn is_from_udp(&self) -> bool {
             unimplemented!()
         }
     }

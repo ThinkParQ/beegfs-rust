@@ -90,11 +90,20 @@ impl Display for PreShutdownError {
 pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) -> Result<()> {
     /// Creates the dispatching match statement
     macro_rules! dispatch_msg {
-        ($({$msg_type:path => $r:tt, $ctx_str:literal})*) => {
+        ($({$msg_type:path => $r:tt, $allow_udp:literal, $ctx_str:literal})*) => {
             // Match on the message ID provided by the request
             match req.header().msg_id() {
                 $(
                     <$msg_type>::ID => {
+                        if(req.is_from_udp() && !$allow_udp) {
+                            log::warn!("Dropping unexpected UDP message with ID {} from {:?}",
+                                req.header().msg_id(),
+                                req.addr(),
+                            );
+
+                            return Ok(());
+                        }
+
                         let des: $msg_type = req.deserialize_msg().with_context(|| {
                             format!(
                                 "{} ({}) from {:?}",
@@ -154,31 +163,31 @@ pub(crate) async fn dispatch_request(app: &RuntimeApp, mut req: impl Request) ->
 
     // Creates the match block for message dispatching
     dispatch_msg! {
-        {buddy_group::GetMirrorBuddyGroups => R, "Get buddy groups"}
-        {buddy_group::GetStatesAndBuddyGroups => R, "Get states and buddy groups"}
-        {buddy_group::SetMirrorBuddyGroupResp => _, "SetMirrorBuddyGroupResp"}
-        {misc::Ack => _, "Ack"}
-        {misc::AuthenticateChannel => _, "Authenticate connection"}
-        {misc::GetNodeCapacityPools => R, "Get capacity pools"}
-        {misc::PeerInfo => _, "PeerInfo"}
-        {misc::RefreshCapacityPools => R, "Refresh capacity pools"}
-        {misc::SetChannelDirect => _, "SetChannelDirect"}
-        {node::GetNodes => R, "Get nodes"}
-        {node::Heartbeat => R, "Heartbeat"}
-        {node::HeartbeatRequest => R, "Request heartbeat"}
-        {node::RegisterNode => R, "Register node"}
-        {node::RemoveNode => R, "Remove node"}
-        {node::RemoveNodeResp => _, "RemoveNodeResp"}
-        {quota::RequestExceededQuota => R, "Request exceeded quota"}
-        {storage_pool::GetStoragePools => R, "Get storage pools"}
-        {target::ChangeTargetConsistencyStates => R, "Change target consistency states"}
-        {target::GetTargetMappings => R, "Get target mappings"}
-        {target::GetTargetStates => R, "Get target states"}
-        {target::MapTargetsResp => _, "MapTargetsResp"}
-        {target::MapTargets => R, "Map targets"}
-        {target::RegisterTarget => R, "Register target"}
-        {target::SetStorageTargetInfo => R, "Set storage target info"}
-        {target::SetTargetConsistencyStates => R, "Set target consistency states"}
+        {buddy_group::GetMirrorBuddyGroups => R, false, "Get buddy groups"}
+        {buddy_group::GetStatesAndBuddyGroups => R, false, "Get states and buddy groups"}
+        {buddy_group::SetMirrorBuddyGroupResp => _, true, "SetMirrorBuddyGroupResp"}
+        {misc::Ack => _, true, "Ack"}
+        {misc::AuthenticateChannel => _, false, "Authenticate connection"}
+        {misc::GetNodeCapacityPools => R, false, "Get capacity pools"}
+        {misc::PeerInfo => _, false, "PeerInfo"}
+        {misc::RefreshCapacityPools => R, true, "Refresh capacity pools"}
+        {misc::SetChannelDirect => _, false, "SetChannelDirect"}
+        {node::GetNodes => R, false, "Get nodes"}
+        {node::Heartbeat => R, true, "Heartbeat"}
+        {node::HeartbeatRequest => R, true, "Request heartbeat"}
+        {node::RegisterNode => R, false, "Register node"}
+        {node::RemoveNode => R, false, "Remove node"}
+        {node::RemoveNodeResp => _, true, "RemoveNodeResp"}
+        {quota::RequestExceededQuota => R, false, "Request exceeded quota"}
+        {storage_pool::GetStoragePools => R, false, "Get storage pools"}
+        {target::ChangeTargetConsistencyStates => R, false, "Change target consistency states"}
+        {target::GetTargetMappings => R, false, "Get target mappings"}
+        {target::GetTargetStates => R, false, "Get target states"}
+        {target::MapTargetsResp => _, true, "MapTargetsResp"}
+        {target::MapTargets => R, false, "Map targets"}
+        {target::RegisterTarget => R, false, "Register target"}
+        {target::SetStorageTargetInfo => R, false, "Set storage target info"}
+        {target::SetTargetConsistencyStates => R, false, "Set target consistency states"}
     }
 }
 
