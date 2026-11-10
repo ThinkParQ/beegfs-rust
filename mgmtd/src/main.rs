@@ -296,12 +296,12 @@ fn generate_identity_token(config: &Config, scope: TokenScope) -> Result<()> {
     let token = mgmtd::create_identity_token(
         &tx,
         scope,
-        config.identity_token_permanent,
+        config.identity_token_reusable,
         Some("--generate-identity-token"),
     )?;
     tx.commit()?;
 
-    print_identity_token(&token, scope, config.identity_token_permanent);
+    print_identity_token(&token, scope, config.identity_token_reusable);
 
     if config.conn_protocol == ConnProtocol::Legacy {
         println!(
@@ -313,12 +313,12 @@ configuration uses \"legacy\"."
     Ok(())
 }
 
-fn print_identity_token(token: &str, scope: TokenScope, permanent: bool) {
+fn print_identity_token(token: &str, scope: TokenScope, reusable: bool) {
     let scope = match scope {
         TokenScope::Client => "client",
         TokenScope::Admin => "admin",
     };
-    let usage = if permanent { "permanent" } else { "one-time" };
+    let usage = if reusable { "reusable" } else { "one-time" };
 
     println!(
         "\nCreated a {usage} {scope} identity token. It is not shown again, store it now:\n\n\

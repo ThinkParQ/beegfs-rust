@@ -168,7 +168,7 @@ mod test {
             &app,
             pm::GenerateIdentityTokenRequest {
                 scope: Some(Scope::Admin.into()),
-                permanent: Some(true),
+                reusable: Some(true),
                 comment: Some("test".to_string()),
             },
         )

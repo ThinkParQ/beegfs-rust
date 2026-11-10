@@ -91,6 +91,20 @@ pub(crate) fn admit_key(
         return Ok(Admission::Known(identity_id));
     }
 
+    let rejected: Option<bool> = tx
+        .query_row_cached(
+            sql!("SELECT rejected FROM pending_keys WHERE key = ?1"),
+            [&key],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if rejected == Some(true) {
+        return Ok(Admission::Rejected(format!(
+            "Key pair ID {key} has been rejected by an admin"
+        )));
+    }
+
     let name = req.node.is_none().then_some(req.name.as_deref()).flatten();
 
     if let Some(token) = &req.token {
@@ -138,20 +152,6 @@ pub(crate) fn admit_key(
         }));
     }
 
-    let rejected: Option<bool> = tx
-        .query_row_cached(
-            sql!("SELECT rejected FROM pending_keys WHERE key = ?1"),
-            [&key],
-            |row| row.get(0),
-        )
-        .optional()?;
-
-    if rejected == Some(true) {
-        return Ok(Admission::Rejected(format!(
-            "Key pair ID {key} has been rejected by an admin"
-        )));
-    }
-
     let (node_type, node_id) = req.node.unzip();
 
     tx.execute_cached(
@@ -182,7 +182,7 @@ pub(crate) fn admit_key(
 pub fn create_identity_token(
     tx: &Transaction,
     scope: TokenScope,
-    permanent: bool,
+    reusable: bool,
     comment: Option<&str>,
 ) -> Result<String> {
     let mut secret = [0u8; TOKEN_SECRET_LEN];
@@ -193,10 +193,10 @@ pub fn create_identity_token(
 
     tx.execute_cached(
         sql!(
-            "INSERT INTO identity_tokens (secret_hash, scope, permanent, comment)
+            "INSERT INTO identity_tokens (secret_hash, scope, reusable, comment)
             VALUES (?1, ?2, ?3, ?4)"
         ),
-        params![hash_secret(&secret), scope_str(scope), permanent, comment],
+        params![hash_secret(&secret), scope_str(scope), reusable, comment],
     )?;
 
     Ok(format!(
@@ -226,8 +226,6 @@ pub(crate) fn approve_pending_key(tx: &Transaction, key_id: &KeyPairId) -> Resul
     let Some((node_type, name)) = pending else {
         bail!("No pending entry for key pair ID {key}");
     };
-
-    tx.execute_cached(sql!("DELETE FROM pending_keys WHERE key = ?1"), [&key])?;
 
     let name = node_type.is_none().then_some(name).flatten();
     insert_identity(tx, &key, name.as_deref(), false, None)
@@ -264,6 +262,8 @@ fn insert_identity(
         params![key, identity_id],
     )?;
 
+    tx.execute_cached(sql!("DELETE FROM pending_keys WHERE key = ?1"), [key])?;
+
     Ok(identity_id)
 }
 
@@ -285,7 +285,7 @@ fn use_token(
     let row: Option<(String, String, bool, Option<String>)> = tx
         .query_row_cached(
             sql!(
-                "SELECT secret_hash, scope, permanent, used_at FROM identity_tokens
+                "SELECT secret_hash, scope, reusable, used_at FROM identity_tokens
                 WHERE token_id = ?1"
             ),
             [token_id],
@@ -293,7 +293,7 @@ fn use_token(
         )
         .optional()?;
 
-    let Some((secret_hash, scope, permanent, used_at)) = row else {
+    let Some((secret_hash, scope, reusable, used_at)) = row else {
         return Ok(Err("Invalid identity token".to_string()));
     };
 
@@ -301,7 +301,7 @@ fn use_token(
         return Ok(Err("Invalid identity token".to_string()));
     }
 
-    if !permanent && used_at.is_some() {
+    if !reusable && used_at.is_some() {
         return Ok(Err(format!(
             "Identity token {token_id} has already been used"
         )));
@@ -423,11 +423,11 @@ mod test {
                 Admission::Rejected(_)
             ));
 
-            let permanent =
+            let reusable =
                 create_identity_token(tx, TokenScope::Client, true, Some("lab")).unwrap();
             for c in ["c", "d"] {
                 assert!(matches!(
-                    admit_key(tx, m, &client(c, Some(&permanent))).unwrap(),
+                    admit_key(tx, m, &client(c, Some(&reusable))).unwrap(),
                     Admission::Registered(_)
                 ));
             }
@@ -439,7 +439,7 @@ mod test {
             };
             assert!(is_admin(tx, id));
 
-            let (prefix, _) = permanent.rsplit_once('.').unwrap();
+            let (prefix, _) = reusable.rsplit_once('.').unwrap();
             let forged = format!("{prefix}.{}", "0".repeat(64));
             for bad in [forged.as_str(), "beegfs-idt-1.x.y", "nonsense"] {
                 assert!(matches!(
@@ -449,7 +449,7 @@ mod test {
             }
 
             let mut server_with_token = server("9");
-            server_with_token.token = Some(permanent);
+            server_with_token.token = Some(reusable);
             assert!(matches!(
                 admit_key(tx, m, &server_with_token).unwrap(),
                 Admission::Rejected(_)
@@ -488,6 +488,22 @@ mod test {
                 Admission::Rejected(_)
             ));
             assert_eq!(pending_count(tx), 1);
+
+            assert_eq!(
+                admit_key(tx, m, &client("d", None)).unwrap(),
+                Admission::Pending
+            );
+            assert_eq!(pending_count(tx), 2);
+            let token = create_identity_token(tx, TokenScope::Client, true, None).unwrap();
+            assert!(matches!(
+                admit_key(tx, m, &client("d", Some(&token))).unwrap(),
+                Admission::Registered(_)
+            ));
+            assert_eq!(pending_count(tx), 1);
+            assert!(matches!(
+                admit_key(tx, m, &client("b", Some(&token))).unwrap(),
+                Admission::Rejected(_)
+            ));
 
             approve_pending_key(tx, &key("8")).unwrap_err();
             reject_pending_key(tx, &key("8")).unwrap_err();

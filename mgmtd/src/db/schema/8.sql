@@ -3,8 +3,8 @@ CREATE TABLE identity_tokens (
     secret_hash TEXT NOT NULL,
     scope TEXT NOT NULL
         CHECK(scope IN ('client', 'admin')),
-    permanent INTEGER NOT NULL
-        CHECK(permanent IN (0, 1)),
+    reusable INTEGER NOT NULL
+        CHECK(reusable IN (0, 1)),
     comment TEXT,
     created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
     used_at TEXT

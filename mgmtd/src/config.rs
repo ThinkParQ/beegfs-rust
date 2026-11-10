@@ -145,7 +145,7 @@ generate_structs! {
     /// Creates a new identity token with the given scope (client or admin), prints it, then exits.
     ///
     /// Uses `--db-file` for the database location or the default if not given. Can be run while
-    /// the management is running. The token can be used once unless `--identity-token-permanent`
+    /// the management is running. The token can be used once unless `--identity-token-reusable`
     /// is also given.
     #[arg(long)]
     #[arg(num_args = 1)]
@@ -157,7 +157,7 @@ generate_structs! {
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
     #[serde(skip)]
-    identity_token_permanent: bool = false,
+    identity_token_reusable: bool = false,
 
     /// Loads additional configuration from the given file. [default = "/etc/beegfs/beegfs-mgmtd.toml"]
     ///
@@ -541,8 +541,8 @@ use register-server-mode = \"disabled\" instead"
             );
         }
 
-        if self.identity_token_permanent && self.generate_identity_token.is_none() {
-            bail!("identity-token-permanent requires generate-identity-token");
+        if self.identity_token_reusable && self.generate_identity_token.is_none() {
+            bail!("identity-token-reusable requires generate-identity-token");
         }
 
         if self.connection_limit < 1 {

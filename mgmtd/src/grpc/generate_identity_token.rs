@@ -17,18 +17,18 @@ pub(crate) async fn generate_identity_token(
                 .status_code(Code::InvalidArgument);
         }
     };
-    let permanent = req.permanent.unwrap_or(false);
+    let reusable = req.reusable.unwrap_or(false);
     let comment = req.comment.filter(|c| !c.is_empty());
 
     let token = app
         .write_tx(move |tx| {
-            crate::bee_msg::create_identity_token(tx, scope, permanent, comment.as_deref())
+            crate::bee_msg::create_identity_token(tx, scope, reusable, comment.as_deref())
         })
         .await?;
 
     log::info!(
         "Created a {} {scope:?} identity token",
-        if permanent { "permanent" } else { "one-time" }
+        if reusable { "reusable" } else { "one-time" }
     );
 
     Ok(pm::GenerateIdentityTokenResponse { token: Some(token) })
