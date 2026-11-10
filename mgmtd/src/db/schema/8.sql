@@ -7,7 +7,9 @@ CREATE TABLE identity_tokens (
         CHECK(reusable IN (0, 1)),
     comment TEXT,
     created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
-    used_at TEXT
+    used_at TEXT,
+    revoked INTEGER NOT NULL DEFAULT 0
+        CHECK(revoked IN (0, 1))
 ) STRICT;
 
 CREATE TABLE identities (
@@ -16,6 +18,8 @@ CREATE TABLE identities (
         CHECK(LENGTH(name) > 0),
     admin INTEGER NOT NULL DEFAULT 0
         CHECK(admin IN (0, 1)),
+    revoked INTEGER NOT NULL DEFAULT 0
+        CHECK(revoked IN (0, 1)),
     token_id INTEGER
         REFERENCES identity_tokens (token_id) ON DELETE SET NULL
 ) STRICT;
@@ -65,6 +69,10 @@ CREATE TRIGGER keys_update_identities_version AFTER UPDATE ON keys BEGIN
         WHERE key = 'identities_version';
 END;
 CREATE TRIGGER keys_delete_identities_version AFTER DELETE ON keys BEGIN
+    UPDATE config SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)
+        WHERE key = 'identities_version';
+END;
+CREATE TRIGGER identities_revoked_identities_version AFTER UPDATE OF revoked ON identities BEGIN
     UPDATE config SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)
         WHERE key = 'identities_version';
 END;

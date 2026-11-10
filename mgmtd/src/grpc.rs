@@ -45,11 +45,15 @@ mod get_pools;
 mod get_quota_limits;
 mod get_quota_usage;
 mod get_targets;
+mod list_identities;
+mod list_tokens;
 mod mirror_root_inode;
 mod modify_buddy_group;
 mod register_identity;
 mod reject_keys;
 mod reset_target_registration_token;
+mod revoke_identity;
+mod revoke_tokens;
 mod set_alias;
 mod set_default_quota_limits;
 mod set_quota_limits;
@@ -212,6 +216,26 @@ impl pm::management_server::Management for ManagementService {
         pm::RejectKeysRequest => pm::RejectKeysResponse,
         "Reject keys"
     }
+    impl_grpc_handler! {
+        list_identities,
+        pm::ListIdentitiesRequest => pm::ListIdentitiesResponse,
+        "List identities"
+    }
+    impl_grpc_handler! {
+        revoke_identity,
+        pm::RevokeIdentityRequest => pm::RevokeIdentityResponse,
+        "Revoke identity"
+    }
+    impl_grpc_handler! {
+        list_tokens,
+        pm::ListTokensRequest => pm::ListTokensResponse,
+        "List tokens"
+    }
+    impl_grpc_handler! {
+        revoke_tokens,
+        pm::RevokeTokensRequest => pm::RevokeTokensResponse,
+        "Revoke tokens"
+    }
 
     impl_grpc_handler! {
         get_license,
@@ -260,6 +284,10 @@ const ADMIN_METHODS: &[&str] = &[
     "GetPendingKeys",
     "ApproveKeys",
     "RejectKeys",
+    "ListIdentities",
+    "RevokeIdentity",
+    "ListTokens",
+    "RevokeTokens",
 ];
 
 #[derive(Clone, Debug)]

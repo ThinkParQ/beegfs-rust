@@ -79,16 +79,26 @@ pub(crate) fn admit_key(
 ) -> Result<Admission> {
     let key = req.key_id.to_string();
 
-    let known: Option<IdentityId> = tx
+    let known: Option<(IdentityId, bool)> = tx
         .query_row_cached(
-            sql!("SELECT identity_id FROM keys WHERE key = ?1"),
+            sql!(
+                "SELECT k.identity_id, i.revoked FROM keys AS k
+                INNER JOIN identities AS i USING (identity_id)
+                WHERE k.key = ?1"
+            ),
             [&key],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
 
-    if let Some(identity_id) = known {
-        return Ok(Admission::Known(identity_id));
+    match known {
+        Some((identity_id, true)) => {
+            return Ok(Admission::Rejected(format!(
+                "Identity {identity_id} has been revoked by an admin"
+            )));
+        }
+        Some((identity_id, false)) => return Ok(Admission::Known(identity_id)),
+        None => {}
     }
 
     let rejected: Option<bool> = tx
@@ -282,23 +292,35 @@ fn use_token(
         return Ok(Err("Malformed identity token".to_string()));
     };
 
-    let row: Option<(String, String, bool, Option<String>)> = tx
+    let row: Option<(String, String, bool, Option<String>, bool)> = tx
         .query_row_cached(
             sql!(
-                "SELECT secret_hash, scope, reusable, used_at FROM identity_tokens
+                "SELECT secret_hash, scope, reusable, used_at, revoked FROM identity_tokens
                 WHERE token_id = ?1"
             ),
             [token_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()?;
 
-    let Some((secret_hash, scope, reusable, used_at)) = row else {
+    let Some((secret_hash, scope, reusable, used_at, revoked)) = row else {
         return Ok(Err("Invalid identity token".to_string()));
     };
 
     if verify_slices_are_equal(hash_secret(secret).as_bytes(), secret_hash.as_bytes()).is_err() {
         return Ok(Err("Invalid identity token".to_string()));
+    }
+
+    if revoked {
+        return Ok(Err(format!("Identity token {token_id} has been revoked")));
     }
 
     if !reusable && used_at.is_some() {

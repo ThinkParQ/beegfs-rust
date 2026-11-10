@@ -229,7 +229,7 @@ async fn accept(
                     sql!(
                         "SELECT k.identity_id, i.admin FROM keys AS k
                         INNER JOIN identities AS i USING (identity_id)
-                        WHERE k.key = ?1"
+                        WHERE k.key = ?1 AND i.revoked = 0"
                     ),
                     [key_id.to_string()],
                     |row| Ok((row.get(0)?, row.get(1)?)),

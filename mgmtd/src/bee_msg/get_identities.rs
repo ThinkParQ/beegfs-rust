@@ -11,7 +11,9 @@ impl HandleWithResponse for GetIdentities {
                 let keys = tx.query_map_collect(
                     sql!(
                         "SELECT k.key, itn.node_type, itn.node_id FROM keys AS k
+                        INNER JOIN identities AS i USING (identity_id)
                         LEFT JOIN identity_to_node AS itn USING (identity_id)
+                        WHERE i.revoked = 0
                         ORDER BY k.key_id"
                     ),
                     [],

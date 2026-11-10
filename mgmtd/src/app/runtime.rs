@@ -82,7 +82,11 @@ impl DispatchRequest for RuntimeApp {
         Connections::read_tx(&self.db, move |tx| {
             Ok(tx
                 .query_row_cached(
-                    sql!("SELECT identity_id FROM keys WHERE key = ?1"),
+                    sql!(
+                        "SELECT k.identity_id FROM keys AS k
+                        INNER JOIN identities AS i USING (identity_id)
+                        WHERE k.key = ?1 AND i.revoked = 0"
+                    ),
                     [key_id.to_string()],
                     |row| row.get(0),
                 )
