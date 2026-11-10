@@ -1,6 +1,7 @@
 //! gRPC server and handlers
 
 use crate::app::*;
+use crate::config::ElevatedCtlCommands;
 use crate::db;
 use crate::license::LicensedFeature;
 use crate::types::{ResolveEntityId, SqliteEnumExt};
@@ -18,6 +19,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
+use std::sync::atomic::Ordering;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tonic::{Code, Request, Response, Status};
 use tower::util::MapRequestLayer;
@@ -25,6 +27,7 @@ use tower::util::MapRequestLayer;
 mod common;
 mod conn;
 
+mod approve_keys;
 mod assign_pool;
 mod create_buddy_group;
 mod create_pool;
@@ -32,10 +35,12 @@ mod delete_buddy_group;
 mod delete_node;
 mod delete_pool;
 mod delete_target;
+mod generate_identity_token;
 mod get_buddy_groups;
 mod get_identities;
 mod get_license;
 mod get_nodes;
+mod get_pending_keys;
 mod get_pools;
 mod get_quota_limits;
 mod get_quota_usage;
@@ -43,6 +48,7 @@ mod get_targets;
 mod mirror_root_inode;
 mod modify_buddy_group;
 mod register_identity;
+mod reject_keys;
 mod reset_target_registration_token;
 mod set_alias;
 mod set_default_quota_limits;
@@ -187,6 +193,27 @@ impl pm::management_server::Management for ManagementService {
     }
 
     impl_grpc_handler! {
+        generate_identity_token,
+        pm::GenerateIdentityTokenRequest => pm::GenerateIdentityTokenResponse,
+        "Generate identity token"
+    }
+    impl_grpc_handler! {
+        get_pending_keys,
+        pm::GetPendingKeysRequest => pm::GetPendingKeysResponse,
+        "Get pending keys"
+    }
+    impl_grpc_handler! {
+        approve_keys,
+        pm::ApproveKeysRequest => pm::ApproveKeysResponse,
+        "Approve keys"
+    }
+    impl_grpc_handler! {
+        reject_keys,
+        pm::RejectKeysRequest => pm::RejectKeysResponse,
+        "Reject keys"
+    }
+
+    impl_grpc_handler! {
         get_license,
         pm::GetLicenseRequest => pm::GetLicenseResponse,
         "Get license"
@@ -216,7 +243,24 @@ impl pm::management_server::Management for ManagementService {
     }
 }
 
-const REGISTER_IDENTITY_PATH: &str = "/management.Management/RegisterIdentity";
+const SERVICE_PATH_PREFIX: &str = "/management.Management/";
+const REGISTER_IDENTITY_METHOD: &str = "RegisterIdentity";
+const OPEN_METHODS: &[&str] = &[
+    "GetNodes",
+    "GetTargets",
+    "GetPools",
+    "GetBuddyGroups",
+    "GetQuotaLimits",
+    "GetQuotaUsage",
+    "GetIdentities",
+    REGISTER_IDENTITY_METHOD,
+];
+const ADMIN_METHODS: &[&str] = &[
+    "GenerateIdentityToken",
+    "GetPendingKeys",
+    "ApproveKeys",
+    "RejectKeys",
+];
 
 #[derive(Clone, Debug)]
 struct GrpcPath(String);
@@ -239,10 +283,13 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
                 };
 
                 let identity = *info.identity.lock().unwrap();
-                let path = req.extensions().get::<GrpcPath>().map(|p| p.0.as_str());
+                let method = req
+                    .extensions()
+                    .get::<GrpcPath>()
+                    .and_then(|p| p.0.strip_prefix(SERVICE_PATH_PREFIX));
 
                 if let PeerIdentity::Unregistered(key_id) = identity
-                    && path != Some(REGISTER_IDENTITY_PATH)
+                    && method != Some(REGISTER_IDENTITY_METHOD)
                 {
                     log::warn!(
                         "Denied gRPC request from {}: Key pair ID {key_id} is not registered",
@@ -250,6 +297,23 @@ pub(crate) fn serve(app: RuntimeApp, mut shutdown: RunStateHandle) -> Result<()>
                     );
                     return Err(Status::unauthenticated(format!(
                         "Key pair ID {key_id} is not registered"
+                    )));
+                }
+
+                let admin_required = match method {
+                    Some(m) if ADMIN_METHODS.contains(&m) => true,
+                    Some(m) if OPEN_METHODS.contains(&m) => false,
+                    _ => app2.info.user_config.elevated_ctl_commands == ElevatedCtlCommands::Admin,
+                };
+
+                if admin_required && !info.admin.load(Ordering::Relaxed) {
+                    let method = method.unwrap_or("unknown method");
+                    log::warn!(
+                        "Denied gRPC request {method} from {}: Requires an admin identity",
+                        info.addr
+                    );
+                    return Err(Status::permission_denied(format!(
+                        "{method} requires an admin identity"
                     )));
                 }
 
@@ -376,4 +440,15 @@ fn fail_on_pre_shutdown(app: &impl App) -> Result<()> {
 fn fail_on_missing_license(app: &impl App, feature: LicensedFeature) -> Result<()> {
     app.verify_licensed_feature(feature)
         .status_code(Code::Unauthenticated)
+}
+
+fn fail_on_legacy(app: &impl App) -> Result<()> {
+    if app.static_info().conn_crypto.is_none() {
+        return Err(anyhow!(
+            "Identities require a non-legacy connection protocol"
+        ))
+        .status_code(Code::FailedPrecondition);
+    }
+
+    Ok(())
 }

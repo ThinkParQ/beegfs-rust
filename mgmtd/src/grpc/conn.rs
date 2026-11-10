@@ -1,14 +1,17 @@
-use crate::app::RuntimeApp;
+use crate::app::{App, RuntimeApp};
 use anyhow::{Context, Result, bail};
+use rusqlite::OptionalExtension;
 use shared::conn::PeerIdentity;
 use shared::conn::beecrypt::rustls::ServerConfig;
 use shared::conn::beecrypt::rustls::server::Acceptor;
 use shared::conn::beecrypt::{KeyPairId, Mode, grpc_mode_alpn};
-use shared::conn::msg_dispatch::DispatchRequest;
 use shared::run_state::RunStateHandle;
+use sqlite::TransactionExt;
+use sqlite_check::sql;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 use std::time::Duration;
@@ -29,6 +32,7 @@ const GRPC_MODE_ALPN_PREFIX: &[u8] = b"beegfs-grpc/1/";
 pub(crate) struct ConnInfo {
     pub addr: SocketAddr,
     pub identity: Arc<Mutex<PeerIdentity>>,
+    pub admin: Arc<AtomicBool>,
 }
 
 pub(crate) struct Conn {
@@ -218,16 +222,32 @@ async fn accept(
         .context("Peer presented no certificate")?;
     let key_id = KeyPairId::from_cert(cert)?;
 
-    let identity = match app
-        .lookup_identity(key_id)
+    let registered: Option<(i64, bool)> = app
+        .read_tx(move |tx| {
+            Ok(tx
+                .query_row_cached(
+                    sql!(
+                        "SELECT k.identity_id, i.admin FROM keys AS k
+                        INNER JOIN identities AS i USING (identity_id)
+                        WHERE k.key = ?1"
+                    ),
+                    [key_id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?)
+        })
         .await
-        .context("Identity lookup failed")?
-    {
-        Some(identity_id) => PeerIdentity::Registered {
-            key_id,
-            identity_id,
-        },
-        None => PeerIdentity::Unregistered(key_id),
+        .context("Identity lookup failed")?;
+
+    let (identity, admin) = match registered {
+        Some((identity_id, admin)) => (
+            PeerIdentity::Registered {
+                key_id,
+                identity_id,
+            },
+            admin,
+        ),
+        None => (PeerIdentity::Unregistered(key_id), false),
     };
 
     log::debug!("Established gRPC connection from {addr} with identity {identity:?}");
@@ -237,6 +257,7 @@ async fn accept(
         info: ConnInfo {
             addr,
             identity: Arc::new(Mutex::new(identity)),
+            admin: Arc::new(AtomicBool::new(admin)),
         },
     })
 }

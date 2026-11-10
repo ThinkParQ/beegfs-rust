@@ -40,7 +40,8 @@ mod peer_info;
 mod refresh_capacity_pools;
 pub use identity_admission::create_identity_token;
 pub(crate) use identity_admission::{
-    Admission, AdmissionModes, KeyCategory, KeyRequest, admit_key,
+    Admission, AdmissionModes, KeyCategory, KeyRequest, admit_key, approve_pending_key,
+    reject_pending_key,
 };
 mod register_identity;
 pub(crate) use register_identity::{identities_version, notify_identities_changed};

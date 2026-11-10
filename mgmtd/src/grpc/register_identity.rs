@@ -1,6 +1,7 @@
 use super::*;
 use crate::bee_msg;
 use conn::ConnInfo;
+use pm::register_identity_response::Status;
 
 pub(crate) async fn register_identity(
     app: &impl App,
@@ -29,18 +30,33 @@ pub(crate) async fn register_identity(
     let key_req = bee_msg::KeyRequest {
         key_id,
         category: bee_msg::KeyCategory::Client,
-        token: None,
+        token: req.identity_token.filter(|t| !t.is_empty()),
         node: None,
         name: name.clone(),
         addr: info.addr.to_string(),
     };
     let modes = bee_msg::AdmissionModes::from_config(&app.static_info().user_config);
 
-    let (admission, version_before, version) = app
+    let (admission, admin, version_before, version) = app
         .write_tx(move |tx| {
             let version_before = bee_msg::identities_version(tx)?;
             let admission = bee_msg::admit_key(tx, modes, &key_req)?;
-            Ok((admission, version_before, bee_msg::identities_version(tx)?))
+
+            let admin = match admission {
+                bee_msg::Admission::Registered(identity_id) => tx.query_row(
+                    sql!("SELECT admin FROM identities WHERE identity_id = ?1"),
+                    [identity_id],
+                    |row| row.get(0),
+                )?,
+                _ => false,
+            };
+
+            Ok((
+                admission,
+                admin,
+                version_before,
+                bee_msg::identities_version(tx)?,
+            ))
         })
         .await?;
 
@@ -51,14 +67,21 @@ pub(crate) async fn register_identity(
                 "Key pair ID {key_id} from {} is pending approval",
                 info.addr
             );
-            return Err(anyhow!(
-                "Key pair ID {key_id} is pending approval by an admin"
-            ))
-            .status_code(Code::Unavailable);
+            return Ok(pm::RegisterIdentityResponse {
+                identity_id: None,
+                status: Some(Status::Pending.into()),
+                message: Some(format!(
+                    "Key pair ID {key_id} is pending approval by an admin"
+                )),
+            });
         }
         bee_msg::Admission::Rejected(reason) => {
             log::warn!("Rejected key pair ID {key_id} from {}: {reason}", info.addr);
-            return Err(anyhow!(reason)).status_code(Code::PermissionDenied);
+            return Ok(pm::RegisterIdentityResponse {
+                identity_id: None,
+                status: Some(Status::Rejected.into()),
+                message: Some(reason),
+            });
         }
     };
 
@@ -66,6 +89,7 @@ pub(crate) async fn register_identity(
         key_id,
         identity_id,
     };
+    info.admin.store(admin, Ordering::Relaxed);
 
     log::info!(
         "Registered key pair ID {key_id} for identity {name:?} (ID {identity_id}) from {}",
@@ -78,5 +102,7 @@ pub(crate) async fn register_identity(
 
     Ok(pm::RegisterIdentityResponse {
         identity_id: Some(identity_id),
+        status: Some(Status::Ok.into()),
+        message: None,
     })
 }
