@@ -1,5 +1,6 @@
 use super::*;
 use common::{NodeRegistration, PeerKey, update_node};
+use shared::bee_msg::misc::RegistrationStatus;
 use shared::bee_msg::node::*;
 use shared::conn::PeerIdentity;
 
@@ -7,6 +8,14 @@ const COMPATFLAG_CLIENT_SUPPORTS_REGREJ: u8 = 1;
 
 impl HandleWithResponse for RegisterNodeV2 {
     type Response = RegisterNodeV2Resp;
+
+    fn error_response() -> Self::Response {
+        RegisterNodeV2Resp {
+            status: RegistrationStatus::Rejected,
+            message: b"Internal error, see the management log".to_vec(),
+            ..Default::default()
+        }
+    }
 
     async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
@@ -21,27 +30,47 @@ impl HandleWithResponse for RegisterNodeV2 {
         let reject =
             (req.header().msg_compat_feature_flags & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
 
+        let token = match String::from_utf8(self.identity_token) {
+            Ok(token) => Some(token).filter(|t| !t.is_empty()),
+            Err(_) => {
+                return Ok(RegisterNodeV2Resp {
+                    status: RegistrationStatus::Rejected,
+                    message: b"Malformed identity token".to_vec(),
+                    ..Default::default()
+                });
+            }
+        };
+
         let peer_key = PeerKey {
             key_id,
-            token: None,
+            token,
             addr: req.addr().to_string(),
         };
 
-        let update = match update_node(self.0, app, reject, Some(peer_key)).await? {
+        let update = match update_node(self.node, app, reject, Some(peer_key)).await? {
             NodeRegistration::Updated(update) => update,
             NodeRegistration::Pending => {
                 log::info!(
                     "Key pair ID {key_id} from {:?} is pending approval",
                     req.addr()
                 );
-                bail!("Key pair ID {key_id} is pending approval by an admin");
+                return Ok(RegisterNodeV2Resp {
+                    status: RegistrationStatus::Pending,
+                    message: format!("Key pair ID {key_id} is pending approval by an admin")
+                        .into_bytes(),
+                    ..Default::default()
+                });
             }
             NodeRegistration::Rejected(reason) => {
                 log::warn!(
                     "Rejected key pair ID {key_id} from {:?}: {reason}",
                     req.addr()
                 );
-                bail!("Registration of key pair ID {key_id} was rejected: {reason}");
+                return Ok(RegisterNodeV2Resp {
+                    status: RegistrationStatus::Rejected,
+                    message: reason.into_bytes(),
+                    ..Default::default()
+                });
             }
         };
 
@@ -62,6 +91,8 @@ impl HandleWithResponse for RegisterNodeV2 {
             .ok_or_else(|| anyhow!("Could not read file system UUID from database"))?;
 
         Ok(RegisterNodeV2Resp {
+            status: RegistrationStatus::Ok,
+            message: vec![],
             node_num_id: update.node_id,
             grpc_port: app.static_info().user_config.grpc_port,
             fs_uuid: fs_uuid.into_bytes(),
@@ -79,13 +110,29 @@ mod test {
     use shared::conn::beecrypt::KeyPairId;
 
     fn msg(node_id: NodeId) -> RegisterNodeV2 {
-        RegisterNodeV2(RegisterNode {
-            node_alias: b"storage_v2".to_vec(),
-            node_type: NodeType::Storage,
-            node_id,
-            port: 8003,
-            ..Default::default()
-        })
+        RegisterNodeV2 {
+            node: RegisterNode {
+                node_alias: b"storage_v2".to_vec(),
+                node_type: NodeType::Storage,
+                node_id,
+                port: 8003,
+                ..Default::default()
+            },
+            identity_token: vec![],
+        }
+    }
+
+    fn client_msg(node_id: NodeId, token: &str) -> RegisterNodeV2 {
+        RegisterNodeV2 {
+            node: RegisterNode {
+                node_alias: b"client_v2".to_vec(),
+                node_type: NodeType::Client,
+                node_id,
+                port: 8004,
+                ..Default::default()
+            },
+            identity_token: token.as_bytes().to_vec(),
+        }
     }
 
     #[tokio::test]
@@ -142,7 +189,7 @@ mod test {
         req.identity = PeerIdentity::Unregistered(key_id);
         RegisterIdentity {
             name: name.as_bytes().to_vec(),
-            key_id: key_id.to_string().into_bytes(),
+            ..Default::default()
         }
         .handle(app, &mut req)
         .await
@@ -160,7 +207,15 @@ mod test {
             key_id,
             identity_id: 0,
         };
-        Ok(msg(node_id).handle(app, &mut req).await?.node_num_id)
+        let resp = msg(node_id).handle(app, &mut req).await?;
+        if resp.status != RegistrationStatus::Ok {
+            bail!(
+                "{:?}: {}",
+                resp.status,
+                String::from_utf8_lossy(&resp.message)
+            );
+        }
+        Ok(resp.node_num_id)
     }
 
     async fn mapping(app: &TestApp) -> Vec<(i64, NodeId)> {
@@ -231,7 +286,9 @@ mod test {
         let mut req = TestRequest::new(Header::default());
         req.identity = PeerIdentity::Unregistered(key_id);
 
-        msg(0).handle(&app, &mut req).await.unwrap_err();
+        let resp = msg(0).handle(&app, &mut req).await.unwrap();
+        assert_eq!(resp.status, RegistrationStatus::Pending);
+        assert_eq!(resp.node_num_id, 0);
         assert_eq!(pending_keys(&app).await, 1);
         assert!(mapping(&app).await.is_empty());
 
@@ -242,6 +299,7 @@ mod test {
         .unwrap();
 
         let resp = msg(0).handle(&app, &mut req).await.unwrap();
+        assert_eq!(resp.status, RegistrationStatus::Ok);
         assert_ne!(resp.node_num_id, 0);
         assert_eq!(pending_keys(&app).await, 0);
         assert_eq!(mapping(&app).await.len(), 1);
@@ -258,7 +316,8 @@ mod test {
         let mut req = TestRequest::new(Header::default());
         req.identity = PeerIdentity::Unregistered(key_id);
 
-        msg(0).handle(&app, &mut req).await.unwrap_err();
+        let resp = msg(0).handle(&app, &mut req).await.unwrap();
+        assert_eq!(resp.status, RegistrationStatus::Rejected);
         assert!(mapping(&app).await.is_empty());
         assert_eq!(pending_keys(&app).await, 0);
 
@@ -272,6 +331,45 @@ mod test {
     }
 
     #[tokio::test]
+    async fn client_token() {
+        let app = TestApp::non_legacy_with_config(crate::config::Config {
+            register_client_mode: crate::config::RegisterClientMode::Token,
+            ..Default::default()
+        })
+        .await;
+        let token = app
+            .write_tx(|tx| {
+                crate::bee_msg::create_identity_token(
+                    tx,
+                    crate::config::TokenScope::Client,
+                    false,
+                    None,
+                )
+            })
+            .await
+            .unwrap();
+
+        let register = |c: &str, token: &str| {
+            let key_id: KeyPairId = format!("sha256:{}", c.repeat(64)).parse().unwrap();
+            let mut req = TestRequest::new(Header::default());
+            req.identity = PeerIdentity::Unregistered(key_id);
+            let msg = client_msg(0, token);
+            let app = &app;
+            async move { msg.handle(app, &mut req).await.unwrap() }
+        };
+
+        assert_eq!(register("a", "").await.status, RegistrationStatus::Rejected);
+
+        let resp = register("a", &token).await;
+        assert_eq!(resp.status, RegistrationStatus::Ok);
+        assert_ne!(resp.node_num_id, 0);
+
+        let resp = register("b", &token).await;
+        assert_eq!(resp.status, RegistrationStatus::Rejected);
+        assert!(String::from_utf8_lossy(&resp.message).contains("already been used"));
+    }
+
+    #[tokio::test]
     async fn replace_stale_client() {
         let app = TestApp::new().await;
         let key_id: KeyPairId = format!("sha256:{}", "a".repeat(64)).parse().unwrap();
@@ -281,17 +379,11 @@ mod test {
             async move {
                 let mut req = TestRequest::new(Header::default());
                 req.identity = PeerIdentity::Unregistered(key_id);
-                RegisterNodeV2(RegisterNode {
-                    node_alias: b"client_v2".to_vec(),
-                    node_type: NodeType::Client,
-                    node_id,
-                    port: 8004,
-                    ..Default::default()
-                })
-                .handle(app, &mut req)
-                .await
-                .unwrap()
-                .node_num_id
+                client_msg(node_id, "")
+                    .handle(app, &mut req)
+                    .await
+                    .unwrap()
+                    .node_num_id
             }
         };
 

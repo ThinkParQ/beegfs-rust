@@ -208,7 +208,10 @@ impl Msg for RegisterNodeResp {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RegisterNodeV2(pub RegisterNode);
+pub struct RegisterNodeV2 {
+    pub node: RegisterNode,
+    pub identity_token: Vec<u8>,
+}
 
 impl Msg for RegisterNodeV2 {
     const ID: MsgId = 1086;
@@ -216,18 +219,26 @@ impl Msg for RegisterNodeV2 {
 
 impl Serializable for RegisterNodeV2 {
     fn serialize(&self, ser: &mut Serializer<'_>) -> Result<()> {
-        self.0.serialize(ser)
+        self.node.serialize(ser)?;
+        ser.cstr(&self.identity_token, 0)
     }
 }
 
 impl Deserializable for RegisterNodeV2 {
     fn deserialize(des: &mut Deserializer<'_>) -> Result<Self> {
-        Ok(Self(RegisterNode::deserialize(des)?))
+        Ok(Self {
+            node: RegisterNode::deserialize(des)?,
+            identity_token: des.cstr(0)?,
+        })
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterNodeV2Resp {
+    #[bee_serde(as = Int<u8>)]
+    pub status: super::misc::RegistrationStatus,
+    #[bee_serde(as = CStr<0>)]
+    pub message: Vec<u8>,
     pub node_num_id: NodeId,
     pub grpc_port: Port,
     #[bee_serde(as = CStr<0>)]

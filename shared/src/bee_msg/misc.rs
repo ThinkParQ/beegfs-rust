@@ -135,12 +135,33 @@ pub enum CapacityPoolQueryType {
 
 impl_enum_bee_msg_traits!(CapacityPoolQueryType, Meta => 0, Storage => 1, MetaMirrored => 2, StorageMirrored => 3);
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RegistrationStatus {
+    #[default]
+    Ok,
+    Pending,
+    Rejected,
+}
+
+impl_enum_bee_msg_traits!(RegistrationStatus, Ok => 0, Pending => 1, Rejected => 2);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum IdentityCategory {
+    #[default]
+    Client,
+    Server,
+}
+
+impl_enum_bee_msg_traits!(IdentityCategory, Client => 1, Server => 2);
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterIdentity {
+    #[bee_serde(as = Int<u8>)]
+    pub category: IdentityCategory,
     #[bee_serde(as = CStr<0>)]
     pub name: Vec<u8>,
     #[bee_serde(as = CStr<0>)]
-    pub key_id: Vec<u8>,
+    pub identity_token: Vec<u8>,
 }
 
 impl Msg for RegisterIdentity {
@@ -149,7 +170,10 @@ impl Msg for RegisterIdentity {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BeeSerde)]
 pub struct RegisterIdentityResp {
-    pub result: OpsErr,
+    #[bee_serde(as = Int<u8>)]
+    pub status: RegistrationStatus,
+    #[bee_serde(as = CStr<0>)]
+    pub message: Vec<u8>,
 }
 
 impl Msg for RegisterIdentityResp {

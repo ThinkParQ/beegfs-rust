@@ -2,7 +2,6 @@ use super::*;
 use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
 use shared::conn::PeerIdentity;
-use shared::conn::beecrypt::KeyPairId;
 
 pub(crate) fn identities_version(tx: &Transaction) -> Result<u64> {
     Ok(db::config::get(tx, db::config::Config::IdentitiesVersion)?.unwrap_or(0))
@@ -22,38 +21,33 @@ impl HandleWithResponse for RegisterIdentity {
     type Response = RegisterIdentityResp;
 
     fn error_response() -> Self::Response {
-        RegisterIdentityResp {
-            result: OpsErr::INTERNAL,
-        }
+        rejected("Internal error, see the management log".to_string())
     }
 
     async fn handle(self, app: &impl App, req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
-        if req.peer_identity() == PeerIdentity::Legacy {
-            bail!("RegisterIdentity requires a non-legacy connection protocol");
-        }
+        let key_id = match req.peer_identity() {
+            PeerIdentity::Unregistered(key_id) | PeerIdentity::Registered { key_id, .. } => key_id,
+            PeerIdentity::Legacy => {
+                bail!("RegisterIdentity requires a non-legacy connection protocol")
+            }
+        };
 
-        let parsed = String::from_utf8(self.name).ok().zip(
-            std::str::from_utf8(&self.key_id)
-                .ok()
-                .and_then(|s| s.parse::<KeyPairId>().ok()),
-        );
-
-        let Some((name, key_id)) = parsed else {
-            log::warn!(
-                "Peer {:?} tried to register an identity with an invalid name or key pair ID",
-                req.addr()
-            );
-            return Ok(RegisterIdentityResp {
-                result: OpsErr::INVAL,
-            });
+        let (Ok(name), Ok(token)) = (
+            String::from_utf8(self.name),
+            String::from_utf8(self.identity_token),
+        ) else {
+            return Ok(rejected("Malformed name or identity token".to_string()));
         };
 
         let key_req = KeyRequest {
             key_id,
-            category: KeyCategory::Client,
-            token: None,
+            category: match self.category {
+                IdentityCategory::Client => KeyCategory::Client,
+                IdentityCategory::Server => KeyCategory::Server,
+            },
+            token: Some(token).filter(|t| !t.is_empty()),
             node: None,
             name: Some(name).filter(|name| !name.is_empty()),
             addr: req.addr().to_string(),
@@ -79,7 +73,9 @@ impl HandleWithResponse for RegisterIdentity {
                     req.addr()
                 );
                 return Ok(RegisterIdentityResp {
-                    result: OpsErr::AGAIN,
+                    status: RegistrationStatus::Pending,
+                    message: format!("Key pair ID {key_id} is pending approval by an admin")
+                        .into_bytes(),
                 });
             }
             Admission::Rejected(reason) => {
@@ -87,32 +83,36 @@ impl HandleWithResponse for RegisterIdentity {
                     "Rejected key pair ID {key_id} from {:?}: {reason}",
                     req.addr()
                 );
-                return Ok(RegisterIdentityResp {
-                    result: OpsErr::INVAL,
-                });
+                return Ok(rejected(reason));
             }
         };
-        let name = key_req.name;
 
         log::info!(
-            "Registered key pair ID {key_id} for identity {name:?} (ID {identity_id}) from {:?}",
+            "Registered key pair ID {key_id} for identity {:?} (ID {identity_id}) from {:?}",
+            key_req.name,
             req.addr()
         );
 
-        if req.peer_identity() == PeerIdentity::Unregistered(key_id) {
-            req.set_peer_identity(PeerIdentity::Registered {
-                key_id,
-                identity_id,
-            });
-        }
+        req.set_peer_identity(PeerIdentity::Registered {
+            key_id,
+            identity_id,
+        });
 
         if version != version_before {
             notify_identities_changed(app, version).await;
         }
 
         Ok(RegisterIdentityResp {
-            result: OpsErr::SUCCESS,
+            status: RegistrationStatus::Ok,
+            message: vec![],
         })
+    }
+}
+
+fn rejected(reason: String) -> RegisterIdentityResp {
+    RegisterIdentityResp {
+        status: RegistrationStatus::Rejected,
+        message: reason.into_bytes(),
     }
 }
 
@@ -121,6 +121,15 @@ mod test {
     use super::*;
     use crate::app::test::*;
     use shared::bee_msg::Header;
+    use shared::conn::beecrypt::KeyPairId;
+
+    fn msg(name: &str, token: &str) -> RegisterIdentity {
+        RegisterIdentity {
+            category: IdentityCategory::Client,
+            name: name.as_bytes().to_vec(),
+            identity_token: token.as_bytes().to_vec(),
+        }
+    }
 
     #[tokio::test]
     async fn register_identity() {
@@ -130,38 +139,34 @@ mod test {
         let mut req = TestRequest::new(Header::default());
         req.identity = PeerIdentity::Unregistered(key_id);
 
-        let resp = RegisterIdentity {
-            name: b"node1".to_vec(),
-            key_id: key_id.to_string().into_bytes(),
-        }
-        .handle(&app, &mut req)
-        .await
-        .unwrap();
-
-        assert_eq!(resp.result, OpsErr::SUCCESS);
+        let resp = msg("node1", "").handle(&app, &mut req).await.unwrap();
+        assert_eq!(resp.status, RegistrationStatus::Ok);
         assert!(matches!(
             req.identity,
             PeerIdentity::Registered { key_id: k, .. } if k == key_id
         ));
 
-        let resp = RegisterIdentity {
-            name: b"node1".to_vec(),
-            key_id: b"invalid".to_vec(),
-        }
-        .handle(&app, &mut req)
-        .await
-        .unwrap();
+        let resp = msg("node2", "ignored")
+            .handle(&app, &mut req)
+            .await
+            .unwrap();
+        assert_eq!(resp.status, RegistrationStatus::Ok);
 
-        assert_eq!(resp.result, OpsErr::INVAL);
+        let other: KeyPairId = format!("sha256:{}", "b".repeat(64)).parse().unwrap();
+        let mut other_req = TestRequest::new(Header::default());
+        other_req.identity = PeerIdentity::Unregistered(other);
+        let resp = msg("node3", "beegfs-idt-1.1.00")
+            .handle(&app, &mut other_req)
+            .await
+            .unwrap();
+        assert_eq!(resp.status, RegistrationStatus::Rejected);
+        assert_eq!(other_req.identity, PeerIdentity::Unregistered(other));
 
-        let resp = RegisterIdentity {
-            name: b"node2".to_vec(),
-            key_id: key_id.to_string().into_bytes(),
-        }
-        .handle(&app, &mut req)
-        .await
-        .unwrap();
-        assert_eq!(resp.result, OpsErr::SUCCESS);
+        let mut legacy_req = TestRequest::new(Header::default());
+        msg("node4", "")
+            .handle(&app, &mut legacy_req)
+            .await
+            .unwrap_err();
     }
 
     #[tokio::test]
@@ -174,14 +179,8 @@ mod test {
             let mut req = TestRequest::new(Header::default());
             req.identity = PeerIdentity::Unregistered(key_id);
 
-            let resp = RegisterIdentity {
-                name: vec![],
-                key_id: key_id.to_string().into_bytes(),
-            }
-            .handle(&app, &mut req)
-            .await
-            .unwrap();
-            assert_eq!(resp.result, OpsErr::SUCCESS);
+            let resp = msg("", "").handle(&app, &mut req).await.unwrap();
+            assert_eq!(resp.status, RegistrationStatus::Ok);
 
             let PeerIdentity::Registered { identity_id, .. } = req.identity else {
                 panic!("identity not registered");

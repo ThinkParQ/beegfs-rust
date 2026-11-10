@@ -57,7 +57,7 @@ mod test {
         req.identity = PeerIdentity::Unregistered(key_id);
         RegisterIdentity {
             name: b"id1".to_vec(),
-            key_id: key_id.to_string().into_bytes(),
+            ..Default::default()
         }
         .handle(&app, &mut req)
         .await
