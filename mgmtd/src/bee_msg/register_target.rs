@@ -7,7 +7,7 @@ impl HandleWithResponse for RegisterTarget {
     async fn handle(self, app: &impl App, _req: &mut impl Request) -> Result<Self::Response> {
         fail_on_pre_shutdown(app)?;
 
-        let registration_disable = app.static_info().user_config.registration_disable;
+        let registration_disable = common::new_servers_disabled(app.static_info());
 
         let (id, is_new) = app
             .write_tx(move |tx| {

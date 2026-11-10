@@ -33,12 +33,16 @@ mod get_target_mappings;
 mod get_target_states;
 mod heartbeat;
 mod heartbeat_request;
+mod identity_admission;
 mod map_targets;
 mod map_targets_resp;
 mod peer_info;
 mod refresh_capacity_pools;
+pub(crate) use identity_admission::{
+    Admission, AdmissionModes, KeyCategory, KeyRequest, admit_key,
+};
 mod register_identity;
-pub(crate) use register_identity::{identities_version, notify_identities_changed, register_key};
+pub(crate) use register_identity::{identities_version, notify_identities_changed};
 mod register_node;
 mod register_node_v2;
 mod register_target;

@@ -1,5 +1,5 @@
 use super::*;
-use common::update_node;
+use common::{NodeRegistration, PeerKey, update_node};
 use shared::bee_msg::node::*;
 use shared::conn::PeerIdentity;
 
@@ -21,7 +21,29 @@ impl HandleWithResponse for RegisterNodeV2 {
         let reject =
             (req.header().msg_compat_feature_flags & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
 
-        let update = update_node(self.0, app, reject, Some(key_id)).await?;
+        let peer_key = PeerKey {
+            key_id,
+            token: None,
+            addr: req.addr().to_string(),
+        };
+
+        let update = match update_node(self.0, app, reject, Some(peer_key)).await? {
+            NodeRegistration::Updated(update) => update,
+            NodeRegistration::Pending => {
+                log::info!(
+                    "Key pair ID {key_id} from {:?} is pending approval",
+                    req.addr()
+                );
+                bail!("Key pair ID {key_id} is pending approval by an admin");
+            }
+            NodeRegistration::Rejected(reason) => {
+                log::warn!(
+                    "Rejected key pair ID {key_id} from {:?}: {reason}",
+                    req.addr()
+                );
+                bail!("Registration of key pair ID {key_id} was rejected: {reason}");
+            }
+        };
 
         if let Some(identity_id) = update.identity_id {
             req.set_peer_identity(PeerIdentity::Registered {
@@ -173,9 +195,9 @@ mod test {
         let node1 = register_v2(&app, key_a, 0).await.unwrap();
         assert_eq!(mapping(&app).await, vec![(id1, node1)]);
 
-        let (key_b, id1_again) = register_identity(&app, "id1", "b").await;
-        assert_eq!(id1_again, id1);
-        assert_eq!(register_v2(&app, key_b, node1).await.unwrap(), node1);
+        let (key_b, id_b) = register_identity(&app, "id1", "b").await;
+        assert_ne!(id_b, id1);
+        register_v2(&app, key_b, node1).await.unwrap_err();
 
         register_v2(&app, key_a, 0).await.unwrap_err();
         register_v2(&app, key_a, legacy_node).await.unwrap_err();
@@ -184,6 +206,69 @@ mod test {
         register_v2(&app, key_c, node1).await.unwrap_err();
 
         assert_eq!(mapping(&app).await, vec![(id1, node1)]);
+    }
+
+    async fn pending_keys(app: &TestApp) -> i64 {
+        app.read_tx(|tx| {
+            Ok(
+                tx.query_row(sql!("SELECT COUNT(*) FROM pending_keys"), [], |row| {
+                    row.get(0)
+                })?,
+            )
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn server_approval() {
+        let app = TestApp::non_legacy_with_config(crate::config::Config {
+            register_server_mode: crate::config::RegisterServerMode::Approval,
+            ..Default::default()
+        })
+        .await;
+        let key_id: KeyPairId = format!("sha256:{}", "a".repeat(64)).parse().unwrap();
+        let mut req = TestRequest::new(Header::default());
+        req.identity = PeerIdentity::Unregistered(key_id);
+
+        msg(0).handle(&app, &mut req).await.unwrap_err();
+        assert_eq!(pending_keys(&app).await, 1);
+        assert!(mapping(&app).await.is_empty());
+
+        app.write_tx(move |tx| {
+            crate::bee_msg::identity_admission::approve_pending_key(tx, &key_id)
+        })
+        .await
+        .unwrap();
+
+        let resp = msg(0).handle(&app, &mut req).await.unwrap();
+        assert_ne!(resp.node_num_id, 0);
+        assert_eq!(pending_keys(&app).await, 0);
+        assert_eq!(mapping(&app).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn servers_disabled() {
+        let app = TestApp::non_legacy_with_config(crate::config::Config {
+            register_server_mode: crate::config::RegisterServerMode::Disabled,
+            ..Default::default()
+        })
+        .await;
+        let key_id: KeyPairId = format!("sha256:{}", "a".repeat(64)).parse().unwrap();
+        let mut req = TestRequest::new(Header::default());
+        req.identity = PeerIdentity::Unregistered(key_id);
+
+        msg(0).handle(&app, &mut req).await.unwrap_err();
+        assert!(mapping(&app).await.is_empty());
+        assert_eq!(pending_keys(&app).await, 0);
+
+        shared::bee_msg::target::RegisterTarget {
+            reg_token: b"new_target".to_vec(),
+            target_id: 0,
+        }
+        .handle(&app, &mut TestRequest::new(Header::default()))
+        .await
+        .unwrap_err();
     }
 
     #[tokio::test]

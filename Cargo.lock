@@ -907,6 +907,7 @@ name = "mgmtd"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "clap",
  "daemonize",
  "env_logger",

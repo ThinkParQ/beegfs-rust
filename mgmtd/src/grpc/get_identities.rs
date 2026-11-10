@@ -51,6 +51,7 @@ pub(crate) async fn get_identities(
 mod test {
     use super::*;
     use crate::app::test::*;
+    use crate::bee_msg;
     use shared::conn::beecrypt::KeyPairId;
 
     #[tokio::test]
@@ -61,8 +62,23 @@ mod test {
 
         let (id_a, id_b) = app
             .write_tx(move |tx| {
-                let id_a = crate::bee_msg::register_key(tx, Some("a".into()), &key_a)?;
-                let id_b = crate::bee_msg::register_key(tx, None, &key_b)?;
+                let register = |key_id, name: Option<&str>| {
+                    let req = bee_msg::KeyRequest {
+                        key_id,
+                        category: bee_msg::KeyCategory::Client,
+                        token: None,
+                        node: None,
+                        name: name.map(str::to_string),
+                        addr: "127.0.0.1:1".to_string(),
+                    };
+                    let modes = bee_msg::AdmissionModes::from_config(&Default::default());
+                    match bee_msg::admit_key(tx, modes, &req)? {
+                        bee_msg::Admission::Registered(id) => Ok(id),
+                        other => Err(anyhow!("Not registered: {other:?}")),
+                    }
+                };
+                let id_a = register(key_a, Some("a"))?;
+                let id_b = register(key_b, None)?;
                 tx.execute(
                     sql!(
                         "INSERT INTO identity_to_node (identity_id, node_type, node_id)

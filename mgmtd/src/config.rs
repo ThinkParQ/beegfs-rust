@@ -272,6 +272,30 @@ generate_structs! {
     #[arg(num_args = 0..=1, default_missing_value = "true")]
     conn_key_generate: bool = false,
 
+    /// Defines how new client identities (client nodes, ctl, fsck) are accepted. [default: automatic]
+    ///
+    /// * `automatic` accepts every new identity.
+    /// * `token` requires an identity token.
+    /// * `approval` keeps the identity pending until an admin approves it.
+    /// * `both` accepts an identity token or keeps the identity pending without one.
+    ///
+    /// A provided but invalid identity token is always rejected. Ignored with
+    /// `conn-protocol = "legacy"`.
+    #[arg(long)]
+    #[arg(value_name = "MODE")]
+    register_client_mode: RegisterClientMode = RegisterClientMode::Automatic,
+
+    /// Defines how new server identities (meta, storage, mon) are accepted. [default: automatic]
+    ///
+    /// * `automatic` accepts every new identity.
+    /// * `approval` keeps the identity pending until an admin approves it.
+    /// * `disabled` refuses new server identities, nodes and targets.
+    ///
+    /// Replaces `registration-disable`. Ignored with `conn-protocol = "legacy"`.
+    #[arg(long)]
+    #[arg(value_name = "MODE")]
+    register_server_mode: RegisterServerMode = RegisterServerMode::Automatic,
+
     /// General
 
     /// Disables registration of new nodes and targets (clients excluded).
@@ -621,6 +645,25 @@ impl ConnProtocol {
             ConnProtocol::Encrypted => Some(Mode::Encrypted),
         }
     }
+}
+
+/// Defines how new client identities are accepted
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegisterClientMode {
+    Automatic,
+    Token,
+    Approval,
+    Both,
+}
+
+/// Defines how new server identities are accepted
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegisterServerMode {
+    Automatic,
+    Approval,
+    Disabled,
 }
 
 /// Defines the log level

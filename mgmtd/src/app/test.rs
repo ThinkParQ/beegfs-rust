@@ -48,9 +48,13 @@ impl TestApp {
     }
 
     pub async fn non_legacy() -> Self {
+        Self::non_legacy_with_config(Config::default()).await
+    }
+
+    pub async fn non_legacy_with_config(user_config: Config) -> Self {
         let pem = KeyPair::generate().unwrap();
         let crypto = ConnCrypto::new(Mode::Encrypted, KeyPair::load(pem.as_bytes()).unwrap());
-        Self::build(Config::default(), Some(crypto)).await
+        Self::build(user_config, Some(crypto)).await
     }
 
     async fn build(user_config: Config, conn_crypto: Option<ConnCrypto>) -> Self {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::bee_msg;
 use conn::ConnInfo;
 
 pub(crate) async fn register_identity(
@@ -25,21 +26,41 @@ pub(crate) async fn register_identity(
     };
 
     let name = req.name.filter(|name| !name.is_empty());
+    let key_req = bee_msg::KeyRequest {
+        key_id,
+        category: bee_msg::KeyCategory::Client,
+        token: None,
+        node: None,
+        name: name.clone(),
+        addr: info.addr.to_string(),
+    };
+    let modes = bee_msg::AdmissionModes::from_config(&app.static_info().user_config);
 
-    let (identity_id, version_before, version) = app
-        .write_tx({
-            let name = name.clone();
-            move |tx| {
-                let version_before = crate::bee_msg::identities_version(tx)?;
-                let identity_id = crate::bee_msg::register_key(tx, name, &key_id)?;
-                Ok((
-                    identity_id,
-                    version_before,
-                    crate::bee_msg::identities_version(tx)?,
-                ))
-            }
+    let (admission, version_before, version) = app
+        .write_tx(move |tx| {
+            let version_before = bee_msg::identities_version(tx)?;
+            let admission = bee_msg::admit_key(tx, modes, &key_req)?;
+            Ok((admission, version_before, bee_msg::identities_version(tx)?))
         })
         .await?;
+
+    let identity_id = match admission {
+        bee_msg::Admission::Registered(identity_id) => identity_id,
+        bee_msg::Admission::Pending => {
+            log::info!(
+                "Key pair ID {key_id} from {} is pending approval",
+                info.addr
+            );
+            return Err(anyhow!(
+                "Key pair ID {key_id} is pending approval by an admin"
+            ))
+            .status_code(Code::Unavailable);
+        }
+        bee_msg::Admission::Rejected(reason) => {
+            log::warn!("Rejected key pair ID {key_id} from {}: {reason}", info.addr);
+            return Err(anyhow!(reason)).status_code(Code::PermissionDenied);
+        }
+    };
 
     *info.identity.lock().unwrap() = PeerIdentity::Registered {
         key_id,
@@ -52,7 +73,7 @@ pub(crate) async fn register_identity(
     );
 
     if version != version_before {
-        crate::bee_msg::notify_identities_changed(app, version).await;
+        bee_msg::notify_identities_changed(app, version).await;
     }
 
     Ok(pm::RegisterIdentityResponse {

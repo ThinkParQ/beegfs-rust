@@ -1,5 +1,5 @@
 use super::*;
-use common::update_node;
+use common::{NodeRegistration, update_node};
 use shared::bee_msg::node::*;
 
 const COMPATFLAG_CLIENT_SUPPORTS_REGREJ: u8 = 1;
@@ -17,7 +17,9 @@ impl HandleWithResponse for RegisterNode {
         let reject =
             (req.header().msg_compat_feature_flags & COMPATFLAG_CLIENT_SUPPORTS_REGREJ) != 0;
 
-        let update = update_node(self, app, reject, None).await?;
+        let NodeRegistration::Updated(update) = update_node(self, app, reject, None).await? else {
+            bail!("Legacy node registration did not complete");
+        };
 
         let fs_uuid: String = app
             .read_tx(|tx| db::config::get(tx, db::config::Config::FsUuid))

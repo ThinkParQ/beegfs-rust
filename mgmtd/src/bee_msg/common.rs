@@ -1,4 +1,6 @@
 use super::*;
+use crate::StaticInfo;
+use crate::config::RegisterServerMode;
 use crate::db::node_nic::ReplaceNic;
 use db::misc::MetaRoot;
 use protobuf::license::VerifyResult;
@@ -93,16 +95,44 @@ pub(super) struct NodeUpdate {
     pub identities_changed: bool,
 }
 
+pub(super) enum NodeRegistration {
+    Updated(NodeUpdate),
+    Pending,
+    Rejected(String),
+}
+
+pub(super) struct PeerKey {
+    pub key_id: KeyPairId,
+    pub token: Option<String>,
+    pub addr: String,
+}
+
+pub(super) fn new_servers_disabled(info: &StaticInfo) -> bool {
+    match info.conn_crypto {
+        Some(_) => info.user_config.register_server_mode == RegisterServerMode::Disabled,
+        None => info.user_config.registration_disable,
+    }
+}
+
 /// Processes incoming node information. Registers new nodes if config allows it
 pub(super) async fn update_node(
     msg: RegisterNode,
     app: &impl App,
     reject: bool,
-    key_id: Option<KeyPairId>,
-) -> Result<NodeUpdate> {
+    peer_key: Option<PeerKey>,
+) -> Result<NodeRegistration> {
     let nics = msg.nics.clone();
     let requested_node_id = msg.node_id;
-    let registration_disable = app.static_info().user_config.registration_disable;
+    let registration_disable = new_servers_disabled(app.static_info());
+    let modes = AdmissionModes::from_config(&app.static_info().user_config);
+    let key_req = peer_key.map(|k| KeyRequest {
+        key_id: k.key_id,
+        category: KeyCategory::of_node_type(msg.node_type),
+        token: k.token,
+        node: Some((msg.node_type, msg.node_id)),
+        name: None,
+        addr: k.addr,
+    });
 
     let licensed_clients: Option<u32> = if msg.node_type == NodeType::Client {
         match app.get_license_cert_data() {
@@ -143,9 +173,20 @@ pub(super) async fn update_node(
         }
     };
 
-    let (node, meta_root, is_new, identity_id, version_before, version) = app
+    let res = app
         .write_tx_no_sync(move |tx| {
             let version_before = identities_version(tx)?;
+
+            let identity_id = match &key_req {
+                Some(key_req) => match admit_key(tx, modes, key_req)? {
+                    Admission::Registered(identity_id) => Some(identity_id),
+                    Admission::Pending => return Ok(Err(NodeRegistration::Pending)),
+                    Admission::Rejected(reason) => {
+                        return Ok(Err(NodeRegistration::Rejected(reason)));
+                    }
+                },
+                None => None,
+            };
 
             let node = if msg.node_id == 0 {
                 // No node ID given => new node
@@ -174,9 +215,9 @@ pub(super) async fn update_node(
 
             if node.is_none()
                 && msg.node_type == NodeType::Client
-                && let Some(key_id) = &key_id
+                && let Some(key_req) = &key_req
             {
-                delete_stale_client(tx, key_id)?;
+                delete_stale_client(tx, &key_req.key_id)?;
             }
 
             let (node, is_new) = if let Some(node) = node {
@@ -306,14 +347,9 @@ client version < 8.0)"
                 (node, true)
             };
 
-            let identity_id = match key_id {
-                Some(key_id) => {
-                    let identity_id = register_key(tx, None, &key_id)?;
-                    map_identity(tx, identity_id, node.node_type(), node.num_id())?;
-                    Some(identity_id)
-                }
-                None => None,
-            };
+            if let Some(identity_id) = identity_id {
+                map_identity(tx, identity_id, node.node_type(), node.num_id())?;
+            }
 
             // Update the corresponding nic lists
             db::node_nic::replace(
@@ -335,9 +371,21 @@ client version < 8.0)"
 
             let version = identities_version(tx)?;
 
-            Ok((node, meta_root, is_new, identity_id, version_before, version))
+            Ok(Ok((
+                node,
+                meta_root,
+                is_new,
+                identity_id,
+                version_before,
+                version,
+            )))
         })
         .await?;
+
+    let (node, meta_root, is_new, identity_id, version_before, version) = match res {
+        Ok(registered) => registered,
+        Err(not_registered) => return Ok(not_registered),
+    };
 
     app.replace_node_addrs(
         node.uid,
@@ -392,12 +440,12 @@ client version < 8.0)"
         .await;
     });
 
-    Ok(NodeUpdate {
+    Ok(NodeRegistration::Updated(NodeUpdate {
         node_id: node_num_id,
         identity_id,
         identities_version: version,
         identities_changed: version != version_before,
-    })
+    }))
 }
 
 pub(super) fn get_targets_with_states(
