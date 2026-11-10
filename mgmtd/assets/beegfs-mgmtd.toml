@@ -85,6 +85,20 @@
 # Generates a new key file at conn-key-file if it does not exist.
 # conn-key-generate = false
 
+# How new client identities (client nodes, ctl, fsck) are accepted: "automatic" (all), "token"
+# (requires an identity token), "approval" (pending until an admin approves) or "both" (a token or
+# approval). An invalid token is always rejected. Ignored with "legacy".
+# register-client-mode = "automatic"
+
+# How new server identities (meta, storage, mon) are accepted: "automatic" (all), "approval"
+# (pending until an admin approves) or "disabled" (no new servers and targets). Ignored with
+# "legacy".
+# register-server-mode = "automatic"
+
+# Which identities may run elevated ctl commands (all commands that change the system, and
+# license): "admin" or "any". Ignored with "legacy".
+# elevated-ctl-commands = "any"
+
 
 ### General ###
 #
@@ -92,7 +106,8 @@
 # and "h" (hours) for better readability. A missing suffix is interpreted as "s", so a value of "30"
 # means 30 seconds.
 
-# Disables registration of new nodes and targets (clients excluded).
+# Disables registration of new nodes and targets (clients excluded). Only valid with
+# conn-protocol = "legacy", use register-server-mode otherwise.
 # registration-disable = false
 
 # Defines after which time without contact a node/target is considered offline.

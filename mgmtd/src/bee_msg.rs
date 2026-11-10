@@ -38,6 +38,7 @@ mod map_targets;
 mod map_targets_resp;
 mod peer_info;
 mod refresh_capacity_pools;
+pub use identity_admission::create_identity_token;
 pub(crate) use identity_admission::{
     Admission, AdmissionModes, KeyCategory, KeyRequest, admit_key,
 };

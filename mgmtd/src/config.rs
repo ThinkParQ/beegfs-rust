@@ -142,6 +142,23 @@ generate_structs! {
     #[serde(skip)]
     import_from_v7: Option<PathBuf> = None,
 
+    /// Creates a new identity token with the given scope (client or admin), prints it, then exits.
+    ///
+    /// Uses `--db-file` for the database location or the default if not given. Can be run while
+    /// the management is running. The token can be used once unless `--identity-token-permanent`
+    /// is also given.
+    #[arg(long)]
+    #[arg(num_args = 1)]
+    #[arg(value_name = "SCOPE")]
+    #[serde(skip)]
+    generate_identity_token: Option<TokenScope> = None,
+
+    /// Makes the token created by `--generate-identity-token` usable by any number of identities.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "true")]
+    #[serde(skip)]
+    identity_token_permanent: bool = false,
+
     /// Loads additional configuration from the given file. [default = "/etc/beegfs/beegfs-mgmtd.toml"]
     ///
     /// Config file settings overwrite the default settings and command line settings
@@ -296,9 +313,22 @@ generate_structs! {
     #[arg(value_name = "MODE")]
     register_server_mode: RegisterServerMode = RegisterServerMode::Automatic,
 
+    /// Defines which identities may run elevated ctl commands. [default: any]
+    ///
+    /// * `admin` allows them only for admin identities.
+    /// * `any` allows them for every registered identity.
+    ///
+    /// Elevated are all commands that change the system, and `license`. Ignored with
+    /// `conn-protocol = "legacy"`.
+    #[arg(long)]
+    #[arg(value_name = "IDENTITIES")]
+    elevated_ctl_commands: ElevatedCtlCommands = ElevatedCtlCommands::Any,
+
     /// General
 
     /// Disables registration of new nodes and targets (clients excluded).
+    ///
+    /// Only valid with `conn-protocol = "legacy"`. Use `register-server-mode` otherwise.
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
     registration_disable: bool = false,
@@ -504,6 +534,17 @@ impl Config {
             bail!("gRPC TLS can only be disabled with the legacy connection protocol");
         }
 
+        if self.registration_disable && self.conn_protocol != ConnProtocol::Legacy {
+            bail!(
+                "registration-disable is only valid with the legacy connection protocol, \
+use register-server-mode = \"disabled\" instead"
+            );
+        }
+
+        if self.identity_token_permanent && self.generate_identity_token.is_none() {
+            bail!("identity-token-permanent requires generate-identity-token");
+        }
+
         if self.connection_limit < 1 {
             bail!("Connection limit cannot be smaller than 1");
         }
@@ -664,6 +705,22 @@ pub enum RegisterServerMode {
     Automatic,
     Approval,
     Disabled,
+}
+
+/// Defines who may run elevated ctl commands
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ElevatedCtlCommands {
+    Admin,
+    Any,
+}
+
+/// Defines what an identity token may register
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TokenScope {
+    Client,
+    Admin,
 }
 
 /// Defines the log level

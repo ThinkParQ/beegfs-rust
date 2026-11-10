@@ -8,6 +8,7 @@ pub mod db;
 mod error;
 mod grpc;
 pub mod license;
+pub use bee_msg::create_identity_token;
 mod quota;
 mod timer;
 mod types;

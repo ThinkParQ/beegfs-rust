@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{Config, RegisterClientMode, RegisterServerMode};
+use crate::config::{Config, RegisterClientMode, RegisterServerMode, TokenScope};
 use aws_lc_rs::constant_time::verify_slices_are_equal;
 use aws_lc_rs::digest::{SHA256, digest};
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use shared::conn::IdentityId;
 use shared::conn::beecrypt::KeyPairId;
 
-const TOKEN_PREFIX: &str = "beegfs-it-1";
+const TOKEN_PREFIX: &str = "beegfs-idt-1";
 const TOKEN_SECRET_LEN: usize = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,18 +32,10 @@ impl KeyCategory {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TokenScope {
-    Client,
-    Admin,
-}
-
-impl TokenScope {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Client => "client",
-            Self::Admin => "admin",
-        }
+fn scope_str(scope: TokenScope) -> &'static str {
+    match scope {
+        TokenScope::Client => "client",
+        TokenScope::Admin => "admin",
     }
 }
 
@@ -186,7 +178,7 @@ pub(crate) fn admit_key(
     Ok(Admission::Pending)
 }
 
-pub(crate) fn create_token(
+pub fn create_identity_token(
     tx: &Transaction,
     scope: TokenScope,
     permanent: bool,
@@ -203,7 +195,7 @@ pub(crate) fn create_token(
             "INSERT INTO identity_tokens (secret_hash, scope, permanent, comment)
             VALUES (?1, ?2, ?3, ?4)"
         ),
-        params![hash_secret(&secret), scope.as_str(), permanent, comment],
+        params![hash_secret(&secret), scope_str(scope), permanent, comment],
     )?;
 
     Ok(format!(
@@ -420,7 +412,7 @@ mod test {
                 Admission::Rejected(_)
             ));
 
-            let once = create_token(tx, TokenScope::Client, false, None).unwrap();
+            let once = create_identity_token(tx, TokenScope::Client, false, None).unwrap();
             assert!(matches!(
                 admit_key(tx, m, &client("a", Some(&once))).unwrap(),
                 Admission::Registered(_)
@@ -430,7 +422,8 @@ mod test {
                 Admission::Rejected(_)
             ));
 
-            let permanent = create_token(tx, TokenScope::Client, true, Some("lab")).unwrap();
+            let permanent =
+                create_identity_token(tx, TokenScope::Client, true, Some("lab")).unwrap();
             for c in ["c", "d"] {
                 assert!(matches!(
                     admit_key(tx, m, &client(c, Some(&permanent))).unwrap(),
@@ -438,7 +431,7 @@ mod test {
                 ));
             }
 
-            let admin = create_token(tx, TokenScope::Admin, false, None).unwrap();
+            let admin = create_identity_token(tx, TokenScope::Admin, false, None).unwrap();
             let Admission::Registered(id) = admit_key(tx, m, &client("e", Some(&admin))).unwrap()
             else {
                 panic!("not registered");
@@ -447,7 +440,7 @@ mod test {
 
             let (prefix, _) = permanent.rsplit_once('.').unwrap();
             let forged = format!("{prefix}.{}", "0".repeat(64));
-            for bad in [forged.as_str(), "beegfs-it-1.x.y", "nonsense"] {
+            for bad in [forged.as_str(), "beegfs-idt-1.x.y", "nonsense"] {
                 assert!(matches!(
                     admit_key(tx, m, &client("f", Some(bad))).unwrap(),
                     Admission::Rejected(_)
@@ -476,7 +469,7 @@ mod test {
             );
             assert_eq!(pending_count(tx), 2);
 
-            let token = create_token(tx, TokenScope::Client, false, None).unwrap();
+            let token = create_identity_token(tx, TokenScope::Client, false, None).unwrap();
             assert!(matches!(
                 admit_key(tx, m, &client("c", Some(&token))).unwrap(),
                 Admission::Registered(_)
