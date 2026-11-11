@@ -1,11 +1,6 @@
 use super::*;
-use rusqlite::Transaction;
 use shared::bee_msg::misc::*;
 use shared::conn::PeerIdentity;
-
-pub(crate) fn identities_version(tx: &Transaction) -> Result<u64> {
-    Ok(db::config::get(tx, db::config::Config::IdentitiesVersion)?.unwrap_or(0))
-}
 
 pub(crate) async fn notify_identities_changed(app: &impl App, version: u64) {
     log::info!("Identities changed, notifying nodes about version {version}");
@@ -58,9 +53,9 @@ impl HandleWithResponse for RegisterIdentity {
             .write_tx({
                 let key_req = key_req.clone();
                 move |tx| {
-                    let version_before = identities_version(tx)?;
+                    let version_before = db::identity::version(tx)?;
                     let admission = admit_key(tx, modes, &key_req)?;
-                    Ok((admission, version_before, identities_version(tx)?))
+                    Ok((admission, version_before, db::identity::version(tx)?))
                 }
             })
             .await?;

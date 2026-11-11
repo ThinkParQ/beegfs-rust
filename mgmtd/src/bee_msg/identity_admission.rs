@@ -271,6 +271,7 @@ fn insert_identity(
         sql!("INSERT INTO keys (key, identity_id) VALUES (?1, ?2)"),
         params![key, identity_id],
     )?;
+    db::identity::bump_version(tx)?;
 
     tx.execute_cached(sql!("DELETE FROM pending_keys WHERE key = ?1"), [key])?;
 

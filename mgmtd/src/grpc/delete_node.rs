@@ -14,7 +14,7 @@ pub(crate) async fn delete_node(
     let (node, version_before, version) = app
         .db_conn(move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let version_before = crate::bee_msg::identities_version(&tx)?;
+            let version_before = db::identity::version(&tx)?;
 
             let node = node.resolve(&tx, EntityType::Node)?;
 
@@ -65,7 +65,7 @@ pub(crate) async fn delete_node(
             }
 
             db::node::delete(&tx, node.uid)?;
-            let version = crate::bee_msg::identities_version(&tx)?;
+            let version = db::identity::version(&tx)?;
 
             if execute {
                 tx.commit()?;

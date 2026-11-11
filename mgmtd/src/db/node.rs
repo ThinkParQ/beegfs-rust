@@ -56,16 +56,22 @@ pub(crate) fn get_by_alias(tx: &Transaction, alias: &str) -> Result<Node> {
 /// # Return value
 /// Returns the number of deleted clients.
 pub(crate) fn delete_stale_clients(tx: &Transaction, timeout: Duration) -> Result<usize> {
-    let affected = {
-        let mut stmt = tx.prepare_cached(sql!(
+    let identities: Vec<Option<i64>> = tx.query_map_collect(
+        sql!(
             "DELETE FROM nodes
             WHERE DATETIME(last_contact) < DATETIME('now', '-' || ?1 || ' seconds')
-            AND node_type = ?2"
-        ))?;
-        stmt.execute(params![timeout.as_secs(), NodeType::Client.sql_variant()])?
-    };
+            AND node_type = ?2
+            RETURNING identity_id"
+        ),
+        params![timeout.as_secs(), NodeType::Client.sql_variant()],
+        |row| row.get(0),
+    )?;
 
-    Ok(affected)
+    if identities.iter().any(Option::is_some) {
+        super::identity::bump_version(tx)?;
+    }
+
+    Ok(identities.len())
 }
 
 /// Inserts a node into the database. If node_id is 0, a new ID is chosen automatically.
@@ -196,9 +202,20 @@ pub(crate) fn count_machines(
 
 /// Delete a node from the database.
 pub(crate) fn delete(tx: &Transaction, node_uid: Uid) -> Result<()> {
-    let affected = tx.execute_cached(sql!("DELETE FROM nodes WHERE node_uid = ?1"), [node_uid])?;
+    let identity_id: Option<i64> = tx
+        .query_row_cached(
+            sql!("DELETE FROM nodes WHERE node_uid = ?1 RETURNING identity_id"),
+            [node_uid],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(rusqlite::Error::StatementChangedRows(0))?;
 
-    check_affected_rows(affected, [1])
+    if identity_id.is_some() {
+        super::identity::bump_version(tx)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -216,7 +216,6 @@ impl PeerIdLookup for DbPeerIds {
                         .query_row(
                             sql!(
                                 "SELECT k.key FROM nodes AS n
-                                INNER JOIN identity_to_node AS itn USING (node_type, node_id)
                                 INNER JOIN keys AS k USING (identity_id)
                                 WHERE n.node_uid = ?1
                                 ORDER BY k.key_id DESC LIMIT 1"

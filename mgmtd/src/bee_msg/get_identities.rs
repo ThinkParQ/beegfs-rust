@@ -10,9 +10,9 @@ impl HandleWithResponse for GetIdentities {
             .read_tx(|tx| {
                 let keys = tx.query_map_collect(
                     sql!(
-                        "SELECT k.key, itn.node_type, itn.node_id FROM keys AS k
+                        "SELECT k.key, n.node_type, n.node_id FROM keys AS k
                         INNER JOIN identities AS i USING (identity_id)
-                        LEFT JOIN identity_to_node AS itn USING (identity_id)
+                        LEFT JOIN nodes AS n USING (identity_id)
                         WHERE i.revoked = 0
                         ORDER BY k.key_id"
                     ),
@@ -31,7 +31,7 @@ impl HandleWithResponse for GetIdentities {
                     },
                 )?;
 
-                Ok((identities_version(tx)?, keys))
+                Ok((db::identity::version(tx)?, keys))
             })
             .await?;
 

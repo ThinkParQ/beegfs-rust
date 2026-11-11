@@ -39,7 +39,7 @@ pub(crate) async fn register_identity(
 
     let (admission, admin, version_before, version) = app
         .write_tx(move |tx| {
-            let version_before = bee_msg::identities_version(tx)?;
+            let version_before = db::identity::version(tx)?;
             let admission = bee_msg::admit_key(tx, modes, &key_req)?;
 
             let admin = match admission {
@@ -52,12 +52,7 @@ pub(crate) async fn register_identity(
                 _ => false,
             };
 
-            Ok((
-                admission,
-                admin,
-                version_before,
-                bee_msg::identities_version(tx)?,
-            ))
+            Ok((admission, admin, version_before, db::identity::version(tx)?))
         })
         .await?;
 

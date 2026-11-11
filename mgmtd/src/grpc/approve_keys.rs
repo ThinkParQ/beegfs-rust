@@ -29,11 +29,11 @@ pub(crate) async fn approve_keys(
         .write_tx({
             let key_ids = key_ids.clone();
             move |tx| {
-                let version_before = crate::bee_msg::identities_version(tx)?;
+                let version_before = db::identity::version(tx)?;
                 for key_id in &key_ids {
                     crate::bee_msg::approve_pending_key(tx, key_id)?;
                 }
-                Ok((version_before, crate::bee_msg::identities_version(tx)?))
+                Ok((version_before, db::identity::version(tx)?))
             }
         })
         .await

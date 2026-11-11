@@ -31,7 +31,7 @@ pub(crate) async fn revoke_identity(
 
     let (identity_id, version_before, version) = app
         .write_tx(move |tx| {
-            let version_before = crate::bee_msg::identities_version(tx)?;
+            let version_before = db::identity::version(tx)?;
 
             let identity_id: Option<i64> = if let Some(key_id) = key_id {
                 tx.query_row(
@@ -43,14 +43,12 @@ pub(crate) async fn revoke_identity(
             } else if let Some(node) = node {
                 let node = node.resolve(tx, EntityType::Node)?;
                 tx.query_row(
-                    sql!(
-                        "SELECT identity_id FROM identity_to_node
-                        WHERE node_type = ?1 AND node_id = ?2"
-                    ),
-                    params![node.node_type().sql_variant(), node.num_id()],
+                    sql!("SELECT identity_id FROM nodes WHERE node_uid = ?1"),
+                    [node.uid],
                     |row| row.get(0),
                 )
                 .optional()?
+                .flatten()
             } else {
                 tx.query_row(
                     sql!("SELECT identity_id FROM identities WHERE identity_id = ?1"),
@@ -71,16 +69,14 @@ pub(crate) async fn revoke_identity(
 
             if revoke {
                 tx.execute(
-                    sql!("DELETE FROM identity_to_node WHERE identity_id = ?1"),
+                    sql!("UPDATE nodes SET identity_id = NULL WHERE identity_id = ?1"),
                     [identity_id],
                 )?;
             }
 
-            Ok((
-                identity_id,
-                version_before,
-                crate::bee_msg::identities_version(tx)?,
-            ))
+            db::identity::bump_version(tx)?;
+
+            Ok((identity_id, version_before, db::identity::version(tx)?))
         })
         .await
         .status_code(Code::NotFound)?;
@@ -141,10 +137,7 @@ mod test {
         };
         app.write_tx(move |tx| {
             tx.execute(
-                sql!(
-                    "INSERT INTO identity_to_node (identity_id, node_type, node_id)
-                    VALUES (?1, ?2, 1)"
-                ),
+                sql!("UPDATE nodes SET identity_id = ?1 WHERE node_type = ?2 AND node_id = 1"),
                 params![b, NodeType::Meta.sql_variant()],
             )?;
             Ok(())
@@ -182,11 +175,11 @@ mod test {
         assert_eq!(visible_keys(&app).await, 0);
         let mapped: i64 = app
             .read_tx(|tx| {
-                Ok(
-                    tx.query_row(sql!("SELECT COUNT(*) FROM identity_to_node"), [], |row| {
-                        row.get(0)
-                    })?,
-                )
+                Ok(tx.query_row(
+                    sql!("SELECT COUNT(*) FROM nodes WHERE identity_id IS NOT NULL"),
+                    [],
+                    |row| row.get(0),
+                )?)
             })
             .await
             .unwrap();

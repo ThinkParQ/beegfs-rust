@@ -9,6 +9,7 @@
 pub(crate) mod buddy_group;
 pub(crate) mod config;
 pub(crate) mod entity;
+pub(crate) mod identity;
 mod import_v7;
 pub(crate) mod misc;
 pub(crate) mod node;

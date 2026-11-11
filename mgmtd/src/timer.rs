@@ -36,12 +36,19 @@ async fn delete_stale_clients(app: RuntimeApp, mut run_state: RunStateHandle) {
 
         match app
             .db
-            .write_tx(move |tx| db::node::delete_stale_clients(tx, timeout))
+            .write_tx(move |tx| {
+                let version_before = db::identity::version(tx)?;
+                let affected = db::node::delete_stale_clients(tx, timeout)?;
+                Ok((affected, version_before, db::identity::version(tx)?))
+            })
             .await
         {
-            Ok(affected) => {
+            Ok((affected, version_before, version)) => {
                 if affected > 0 {
                     log::info!("Deleted {affected} stale clients");
+                }
+                if version != version_before {
+                    crate::bee_msg::notify_identities_changed(&app, version).await;
                 }
             }
             Err(err) => log::error!("Deleting stale clients failed: {err:#}"),

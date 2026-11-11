@@ -15,7 +15,7 @@ impl HandleWithResponse for RemoveNode {
 
         let (node, version_before, version) = app
             .write_tx(move |tx| {
-                let version_before = identities_version(tx)?;
+                let version_before = db::identity::version(tx)?;
 
                 if self.node_type != NodeType::Client {
                     bail!(
@@ -32,7 +32,7 @@ For server nodes, the grpc handler must be used."
 
                 db::node::delete(tx, node.uid)?;
 
-                Ok((node, version_before, identities_version(tx)?))
+                Ok((node, version_before, db::identity::version(tx)?))
             })
             .await?;
 

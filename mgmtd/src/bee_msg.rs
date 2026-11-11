@@ -44,7 +44,7 @@ pub(crate) use identity_admission::{
     reject_pending_key,
 };
 mod register_identity;
-pub(crate) use register_identity::{identities_version, notify_identities_changed};
+pub(crate) use register_identity::notify_identities_changed;
 mod register_node;
 mod register_node_v2;
 mod register_target;

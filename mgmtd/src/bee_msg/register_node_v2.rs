@@ -189,11 +189,13 @@ mod test {
 
         let version_after_delete = app
             .write_tx(move |tx| {
-                tx.execute(
-                    sql!("DELETE FROM identity_to_node WHERE node_id = ?1"),
-                    [resp.node_num_id],
-                )?;
-                crate::bee_msg::identities_version(tx)
+                let node = LegacyId {
+                    node_type: NodeType::Storage,
+                    num_id: resp.node_num_id,
+                }
+                .resolve(tx, EntityType::Node)?;
+                db::node::delete(tx, node.uid)?;
+                db::identity::version(tx)
             })
             .await
             .unwrap();
@@ -238,7 +240,10 @@ mod test {
     async fn mapping(app: &TestApp) -> Vec<(i64, NodeId)> {
         app.read_tx(|tx| {
             Ok(tx.query_map_collect(
-                sql!("SELECT identity_id, node_id FROM identity_to_node ORDER BY identity_id"),
+                sql!(
+                    "SELECT identity_id, node_id FROM nodes
+                    WHERE identity_id IS NOT NULL ORDER BY identity_id"
+                ),
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )?)

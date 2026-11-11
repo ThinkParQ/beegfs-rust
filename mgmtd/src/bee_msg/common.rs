@@ -23,13 +23,11 @@ fn map_identity(
     node_type: NodeType,
     node_id: NodeId,
 ) -> Result<()> {
-    let node_identity: Option<IdentityId> = tx
-        .query_row(
-            sql!("SELECT identity_id FROM identity_to_node WHERE node_type = ?1 AND node_id = ?2"),
-            params![node_type.sql_variant(), node_id],
-            |row| row.get(0),
-        )
-        .optional()?;
+    let node_identity: Option<IdentityId> = tx.query_row(
+        sql!("SELECT identity_id FROM nodes WHERE node_type = ?1 AND node_id = ?2"),
+        params![node_type.sql_variant(), node_id],
+        |row| row.get(0),
+    )?;
 
     match node_identity {
         Some(id) if id == identity_id => return Ok(()),
@@ -43,7 +41,7 @@ If the node's key pair changed, revoke the old identity with \
 
     let identity_node: Option<(NodeType, NodeId)> = tx
         .query_row(
-            sql!("SELECT node_type, node_id FROM identity_to_node WHERE identity_id = ?1"),
+            sql!("SELECT node_type, node_id FROM nodes WHERE identity_id = ?1"),
             [identity_id],
             |row| Ok((NodeType::from_row(row, 0)?, row.get(1)?)),
         )
@@ -54,9 +52,10 @@ If the node's key pair changed, revoke the old identity with \
     }
 
     tx.execute(
-        sql!("INSERT INTO identity_to_node (identity_id, node_type, node_id) VALUES (?1, ?2, ?3)"),
+        sql!("UPDATE nodes SET identity_id = ?1 WHERE node_type = ?2 AND node_id = ?3"),
         params![identity_id, node_type.sql_variant(), node_id],
     )?;
+    db::identity::bump_version(tx)?;
 
     log::info!("Mapped {node_type} node {node_id} to identity {identity_id}");
 
@@ -67,9 +66,9 @@ fn delete_stale_client(tx: &Transaction, key_id: &KeyPairId) -> Result<()> {
     let stale: Option<NodeId> = tx
         .query_row(
             sql!(
-                "SELECT itn.node_id FROM keys AS k
-                INNER JOIN identity_to_node AS itn ON itn.identity_id = k.identity_id
-                WHERE k.key = ?1 AND itn.node_type = ?2"
+                "SELECT n.node_id FROM keys AS k
+                INNER JOIN nodes AS n USING (identity_id)
+                WHERE k.key = ?1 AND n.node_type = ?2"
             ),
             params![key_id.to_string(), NodeType::Client.sql_variant()],
             |row| row.get(0),
@@ -177,7 +176,7 @@ pub(super) async fn update_node(
 
     let res = app
         .write_tx_no_sync(move |tx| {
-            let version_before = identities_version(tx)?;
+            let version_before = db::identity::version(tx)?;
 
             let identity_id = match &key_req {
                 Some(key_req) => match admit_key(tx, modes, key_req)? {
@@ -373,7 +372,7 @@ client version < 8.0)"
                 _ => MetaRoot::Unknown,
             };
 
-            let version = identities_version(tx)?;
+            let version = db::identity::version(tx)?;
 
             Ok(Ok((
                 node,

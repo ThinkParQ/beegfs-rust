@@ -11,9 +11,7 @@ pub(crate) async fn get_identities(
                     "SELECT k.key, k.identity_id, n.node_uid, n.node_id, n.node_type, n.alias
                     FROM keys AS k
                     INNER JOIN identities AS i USING (identity_id)
-                    LEFT JOIN identity_to_node AS itn USING (identity_id)
-                    LEFT JOIN nodes_ext AS n
-                        ON n.node_type = itn.node_type AND n.node_id = itn.node_id
+                    LEFT JOIN nodes_ext AS n USING (identity_id)
                     WHERE i.revoked = 0
                     ORDER BY k.key_id"
                 ),
@@ -39,7 +37,7 @@ pub(crate) async fn get_identities(
                 },
             )?;
 
-            Ok((crate::bee_msg::identities_version(tx)?, keys))
+            Ok((db::identity::version(tx)?, keys))
         })
         .await?;
 
@@ -82,10 +80,7 @@ mod test {
                 let id_a = register(key_a, Some("a"))?;
                 let id_b = register(key_b, None)?;
                 tx.execute(
-                    sql!(
-                        "INSERT INTO identity_to_node (identity_id, node_type, node_id)
-                        VALUES (?1, ?2, 1)"
-                    ),
+                    sql!("UPDATE nodes SET identity_id = ?1 WHERE node_type = ?2 AND node_id = 1"),
                     params![id_a, NodeType::Meta.sql_variant()],
                 )?;
                 Ok((id_a, id_b))

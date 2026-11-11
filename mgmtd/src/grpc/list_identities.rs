@@ -25,9 +25,7 @@ pub(crate) async fn list_identities(
                     "SELECT i.identity_id, i.name, i.admin, i.revoked, i.token_id,
                         n.node_uid, n.node_id, n.node_type, n.alias
                     FROM identities AS i
-                    LEFT JOIN identity_to_node AS itn USING (identity_id)
-                    LEFT JOIN nodes_ext AS n
-                        ON n.node_type = itn.node_type AND n.node_id = itn.node_id
+                    LEFT JOIN nodes_ext AS n USING (identity_id)
                     ORDER BY i.identity_id"
                 ),
                 [],
