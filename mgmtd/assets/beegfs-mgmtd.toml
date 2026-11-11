@@ -81,7 +81,7 @@
 
 # The PKCS#8 PEM private key file identifying this node. Create it with
 # "beegfs-mgmtd --generate-key". Ignored with "legacy".
-# conn-key-file = "/etc/beegfs/mgmtd.key"
+# conn-key-file = "/etc/beegfs/mgmtd-key.pem"
 
 # How new client identities (client nodes, ctl, fsck) are accepted: "automatic" (all), "token"
 # (requires an identity token), "approval" (pending until an admin approves) or "both" (a token or

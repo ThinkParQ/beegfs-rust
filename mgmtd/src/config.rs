@@ -291,12 +291,12 @@ generate_structs! {
     #[arg(value_name = "PROTOCOL")]
     conn_protocol: ConnProtocol = ConnProtocol::Legacy,
 
-    /// The PKCS#8 PEM private key file identifying this node. [default: /etc/beegfs/mgmtd.key]
+    /// The PKCS#8 PEM private key file identifying this node. [default: /etc/beegfs/mgmtd-key.pem]
     ///
     /// Create it with `--generate-key`. Ignored with `conn-protocol = "legacy"`.
     #[arg(long)]
     #[arg(value_name = "PATH")]
-    conn_key_file: PathBuf = "/etc/beegfs/mgmtd.key".into(),
+    conn_key_file: PathBuf = "/etc/beegfs/mgmtd-key.pem".into(),
 
     /// Defines how new client identities (client nodes, ctl, fsck) are accepted. [default: automatic]
     ///
