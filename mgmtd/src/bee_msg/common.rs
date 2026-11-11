@@ -34,7 +34,9 @@ fn map_identity(
     match node_identity {
         Some(id) if id == identity_id => return Ok(()),
         Some(id) => bail!(
-            "{node_type} node {node_id} is already mapped to identity {id}, not to {identity_id}"
+            "{node_type} node {node_id} is already mapped to identity {id}, not to {identity_id}. \
+If the node's key pair changed, revoke the old identity with \
+\"beegfs auth id revoke id:{id}\""
         ),
         None => {}
     }

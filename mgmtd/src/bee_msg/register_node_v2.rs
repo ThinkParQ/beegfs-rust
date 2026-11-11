@@ -47,7 +47,22 @@ impl HandleWithResponse for RegisterNodeV2 {
             addr: req.addr().to_string(),
         };
 
-        let update = match update_node(self.node, app, reject, Some(peer_key)).await? {
+        let registration = match update_node(self.node, app, reject, Some(peer_key)).await {
+            Ok(registration) => registration,
+            Err(err) => {
+                log::warn!(
+                    "Registration of key pair ID {key_id} from {:?} failed: {err:#}",
+                    req.addr()
+                );
+                return Ok(RegisterNodeV2Resp {
+                    status: RegistrationStatus::Rejected,
+                    message: format!("{err:#}").into_bytes(),
+                    ..Default::default()
+                });
+            }
+        };
+
+        let update = match registration {
             NodeRegistration::Updated(update) => update,
             NodeRegistration::Pending => {
                 log::info!(
@@ -162,10 +177,12 @@ mod test {
         let other: KeyPairId = format!("sha256:{}", "b".repeat(64)).parse().unwrap();
         let mut other_req = TestRequest::new(Header::default());
         other_req.identity = PeerIdentity::Unregistered(other);
-        msg(resp.node_num_id)
+        let conflict = msg(resp.node_num_id)
             .handle(&app, &mut other_req)
             .await
-            .unwrap_err();
+            .unwrap();
+        assert_eq!(conflict.status, RegistrationStatus::Rejected);
+        assert!(String::from_utf8_lossy(&conflict.message).contains("revoke the old identity"));
 
         let mut legacy_req = TestRequest::new(Header::default());
         msg(0).handle(&app, &mut legacy_req).await.unwrap_err();
