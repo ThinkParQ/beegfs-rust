@@ -69,21 +69,19 @@
 # Maximum number of outgoing connections per node.
 # connection-limit = 12
 
-# Disables requiring authentication (BeeMsg and gRPC).
+# Disables requiring authentication (BeeMsg and gRPC). Only used with conn-protocol = "legacy".
 # auth-disable = false
 
-# The authentication file location.
+# The authentication file location. Only used with conn-protocol = "legacy".
 # auth-file = "/etc/beegfs/conn.auth"
 
 # The BeeMsg connection protocol: "legacy", "plain" or "encrypted". Must be set to the same value
 # on all nodes.
 # conn-protocol = "legacy"
 
-# The PKCS#8 PEM private key file identifying this node. Ignored with "legacy".
-# conn-key-file = "/etc/beegfs/conn-key.pem"
-
-# Generates a new key file at conn-key-file if it does not exist.
-# conn-key-generate = false
+# The PKCS#8 PEM private key file identifying this node. Create it with
+# "beegfs-mgmtd --generate-key". Ignored with "legacy".
+# conn-key-file = "/etc/beegfs/mgmtd.key"
 
 # How new client identities (client nodes, ctl, fsck) are accepted: "automatic" (all), "token"
 # (requires an identity token), "approval" (pending until an admin approves) or "both" (a token or

@@ -5,7 +5,7 @@ use mgmtd::db::{self};
 use mgmtd::license::LicenseVerifier;
 use mgmtd::{StaticInfo, start};
 use shared::conn::ConnCrypto;
-use shared::conn::beecrypt::KeyPair;
+use shared::conn::beecrypt::{KeyPair, KeyPairId};
 use shared::journald_logger;
 use shared::nic::check_ipv6;
 use shared::types::AuthSecret;
@@ -25,25 +25,9 @@ fn load_conn_crypto(config: &Config) -> Result<Option<ConnCrypto>> {
 
     let path = &config.conn_key_file;
 
-    if config.conn_key_generate && !path.try_exists()? {
-        let pem = KeyPair::generate()
-            .map_err(|err| anyhow!("Generating connection key pair failed: {err}"))?;
-
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)
-            .with_context(|| format!("Could not create connection key file {path:?}"))?;
-        std::io::Write::write_all(&mut file, pem.as_bytes())
-            .with_context(|| format!("Could not write connection key file {path:?}"))?;
-
-        log::warn!("Generated new connection key file {path:?}");
-    }
-
-    let pem = Zeroizing::new(
-        fs::read(path).with_context(|| format!("Could not read connection key file {path:?}"))?,
-    );
+    let pem = Zeroizing::new(fs::read(path).with_context(|| {
+        format!("Could not read connection key file {path:?}. Create it with --generate-key")
+    })?);
     let keypair = KeyPair::load(&pem)
         .map_err(|err| anyhow!("Loading connection key file {path:?} failed: {err}"))?;
 
@@ -54,6 +38,60 @@ fn load_conn_crypto(config: &Config) -> Result<Option<ConnCrypto>> {
     );
 
     Ok(Some(ConnCrypto::new(mode, keypair)))
+}
+
+fn generate_key_file(path: &Path) -> Result<KeyPairId> {
+    let pem = KeyPair::generate()
+        .map_err(|err| anyhow!("Generating connection key pair failed: {err}"))?;
+    let keypair = KeyPair::load(pem.as_bytes())
+        .map_err(|err| anyhow!("Loading the generated key pair failed: {err}"))?;
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Could not create directory {parent:?}"))?;
+    }
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("Could not create connection key file {path:?}"))?;
+    std::io::Write::write_all(&mut file, pem.as_bytes())
+        .with_context(|| format!("Could not write connection key file {path:?}"))?;
+
+    Ok(keypair.id())
+}
+
+fn generate_key(config: &Config, path: &str) -> Result<()> {
+    let path = if path.is_empty() {
+        config.conn_key_file.as_path()
+    } else {
+        Path::new(path)
+    };
+
+    let id = generate_key_file(path)?;
+    println!("Generated key pair {id} at {path:?}");
+
+    if config.conn_protocol == ConnProtocol::Legacy {
+        println!(
+            "Note: The key file is only used with a non-legacy conn-protocol, the current \
+configuration uses \"legacy\"."
+        );
+    }
+
+    Ok(())
+}
+
+fn ensure_key_file(path: &Path) -> Result<()> {
+    if path.try_exists()? {
+        println!("Using existing key file {path:?}");
+        return Ok(());
+    }
+
+    let id = generate_key_file(path)?;
+    println!("Generated key pair {id} at {path:?}");
+    Ok(())
 }
 
 fn main() -> Result<(), i32> {
@@ -75,13 +113,24 @@ fn inner_main() -> Result<()> {
     let (user_config, info_log) = mgmtd::config::load_and_parse()?;
 
     if user_config.init || user_config.import_from_v7.is_some() {
+        let non_legacy = user_config.conn_protocol != ConnProtocol::Legacy;
+
         init_db(
             &user_config.db_file,
             user_config.import_from_v7.as_deref(),
             user_config.fs_uuid,
-            user_config.conn_protocol != ConnProtocol::Legacy,
+            non_legacy,
         )?;
+
+        if non_legacy {
+            ensure_key_file(&user_config.conn_key_file)?;
+        }
+
         return Ok(());
+    }
+
+    if let Some(path) = &user_config.generate_key {
+        return generate_key(&user_config, path);
     }
 
     if let Some(scope) = user_config.generate_identity_token {
@@ -143,17 +192,18 @@ If you want to initialize a new system, refer to --help or doc.beegfs.io.",
         );
     }
 
-    let auth_secret = if !user_config.auth_disable {
-        let secret = std::fs::read(&user_config.auth_file).with_context(|| {
-            format!(
-                "Could not open authentication file {:?}",
-                user_config.auth_file
-            )
-        })?;
-        Some(AuthSecret::hash_from_bytes(secret))
-    } else {
-        None
-    };
+    let auth_secret =
+        if !user_config.auth_disable && user_config.conn_protocol == ConnProtocol::Legacy {
+            let secret = std::fs::read(&user_config.auth_file).with_context(|| {
+                format!(
+                    "Could not open authentication file {:?}",
+                    user_config.auth_file
+                )
+            })?;
+            Some(AuthSecret::hash_from_bytes(secret))
+        } else {
+            None
+        };
 
     let conn_crypto = load_conn_crypto(&user_config)?;
 

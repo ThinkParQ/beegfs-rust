@@ -142,6 +142,16 @@ generate_structs! {
     #[serde(skip)]
     import_from_v7: Option<PathBuf> = None,
 
+    /// Generates a new key file, prints its key pair ID, then exits.
+    ///
+    /// Writes to the given path or to `conn-key-file` if no path is given. Denies overwriting an
+    /// existing key file.
+    #[arg(long)]
+    #[arg(num_args = 0..=1, default_missing_value = "")]
+    #[arg(value_name = "PATH")]
+    #[serde(skip)]
+    generate_key: Option<String> = None,
+
     /// Creates a new identity token with the given scope (client or admin), prints it, then exits.
     ///
     /// Uses `--db-file` for the database location or the default if not given. Can be run while
@@ -261,11 +271,15 @@ generate_structs! {
     connection_limit: usize = 12,
 
     /// Disables requiring authentication (BeeMsg and gRPC).
+    ///
+    /// Only used with `conn-protocol = "legacy"`.
     #[arg(long)]
     #[arg(num_args = 0..=1, default_missing_value = "true")]
     auth_disable: bool = false,
 
     /// The authentication file location [default: /etc/beegfs/conn.auth]
+    ///
+    /// Only used with `conn-protocol = "legacy"`.
     #[arg(long)]
     #[arg(value_name = "PATH")]
     auth_file: PathBuf = "/etc/beegfs/conn.auth".into(),
@@ -277,17 +291,12 @@ generate_structs! {
     #[arg(value_name = "PROTOCOL")]
     conn_protocol: ConnProtocol = ConnProtocol::Legacy,
 
-    /// The PKCS#8 PEM private key file identifying this node. [default: /etc/beegfs/conn-key.pem]
+    /// The PKCS#8 PEM private key file identifying this node. [default: /etc/beegfs/mgmtd.key]
     ///
-    /// Ignored with `conn-protocol = "legacy"`.
+    /// Create it with `--generate-key`. Ignored with `conn-protocol = "legacy"`.
     #[arg(long)]
     #[arg(value_name = "PATH")]
-    conn_key_file: PathBuf = "/etc/beegfs/conn-key.pem".into(),
-
-    /// Generates a new key file at `conn-key-file` if it does not exist.
-    #[arg(long)]
-    #[arg(num_args = 0..=1, default_missing_value = "true")]
-    conn_key_generate: bool = false,
+    conn_key_file: PathBuf = "/etc/beegfs/mgmtd.key".into(),
 
     /// Defines how new client identities (client nodes, ctl, fsck) are accepted. [default: automatic]
     ///
@@ -538,6 +547,16 @@ impl Config {
             bail!(
                 "registration-disable is only valid with the legacy connection protocol, \
 use register-server-mode = \"disabled\" instead"
+            );
+        }
+
+        if self.generate_key.is_some()
+            && (self.init
+                || self.import_from_v7.is_some()
+                || self.generate_identity_token.is_some())
+        {
+            bail!(
+                "generate-key cannot be combined with init, import-from-v7 or generate-identity-token"
             );
         }
 
