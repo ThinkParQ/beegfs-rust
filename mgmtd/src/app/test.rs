@@ -148,11 +148,7 @@ impl App for TestApp {
         }
     }
 
-    async fn send_notifications<M: Msg + Serializable>(
-        &self,
-        node_types: &'static [NodeType],
-        _msg: &M,
-    ) {
+    fn send_notifications<M: Msg + Serializable>(&self, node_types: &'static [NodeType], _msg: M) {
         self.data
             .lock()
             .unwrap()

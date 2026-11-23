@@ -23,9 +23,8 @@ pub(crate) async fn assign_pool(
 
     app.send_notifications(
         &[NodeType::Meta, NodeType::Storage],
-        &RefreshStoragePools { ack_id: "".into() },
-    )
-    .await;
+        RefreshStoragePools { ack_id: "".into() },
+    );
 
     Ok(pm::AssignPoolResponse {
         pool: Some(pool.into()),

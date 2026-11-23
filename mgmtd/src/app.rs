@@ -65,12 +65,9 @@ pub(crate) trait App: Debug + Clone + Send + 'static {
         msg: &M,
     ) -> impl Future<Output = Result<R>> + Send;
 
-    /// Send a [Msg] to all nodes of a type via UDP
-    fn send_notifications<M: Msg + Serializable>(
-        &self,
-        node_types: &'static [NodeType],
-        msg: &M,
-    ) -> impl Future<Output = ()> + Send;
+    /// Send a [Msg] to all nodes of a type via UDP. Requires tokio runtime, spawns a task and
+    /// does not wait for completion.
+    fn send_notifications<M: Msg + Serializable>(&self, node_types: &'static [NodeType], msg: M);
 
     /// Replace all stored BeeMsg network addresses of a node in the store
     fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>);

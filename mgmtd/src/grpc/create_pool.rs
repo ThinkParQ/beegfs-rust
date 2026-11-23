@@ -38,9 +38,8 @@ pub(crate) async fn create_pool(
 
     app.send_notifications(
         &[NodeType::Meta, NodeType::Storage],
-        &RefreshStoragePools { ack_id: "".into() },
-    )
-    .await;
+        RefreshStoragePools { ack_id: "".into() },
+    );
 
     Ok(pm::CreatePoolResponse {
         pool: Some(pool.into()),

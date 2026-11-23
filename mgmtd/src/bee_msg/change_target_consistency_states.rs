@@ -77,9 +77,8 @@ doesn't match stored state {old_stored}, no consistency state changes will be ma
         if consistencies_changed.unwrap_or(0) > 0 || reachabilities_changed > 0 {
             app.send_notifications(
                 &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                &RefreshTargetStates { ack_id: "".into() },
-            )
-            .await;
+                RefreshTargetStates { ack_id: "".into() },
+            );
         }
 
         Ok(ChangeTargetConsistencyStatesResp {

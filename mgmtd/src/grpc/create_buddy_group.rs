@@ -62,7 +62,7 @@ pub(crate) async fn create_buddy_group(
 
     app.send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-        &SetMirrorBuddyGroup {
+        SetMirrorBuddyGroup {
             ack_id: "".into(),
             node_type: node_type.into(),
             primary_target_id: p_target.num_id().try_into()?,
@@ -70,16 +70,14 @@ pub(crate) async fn create_buddy_group(
             group_id: group.num_id().try_into()?,
             allow_update: 0,
         },
-    )
-    .await;
+    );
 
     // Storage buddy groups alter pool membership, so trigger an immediate pool refresh
     if node_type == NodeTypeServer::Storage {
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
-            &RefreshStoragePools { ack_id: "".into() },
-        )
-        .await;
+            RefreshStoragePools { ack_id: "".into() },
+        );
     }
 
     Ok(pm::CreateBuddyGroupResponse {

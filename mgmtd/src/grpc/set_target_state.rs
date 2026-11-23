@@ -55,9 +55,8 @@ pub(crate) async fn set_target_state(
 
     app.send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-        &RefreshTargetStates { ack_id: "".into() },
-    )
-    .await;
+        RefreshTargetStates { ack_id: "".into() },
+    );
 
     Ok(pm::SetTargetStateResponse {})
 }

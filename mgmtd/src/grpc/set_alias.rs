@@ -61,7 +61,7 @@ pub(crate) async fn set_alias(
 
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-            &Heartbeat {
+            Heartbeat {
                 instance_version: 0,
                 nic_list_version: 0,
                 node_type: entity.node_type(),
@@ -75,8 +75,7 @@ pub(crate) async fn set_alias(
                 nic_list: map_bee_msg_nics(nic_list).collect(),
                 machine_uuid: vec![],
             },
-        )
-        .await;
+        );
 
     // If not a node, just update the alias
     } else {

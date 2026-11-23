@@ -132,62 +132,63 @@ impl App for RuntimeApp {
         Pool::request(&self.conn, node_uid, msg).await.map(|e| e.0)
     }
 
-    async fn send_notifications<M: Msg + Serializable>(
-        &self,
-        node_types: &'static [NodeType],
-        msg: &M,
-    ) {
+    fn send_notifications<M: Msg + Serializable>(&self, node_types: &'static [NodeType], msg: M) {
         if node_types.is_empty() {
             return;
         }
 
-        static NOTIFICATION_COUNTER: AtomicU32 = AtomicU32::new(0);
-        let trace_data = if log::log_enabled!(log::Level::Trace) {
-            let start_time = Instant::now();
-            let count = NOTIFICATION_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
-            log::trace!("NOTIFICATION #{count} to {node_types:?}: {msg:?}");
-            Some((count, start_time))
-        } else {
-            None
-        };
+        let this = self.clone();
+        tokio::spawn(async move {
+            static NOTIFICATION_COUNTER: AtomicU32 = AtomicU32::new(0);
+            let trace_data = if log::log_enabled!(log::Level::Trace) {
+                let start_time = Instant::now();
+                let count = NOTIFICATION_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+                log::trace!("NOTIFICATION #{count} to {node_types:?}: {msg:?}");
+                Some((count, start_time))
+            } else {
+                None
+            };
 
-        // We want to track the concurrent notification tasks that are going on to make it easy
-        // to catch a potential bottleneck here on big systems.
-        let concurrency_tracker = peak_concurrency_tracker!();
-        if let Some(peak) = concurrency_tracker.peaked() {
-            log::info!("Concurrent notifications peaked at {peak}",);
-        }
+            // We want to track the concurrent notification tasks that are going on to make it easy
+            // to catch a potential bottleneck here on big systems.
+            let concurrency_tracker = peak_concurrency_tracker!();
+            if let Some(peak) = concurrency_tracker.peaked() {
+                log::info!("Concurrent notifications peaked at {peak}",);
+            }
 
-        let mut node_count = 0;
-        if let Err(err) = async {
-            let nodes: Vec<Uid> = self
-                .read_tx(move |tx| {
-                    Ok(tx.query_map_collect(
-                        sql!("SELECT node_uid FROM nodes WHERE node_type IN rarray(?1)"),
-                        [rarray_param(node_types.iter().map(|e| e.sql_variant()))],
-                        |row| row.get::<_, Uid>(0),
-                    )?)
-                })
-                .await?;
+            let mut node_count = 0;
+            if let Err(err) = async {
+                let nodes: Vec<Uid> = this
+                    .read_tx(move |tx| {
+                        Ok(tx.query_map_collect(
+                            sql!("SELECT node_uid FROM nodes WHERE node_type IN rarray(?1)"),
+                            [rarray_param(node_types.iter().map(|e| e.sql_variant()))],
+                            |row| row.get::<_, Uid>(0),
+                        )?)
+                    })
+                    .await?;
 
-            node_count = nodes.len();
+                node_count = nodes.len();
 
-            self.conn.broadcast_datagram(nodes.into_iter(), msg).await?;
+                this.conn
+                    .broadcast_datagram(nodes.into_iter(), &msg)
+                    .await?;
 
-            Ok(()) as Result<_>
-        }
-        .await
-        {
-            log::error!("Notification could not be sent: {err:#}");
-        }
+                Ok(()) as Result<_>
+            }
+            .await
+            {
+                log::error!("Notification could not be sent: {err:#}");
+            }
 
-        if let Some(td) = trace_data {
-            log::trace!(
-                "-> Notification #{} to {node_count} nodes completed after {:?}",
-                td.0,
-                td.1.elapsed()
-            );
-        }
+            if let Some(td) = trace_data {
+                log::trace!(
+                    "-> Notification #{} to {node_count} nodes completed after {:?}",
+                    td.0,
+                    td.1.elapsed()
+                );
+            }
+        });
     }
 
     fn replace_node_addrs(&self, node_uid: Uid, new_addrs: impl Into<Arc<[SocketAddr]>>) {
