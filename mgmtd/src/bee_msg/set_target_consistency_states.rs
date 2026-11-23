@@ -38,9 +38,8 @@ impl HandleWithResponse for SetTargetConsistencyStates {
 
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-            &RefreshTargetStates { ack_id: "".into() },
-        )
-        .await;
+            RefreshTargetStates { ack_id: "".into() },
+        );
 
         Ok(SetTargetConsistencyStatesResp {
             result: OpsErr::SUCCESS,

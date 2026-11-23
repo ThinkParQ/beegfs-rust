@@ -157,9 +157,8 @@ not supported."
     // so we omit it.
     app.send_notifications(
         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-        &RefreshTargetStates { ack_id: "".into() },
-    )
-    .await;
+        RefreshTargetStates { ack_id: "".into() },
+    );
 
     return Ok(pm::StartResyncResponse {});
 

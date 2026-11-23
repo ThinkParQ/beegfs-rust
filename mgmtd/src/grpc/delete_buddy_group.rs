@@ -76,9 +76,8 @@ Primary result: {:?}, Secondary result: {:?}",
         // Storage buddy groups alter pool membership, so trigger an immediate pool refresh
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
-            &RefreshStoragePools { ack_id: "".into() },
-        )
-        .await;
+            RefreshStoragePools { ack_id: "".into() },
+        );
     }
 
     Ok(pm::DeleteBuddyGroupResponse {

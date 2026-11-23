@@ -281,14 +281,12 @@ impl RunControl {
             );
 
             // Let the nodes pull the new states as soon as possible
-            self.app
-                .send_notifications(
-                    &[NodeType::Client, NodeType::Meta, NodeType::Storage],
-                    &RefreshTargetStates {
-                        ack_id: b"".to_vec(),
-                    },
-                )
-                .await;
+            self.app.send_notifications(
+                &[NodeType::Client, NodeType::Meta, NodeType::Storage],
+                RefreshTargetStates {
+                    ack_id: b"".to_vec(),
+                },
+            );
 
             tokio::select! {
                 // Wait for all clients having downloaded the state

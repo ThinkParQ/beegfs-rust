@@ -52,9 +52,8 @@ are still assigned to this pool"
 
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
-            &RefreshStoragePools { ack_id: "".into() },
-        )
-        .await;
+            RefreshStoragePools { ack_id: "".into() },
+        );
     }
 
     Ok(pm::DeletePoolResponse {

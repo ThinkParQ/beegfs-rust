@@ -250,42 +250,35 @@ client version < 8.0)"
 
     let node_num_id = node.num_id();
 
-    // Don't wait for notifications to go out because server nodes only wait for a short time for
-    // the reponse. On some systems broadcasting the notifications seems to take longer and
-    // registration fails.
-    let app = app.clone();
-    tokio::spawn(async move {
-        app.send_notifications(
-            match node.node_type() {
-                NodeType::Meta => &[NodeType::Meta, NodeType::Client],
-                NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                NodeType::Client => &[NodeType::Meta],
-                _ => &[],
+    app.send_notifications(
+        match node.node_type() {
+            NodeType::Meta => &[NodeType::Meta, NodeType::Client],
+            NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
+            NodeType::Client => &[NodeType::Meta],
+            _ => &[],
+        },
+        Heartbeat {
+            instance_version: 0,
+            nic_list_version: 0,
+            node_type: node.node_type(),
+            node_alias: String::from(node.alias).into_bytes(),
+            ack_id: "".into(),
+            node_num_id,
+            root_num_id: match meta_root {
+                MetaRoot::Unknown => 0,
+                MetaRoot::Normal(node_id, _) => node_id,
+                MetaRoot::Mirrored(group_id) => group_id.into(),
             },
-            &Heartbeat {
-                instance_version: 0,
-                nic_list_version: 0,
-                node_type: node.node_type(),
-                node_alias: String::from(node.alias).into_bytes(),
-                ack_id: "".into(),
-                node_num_id,
-                root_num_id: match meta_root {
-                    MetaRoot::Unknown => 0,
-                    MetaRoot::Normal(node_id, _) => node_id,
-                    MetaRoot::Mirrored(group_id) => group_id.into(),
-                },
-                is_root_mirrored: match meta_root {
-                    MetaRoot::Unknown | MetaRoot::Normal(_, _) => 0,
-                    MetaRoot::Mirrored(_) => 1,
-                },
-                port: msg.port,
-                port_tcp_unused: msg.port,
-                nic_list: nics,
-                machine_uuid: vec![], // No need for the other nodes to know machine UUIDs
+            is_root_mirrored: match meta_root {
+                MetaRoot::Unknown | MetaRoot::Normal(_, _) => 0,
+                MetaRoot::Mirrored(_) => 1,
             },
-        )
-        .await;
-    });
+            port: msg.port,
+            port_tcp_unused: msg.port,
+            nic_list: nics,
+            machine_uuid: vec![], // No need for the other nodes to know machine UUIDs
+        },
+    );
 
     Ok(node_num_id)
 }

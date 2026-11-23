@@ -44,12 +44,11 @@ For server nodes, the grpc handler must be used."
                 }
                 _ => &[],
             },
-            &RemoveNode {
+            RemoveNode {
                 ack_id: "".into(),
                 ..self
             },
-        )
-        .await;
+        );
 
         Ok(RemoveNodeResp {
             result: OpsErr::SUCCESS,

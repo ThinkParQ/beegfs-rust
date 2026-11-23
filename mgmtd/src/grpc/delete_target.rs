@@ -49,16 +49,14 @@ pub(crate) async fn delete_target(
 
         app.send_notifications(
             &[NodeType::Meta],
-            &RefreshCapacityPools { ack_id: "".into() },
-        )
-        .await;
+            RefreshCapacityPools { ack_id: "".into() },
+        );
 
         // Storage targets deletion alter pool membership, so trigger an immediate pool refresh
         app.send_notifications(
             &[NodeType::Meta, NodeType::Storage],
-            &RefreshStoragePools { ack_id: "".into() },
-        )
-        .await;
+            RefreshStoragePools { ack_id: "".into() },
+        );
     }
 
     let target = Some(target.into());

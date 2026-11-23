@@ -81,13 +81,12 @@ pub(crate) async fn delete_node(
                 NodeType::Storage => &[NodeType::Meta, NodeType::Storage, NodeType::Client],
                 _ => &[],
             },
-            &RemoveNode {
+            RemoveNode {
                 node_type: node.node_type(),
                 node_id: node.num_id(),
                 ack_id: "".into(),
             },
-        )
-        .await;
+        );
     }
 
     Ok(pm::DeleteNodeResponse {

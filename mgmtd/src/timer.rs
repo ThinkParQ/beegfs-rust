@@ -111,9 +111,8 @@ async fn switchover(app: RuntimeApp, mut run_state: RunStateHandle) {
 
                     app.send_notifications(
                         &[NodeType::Meta, NodeType::Storage, NodeType::Client],
-                        &RefreshTargetStates { ack_id: "".into() },
-                    )
-                    .await;
+                        RefreshTargetStates { ack_id: "".into() },
+                    );
                 }
             }
             Err(err) => log::error!("Switchover check failed: {err:#}"),
